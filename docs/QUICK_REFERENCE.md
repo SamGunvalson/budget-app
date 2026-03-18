@@ -34,14 +34,14 @@ archive/                ← Completed phase build guides (historical)
 
 - Supabase account & project creation
 - Environment variables (`.env`)
-- Database migration (`sql_scripts/supabase_schema_create.sql`)
+- Database migration (`sql_scripts/supabase_schema_create.sql` + optional `sql_scripts/supabase_split_expenses.sql`)
 - Default data setup, troubleshooting
 
 ### "I'm designing or querying the database"
 
 → [DATA_MODEL.md](./DATA_MODEL.md)
 
-- Complete schema: 7 tables (categories, user_preferences, budget_plans, budget_items, accounts, transactions, recurring_templates)
+- Complete schema: 7 core tables + optional split-expense extension tables (`partnerships`, `split_expenses`)
 - TypeScript interfaces
 - SQL migration scripts
 - Key design decisions (cents storage, soft deletes, RLS, 1000-row pagination)
@@ -103,11 +103,12 @@ archive/                ← Completed phase build guides (historical)
 
 ```
 src/
-├── App.jsx                     ← Routing, auth guard, recurring projection init
+├── App.jsx                     ← App routes, auth guard, recurring + sync init
 ├── pages/
-│   ├── ReportsPage.jsx       ← Reports: Summary, Plan vs Actual, Trends, Annual Actuals
+│   ├── ReportsPage.jsx         ← Reports: Summary, Plan vs Actual, Trends, Annual Actuals
 │   ├── TransactionsPage.jsx    ← Transaction list, filters, CSV import
 │   ├── BudgetPage.jsx          ← Monthly budget + annual budget table
+│   ├── SplitExpensesPage.jsx   ← Shared expense split setup, tracking, settlement
 │   ├── AccountsPage.jsx        ← Account list, net worth chart/summary
 │   ├── CategoriesPage.jsx      ← Category management with drag-and-drop
 │   ├── SettingsPage.jsx        ← Theme, preferences
@@ -115,7 +116,8 @@ src/
 ├── components/
 │   ├── accounts/               ← AccountForm, AccountList, NetWorthChart, NetWorthSummary
 │   ├── budgets/                ← BudgetForm, CategoryList, AnnualBudgetTable, BudgetImportModal
-│   ├── reports/               ← CategoryChart, CategoryComparison, CategoryDrillDown, PlanVsActual, AnnualActualsTable, …
+│   ├── reports/                ← CategoryChart, CategoryComparison, CategoryDrillDown, PlanVsActual, AnnualActualsTable, …
+│   ├── splits/                 ← Shared expense split setup, tracking, settlement views
 │   ├── transactions/           ← Transaction list/form/filters, recurring form & group form
 │   └── common/                 ← Modal, TopBar, MonthYearSelector, SyncStatus, ExportData, BudgetAlert, ProtectedRoute
 ├── services/
@@ -125,6 +127,8 @@ src/
 │   ├── accounts.js             ← CRUD + balance calculation
 │   ├── categories.js           ← CRUD + bulkUpdateSortOrder
 │   ├── recurring.js            ← Template CRUD + projection engine + concurrency guard
+│   ├── splitExpenses.js        ← Split expense CRUD + partner balance logic
+│   ├── partnerships.js         ← Partner invite/accept/dissolve lifecycle
 │   ├── import.js               ← CSV parsing, column mapping, duplicate detection
 │   ├── export.js               ← Excel workbook generation
 │   ├── analytics.js            ← Multi-month trend analysis
@@ -187,7 +191,8 @@ package.json        ← Dependencies
 **Authentication code?**
 
 - Components: `src/components/common/LoginForm.jsx`, `SignupForm.jsx`
-- Schema: [DATA_MODEL.md](./DATA_MODEL.md) → users table
+- Auth model: Supabase Auth (`auth.users`)
+- App-owned schema: [DATA_MODEL.md](./DATA_MODEL.md) → `user_preferences`, user-owned domain tables
 
 **Transaction logic?**
 
@@ -223,6 +228,13 @@ package.json        ← Dependencies
 - Sync: `src/services/sync.js`
 - Queue: `src/utils/syncQueue.js`
 - Status indicator: `src/components/common/SyncStatus.jsx`
+
+**Split expenses / partnerships?**
+
+- Services: `src/services/splitExpenses.js`, `src/services/partnerships.js`
+- Page: `src/pages/SplitExpensesPage.jsx`
+- Components: `src/components/splits/`
+- Setup/schema: [SETUP_GUIDE.md](./SETUP_GUIDE.md) → optional split-expense schema script
 
 **Net worth / accounts?**
 
@@ -304,7 +316,7 @@ package.json        ← Dependencies
 ## ❓ FAQ
 
 **Q: Where does the full database schema live?**  
-A: [DATA_MODEL.md](./DATA_MODEL.md) — or run `sql_scripts/supabase_schema_create.sql` on a fresh project.
+A: [DATA_MODEL.md](./DATA_MODEL.md) is the reference. For setup, run `sql_scripts/supabase_schema_create.sql` (core) and optionally `sql_scripts/supabase_split_expenses.sql` for split-expense features.
 
 **Q: How do I avoid AI hallucinations when generating code?**  
 A: [CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md)
@@ -333,5 +345,5 @@ A: Archived to `docs/archive/` — QUICK_START.md, PHASE_2.md, PHASE_3.md, ROADM
 
 ---
 
-**Doc Version**: 2.0  
-**Last Updated**: March 5, 2026
+**Doc Version**: 2.1  
+**Last Updated**: March 18, 2026
