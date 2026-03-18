@@ -39,17 +39,53 @@ This guide walks you through setting up the Budget App from scratch.
 
 ### 1.4 Create Database Schema
 
-1. In Supabase dashboard, click **"SQL Editor"** (left sidebar)
+Use the SQL files in [`sql_scripts/`](../sql_scripts/) instead of copying SQL out of [`DATA_MODEL.md`](./DATA_MODEL.md). The data model doc is the schema reference; the scripts are the source of truth for setup.
+
+#### Required: Main app schema
+
+1. In Supabase dashboard, click **"SQL Editor"**
 2. Click **"New query"**
-3. Copy and paste the SQL from [`DATA_MODEL.md`](./DATA_MODEL.md), starting with "Step 1: Enable UUID extension"
-4. Run each migration step one at a time:
-   - Run Step 1 (UUID extension)
-   - Run Step 2 (categories table)
-   - Run Step 3 (budget_plans table)
-   - Run Step 4 (budget_items table)
-   - Run Step 5 (transactions table)
-   - **(Optional for Phase 2)** Run Step 6 (recurring_templates)
-5. Verify tables created: Click **"Table Editor"** in sidebar, you should see all tables
+3. Open [`sql_scripts/supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql)
+4. Copy the full contents into the SQL Editor and run it
+
+This creates the core app tables and their initial RLS policies:
+
+- `categories`
+- `user_preferences`
+- `budget_plans`
+- `budget_items`
+- `accounts`
+- `transactions`
+- `recurring_templates`
+
+#### Optional: Split expenses schema
+
+If you want the shared expense / partnership features, run [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) after the main schema script.
+
+This adds:
+
+- `partnerships`
+- `split_expenses`
+- `get_partner_email(UUID)` RPC function
+
+#### Optional: RLS audit and re-apply
+
+If you want to verify or re-apply row-level security policies, run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql) after the schema scripts.
+
+Use this script when:
+
+- you want a policy audit after setup
+- you are fixing a broken or partially configured project
+- you added the split-expense tables and want to re-check all policies together
+
+#### Verify the database
+
+After running the scripts:
+
+1. Open **Table Editor** in Supabase
+2. Confirm the core tables exist
+3. If you ran the split-expense script, confirm `partnerships` and `split_expenses` also exist
+4. Review the query results at the bottom of the script output to confirm RLS is enabled where expected
 
 ## Step 2: Local Project Setup
 
@@ -105,6 +141,9 @@ The app will show a simple UI. If Supabase is configured correctly, you should b
 - Sign up for an account
 - Log in
 - See no console errors related to Supabase
+- Use the main budgeting features immediately after login if the main schema script was applied successfully
+
+If you plan to use split expenses, open that page after login and confirm there are no missing-table errors.
 
 ### 3.2 Test Database
 
@@ -166,14 +205,16 @@ npm install recharts
 ### RLS Policy errors ("new row violates row-level security policy")
 
 1. Make sure you're logged in
-2. Verify RLS policies were created (Step 1.4)
+2. Re-run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
 3. In Supabase → Authentication → Policies, check each table has policies enabled
+4. If you use split expenses, make sure you also ran [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql)
 
 ### Database tables not showing up
 
 1. Go to Supabase → SQL Editor → History
-2. Verify each migration ran successfully (green checkmark)
-3. Re-run failed migrations
+2. Verify [`sql_scripts/supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql) ran successfully
+3. If you need split expenses, verify [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) also ran successfully
+4. Re-run the failed script
 
 ### Port 5173 already in use
 
@@ -201,10 +242,11 @@ All phases are complete. See the root [README.md](../README.md) for the full fea
 
 - Check browser DevTools console for errors
 - Check Supabase dashboard logs (Logs section)
-- Review `DATA_MODEL.md` for schema reference
+- Review [`DATA_MODEL.md`](./DATA_MODEL.md) for schema reference
+- Review the SQL files in [`sql_scripts/`](../sql_scripts/) for the actual setup scripts
 - Ask AI with specific error messages and context
 
 ---
 
-**Setup Version**: 1.0  
-**Last Updated**: February 27, 2026
+**Setup Version**: 1.1  
+**Last Updated**: March 18, 2026
