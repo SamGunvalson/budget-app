@@ -1,6 +1,11 @@
+> [!WARNING]
+> This project is still in production and actively evolving. Expect ongoing changes, incomplete areas, and occasional breaking updates.
+>
+> It was also built heavily with AI assistance as a personal learning tool, with the goal of accelerating exploration and understanding of modern full-stack patterns.
+
 # Budget App
 
-A personal budget tracking app built with React and Supabase. Features full offline support, recurring transactions, CSV import/export, multi-account net worth tracking, and a plan-vs-actual reports page.
+A personal budget tracking app built with React and Supabase. Features full offline support, recurring transactions, split expense tracking, CSV import/export, multi-account net worth tracking, and a plan-vs-actual reports page.
 
 ## Features
 
@@ -9,6 +14,7 @@ A personal budget tracking app built with React and Supabase. Features full offl
 - **Reports** — Category charts, trend analysis, annual actuals table, category drill-down
 - **Accounts** — Checking, savings, credit cards, retirement, brokerage, loans, mortgages; net worth chart
 - **Recurring Transactions** — Template-based with grouping (e.g. grouped paycheck splits), auto-projection 30 days out, weekly/biweekly/semi-monthly/monthly/quarterly/yearly schedules
+- **Split Expenses** — Partner-style shared expense tracking with paid-by attribution, split methods, and settlement visibility
 - **CSV Import** — Column mapping, duplicate detection, account & category assignment, up to 5,000 rows
 - **Export** — Excel workbook with transactions, budgets, and accounts sheets
 - **Categories** — Custom categories with drag-and-drop sort, type groups (income/needs/wants/savings/transfer)
@@ -34,16 +40,24 @@ A personal budget tracking app built with React and Supabase. Features full offl
 
 ```
 src/
-├── App.jsx               ← Routing, auth guard, recurring init
+├── App.jsx               ← App routes, auth guard, recurring + sync init
+├── main.jsx              ← React app bootstrap
+├── App.css
+├── index.css
+├── assets/
+│   └── react.svg
 ├── components/
 │   ├── accounts/         ← Account CRUD, NetWorthChart, NetWorthSummary
 │   ├── budgets/          ← BudgetForm, CategoryList, AnnualBudgetTable, BudgetImportModal
 │   ├── reports/          ← CategoryChart, PlanVsActual, Trends, CategoryDrillDown, AnnualActualsTable
+│   ├── splits/           ← Shared expense split setup, tracking, and settlement views
 │   ├── transactions/     ← Transaction list, form, filters, recurring forms
 │   └── common/           ← Modal, TopBar, LoginForm, SignupForm, MonthYearSelector, SyncStatus, ExportData
-├── contexts/             ← MonthYear, SafeMode, Theme
-├── hooks/                ← useMonthYear, useTheme, useOnlineStatus, useSyncStatus, useTransactionManager, …
-├── pages/                ← ReportsPage, TransactionsPage, BudgetPage, AccountsPage, CategoriesPage, SettingsPage, AuthPage
+├── constants/
+│   └── pages.jsx         ← Page name registry
+├── contexts/             ← MonthYear, SafeMode, Theme providers + memoized values
+├── hooks/                ← Month/year, theme, safe mode, session, sync, swipe, threshold, and transaction hooks
+├── pages/                ← ReportsPage, TransactionsPage, BudgetPage, SplitExpensesPage, AccountsPage, CategoriesPage, SettingsPage, AuthPage
 ├── services/
 │   ├── supabase.js       ← Client init
 │   ├── transactions.js   ← CRUD + pagination
@@ -51,9 +65,12 @@ src/
 │   ├── accounts.js       ← Account CRUD + balance calc
 │   ├── categories.js     ← CRUD + drag-and-drop sort
 │   ├── recurring.js      ← Template CRUD + projection engine
+│   ├── splitExpenses.js  ← Split expense CRUD + partner balance logic
+│   ├── partnerships.js   ← Partner invite/accept/dissolve lifecycle
 │   ├── import.js         ← CSV parsing + dedup
 │   ├── export.js         ← Excel workbook generation
 │   ├── analytics.js      ← Multi-month trend analysis
+│   ├── offlineAware.js   ← Offline-first wrappers around core services
 │   ├── offlineDb.js      ← Dexie schema + helpers
 │   └── sync.js           ← Sync queue + conflict resolution
 ├── utils/
@@ -62,8 +79,6 @@ src/
 │   ├── recurringCalculations.js
 │   ├── csvParser.js
 │   └── syncQueue.js
-└── constants/
-    └── pages.jsx         ← Page name registry
 ```
 
 ## Getting Started
