@@ -1,0 +1,37 @@
+{
+  "name": "Budget App",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+
+  "workspaceFolder": "/workspaces/budget-app",
+
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite Dev Server",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "postCreateCommand": "npm install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+				"github.copilot-chat",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "eamodio.gitlens",
+        "dsznajder.es7-react-js-snippets"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "eslint.useFlatConfig": true,
+        "files.exclude": {
+          "**/node_modules": true,
+          "**/.git": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.devcontainer
+docs
+sql_scripts
+*.md
+.vscode
+.eslintrc*
+eslint.config.js

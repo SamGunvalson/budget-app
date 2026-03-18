@@ -1,0 +1,6 @@
+# Set text handling to auto and use LF (Linux) line endings
+* text=auto eol=lf
+
+# Ensure Windows line endings are used for Windows scripts
+*.{cmd,[cC][mM][dD]} text eol=crlf
+*.{bat,[bB][aA][tT]} text eol=crlf
