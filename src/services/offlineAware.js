@@ -340,6 +340,8 @@ import {
   getAccountBalances as _getAccountBalances,
   getNetWorthHistory as _getNetWorthHistory,
   getMaxProjectedDate as _getMaxProjectedDate,
+  closeAccount as _closeAccount,
+  reopenAccount as _reopenAccount,
   isAssetAccount,
 } from "./accounts";
 
@@ -462,7 +464,10 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
       ? sums.projected_income - sums.projected_expense
       : sums.projected_expense - sums.projected_income;
     const balance = (acct.starting_balance || 0) + postedNet;
-    const projectedBalance = balance + pendingNet + projectedNet;
+    // Closed accounts freeze at actual balance (no projection growth)
+    const projectedBalance = acct.closed_at
+      ? balance
+      : balance + pendingNet + projectedNet;
 
     return {
       ...acct,
@@ -733,6 +738,125 @@ export async function deleteAccountOffline(id) {
     await putOffline("accounts", { ...existing, is_active: false }, "delete");
     await enqueue("accounts", id, "delete");
   }
+}
+
+export async function closeAccountOffline(id, closedAt) {
+  const result = await tryOnline(() => _closeAccount(id, closedAt));
+  if (!result.offline) {
+    await db.accounts.update(id, { closed_at: closedAt });
+    return result.data;
+  }
+  const existing = await db.accounts.get(id);
+  if (!existing) throw new Error(`Account ${id} not found locally`);
+  const updated = {
+    ...existing,
+    closed_at: closedAt,
+    updated_at: new Date().toISOString(),
+  };
+  await putOffline(
+    "accounts",
+    updated,
+    existing._offline ? existing._action : "update",
+  );
+  await enqueue(
+    "accounts",
+    id,
+    existing._offline ? existing._action : "update",
+  );
+  return updated;
+}
+
+export async function reopenAccountOffline(id) {
+  const result = await tryOnline(() => _reopenAccount(id));
+  if (!result.offline) {
+    await db.accounts.update(id, { closed_at: null });
+    return result.data;
+  }
+  const existing = await db.accounts.get(id);
+  if (!existing) throw new Error(`Account ${id} not found locally`);
+  const updated = {
+    ...existing,
+    closed_at: null,
+    updated_at: new Date().toISOString(),
+  };
+  await putOffline(
+    "accounts",
+    updated,
+    existing._offline ? existing._action : "update",
+  );
+  await enqueue(
+    "accounts",
+    id,
+    existing._offline ? existing._action : "update",
+  );
+  return updated;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RECURRING TEMPLATES (pause / resume)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import {
+  pauseRecurringTemplate as _pauseRecurringTemplate,
+  resumeRecurringTemplate as _resumeRecurringTemplate,
+  getTemplatesForAccount as _getTemplatesForAccount,
+} from "./recurring";
+
+export async function pauseRecurringTemplateOffline(id) {
+  const result = await tryOnline(() => _pauseRecurringTemplate(id));
+  if (!result.offline) {
+    await db.recurring_templates.update(id, { is_paused: true });
+    return result.data;
+  }
+  const existing = await db.recurring_templates.get(id);
+  if (!existing) throw new Error(`Recurring template ${id} not found locally`);
+  const updated = { ...existing, is_paused: true };
+  await putOffline(
+    "recurring_templates",
+    updated,
+    existing._offline ? existing._action : "update",
+  );
+  await enqueue(
+    "recurring_templates",
+    id,
+    existing._offline ? existing._action : "update",
+  );
+  return updated;
+}
+
+export async function resumeRecurringTemplateOffline(id) {
+  const result = await tryOnline(() => _resumeRecurringTemplate(id));
+  if (!result.offline) {
+    await db.recurring_templates.update(id, { is_paused: false });
+    return result.data;
+  }
+  const existing = await db.recurring_templates.get(id);
+  if (!existing) throw new Error(`Recurring template ${id} not found locally`);
+  const updated = { ...existing, is_paused: false };
+  await putOffline(
+    "recurring_templates",
+    updated,
+    existing._offline ? existing._action : "update",
+  );
+  await enqueue(
+    "recurring_templates",
+    id,
+    existing._offline ? existing._action : "update",
+  );
+  return updated;
+}
+
+export async function getTemplatesForAccountOffline(accountId) {
+  const result = await tryOnline(() => _getTemplatesForAccount(accountId));
+  if (!result.offline) return result.data;
+
+  // Offline fallback — scan local recurring_templates
+  const allTemplates = await db.recurring_templates.toArray();
+  return allTemplates.filter(
+    (t) =>
+      t.is_active !== false &&
+      (t.account_id === accountId || t.to_account_id === accountId),
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

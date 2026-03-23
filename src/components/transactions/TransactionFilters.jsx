@@ -192,7 +192,7 @@ export default function TransactionFilters({
         >
           <option value="">All Accounts</option>
           {(accounts || []).map((a) => (
-            <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+            <option key={a.id} value={a.id}>{maskAccountName(a.name)}{a.closed_at ? ' (Closed)' : ''}</option>
           ))}
         </select>
 

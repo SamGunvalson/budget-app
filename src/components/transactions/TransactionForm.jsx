@@ -236,9 +236,11 @@ export default function TransactionForm({ categories = [], accounts = [], initia
     }
   }
 
-  // Group accounts for dropdown
-  const assetAccounts = accounts.filter((a) => isAssetAccount(a.type));
-  const liabilityAccounts = accounts.filter((a) => !isAssetAccount(a.type));
+  // Group accounts for dropdown — exclude closed accounts unless already selected (editing)
+  const openAccounts = accounts.filter((a) => !a.closed_at || a.id === accountId || a.id === toAccountId || a.id === linkedAccountId);
+  const assetAccounts = openAccounts.filter((a) => isAssetAccount(a.type));
+  const liabilityAccounts = openAccounts.filter((a) => !isAssetAccount(a.type));
+  const acctLabel = (a) => maskAccountName(a.name) + (a.closed_at ? ' (Closed)' : '');
 
   function InfoTip({ text }) {
     return (
@@ -332,14 +334,14 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               {assetAccounts.length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
               {liabilityAccounts.length > 0 && (
                 <optgroup label="Liabilities">
                   {liabilityAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
@@ -361,14 +363,14 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               {assetAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.filter((a) => a.id !== accountId).map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
               {liabilityAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Liabilities">
                   {liabilityAccounts.filter((a) => a.id !== accountId).map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
@@ -390,14 +392,14 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               {assetAccounts.length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
               {liabilityAccounts.length > 0 && (
                 <optgroup label="Liabilities">
                   {liabilityAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
@@ -419,14 +421,14 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               {assetAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.filter((a) => a.id !== accountId).map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}
               {liabilityAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Liabilities">
                   {liabilityAccounts.filter((a) => a.id !== accountId).map((a) => (
-                    <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                    <option key={a.id} value={a.id}>{acctLabel(a)}</option>
                   ))}
                 </optgroup>
               )}

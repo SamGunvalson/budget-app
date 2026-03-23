@@ -28,6 +28,13 @@ export function isLiabilityAccount(type) {
 }
 
 /**
+ * Returns true if the account has been closed.
+ */
+export function isAccountClosed(account) {
+  return Boolean(account?.closed_at);
+}
+
+/**
  * Human-readable label for an account type.
  */
 export function formatAccountType(type) {
@@ -128,6 +135,7 @@ export async function updateAccount(id, updates) {
   if (updates.starting_balance !== undefined)
     payload.starting_balance = updates.starting_balance;
   if (updates.is_active !== undefined) payload.is_active = updates.is_active;
+  if (updates.closed_at !== undefined) payload.closed_at = updates.closed_at;
   payload.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
@@ -280,7 +288,10 @@ export async function getAccountBalances({ projectedToDate } = {}) {
 
     const balance = acct.starting_balance + postedNet;
     // Projected balance = actual + near-term pending + future projected recurring
-    const projectedBalance = balance + pendingNet + projectedNet;
+    // Closed accounts freeze at actual balance (no projection growth)
+    const projectedBalance = acct.closed_at
+      ? balance
+      : balance + pendingNet + projectedNet;
 
     return {
       ...acct,
@@ -565,4 +576,23 @@ export async function getNetWorth() {
     totalLiabilities,
     accounts: balances,
   };
+}
+
+/**
+ * Close an account by setting closed_at to the given date.
+ * @param {string} id
+ * @param {string} closedAt - YYYY-MM-DD date string
+ * @returns {Promise<Object>} Updated account
+ */
+export async function closeAccount(id, closedAt) {
+  return updateAccount(id, { closed_at: closedAt });
+}
+
+/**
+ * Reopen a closed account by clearing closed_at.
+ * @param {string} id
+ * @returns {Promise<Object>} Updated account
+ */
+export async function reopenAccount(id) {
+  return updateAccount(id, { closed_at: null });
 }

@@ -10,6 +10,8 @@ import { ACCOUNT_TYPES, isAssetAccount, getAccountBadgeColor } from '../../servi
  *  - onViewTransactions(accountId): navigate to filtered transaction view
  */
 export default function AccountList({ accounts, onViewTransactions }) {
+  const [showClosed, setShowClosed] = useState(false);
+
   if (!accounts || accounts.length === 0) {
     return (
       <div className="rounded-2xl border border-stone-200/60 bg-white p-12 text-center shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
@@ -26,9 +28,14 @@ export default function AccountList({ accounts, onViewTransactions }) {
     );
   }
 
+  // Separate open and closed accounts
+  const openAccounts = accounts.filter((a) => !a.closed_at);
+  const closedAccounts = accounts.filter((a) => a.closed_at);
+  const visibleAccounts = showClosed ? accounts : openAccounts;
+
   // Group accounts
-  const assetAccounts = accounts.filter((a) => isAssetAccount(a.type));
-  const liabilityAccounts = accounts.filter((a) => !isAssetAccount(a.type));
+  const assetAccounts = visibleAccounts.filter((a) => isAssetAccount(a.type));
+  const liabilityAccounts = visibleAccounts.filter((a) => !isAssetAccount(a.type));
 
   const actualTotal = (list) => list.reduce((sum, a) => sum + a.balance, 0);
   const projectedTotal = (list) => list.reduce((sum, a) => sum + (a.projected_balance ?? a.balance), 0);
@@ -36,29 +43,45 @@ export default function AccountList({ accounts, onViewTransactions }) {
   const hasBoth = assetAccounts.length > 0 && liabilityAccounts.length > 0;
 
   return (
-    <div className={hasBoth ? 'grid gap-6 lg:grid-cols-2' : 'space-y-6'}>
-      {/* Asset Accounts */}
-      {assetAccounts.length > 0 && (
-        <AccountGroup
-          title="Assets"
-          accounts={assetAccounts}
-          total={actualTotal(assetAccounts)}
-          projectedTotal={projectedTotal(assetAccounts)}
-          totalColor="text-emerald-600 dark:text-emerald-400"
-          onViewTransactions={onViewTransactions}
-        />
-      )}
+    <div className="space-y-4">
+      <div className={hasBoth ? 'grid gap-6 lg:grid-cols-2' : 'space-y-6'}>
+        {/* Asset Accounts */}
+        {assetAccounts.length > 0 && (
+          <AccountGroup
+            title="Assets"
+            accounts={assetAccounts}
+            total={actualTotal(assetAccounts)}
+            projectedTotal={projectedTotal(assetAccounts)}
+            totalColor="text-emerald-600 dark:text-emerald-400"
+            onViewTransactions={onViewTransactions}
+          />
+        )}
 
-      {/* Liability Accounts */}
-      {liabilityAccounts.length > 0 && (
-        <AccountGroup
-          title="Liabilities"
-          accounts={liabilityAccounts}
-          total={actualTotal(liabilityAccounts)}
-          projectedTotal={projectedTotal(liabilityAccounts)}
-          totalColor="text-red-600 dark:text-red-400"
-          onViewTransactions={onViewTransactions}
-        />
+        {/* Liability Accounts */}
+        {liabilityAccounts.length > 0 && (
+          <AccountGroup
+            title="Liabilities"
+            accounts={liabilityAccounts}
+            total={actualTotal(liabilityAccounts)}
+            projectedTotal={projectedTotal(liabilityAccounts)}
+            totalColor="text-red-600 dark:text-red-400"
+            onViewTransactions={onViewTransactions}
+          />
+        )}
+      </div>
+
+      {/* Show closed accounts toggle */}
+      {closedAccounts.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowClosed((v) => !v)}
+          className="flex items-center gap-1.5 text-sm font-medium text-stone-400 transition-colors hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300"
+        >
+          <svg className={`h-4 w-4 transition-transform ${showClosed ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+          {showClosed ? 'Hide' : 'Show'} closed accounts ({closedAccounts.length})
+        </button>
       )}
     </div>
   );
@@ -99,10 +122,11 @@ function AccountGroup({ title, accounts, total, projectedTotal, totalColor, onVi
           const actual = account.balance;
           const projected = account.projected_balance ?? account.balance;
           const diff = projected - actual;
+          const closed = Boolean(account.closed_at);
           return (
             <div
               key={account.id}
-              className="group flex items-center justify-between px-4 sm:px-6 py-3 sm:py-3.5 transition-colors hover:bg-stone-50/50 dark:hover:bg-stone-700/30"
+              className={`group flex items-center justify-between px-4 sm:px-6 py-3 sm:py-3.5 transition-colors hover:bg-stone-50/50 dark:hover:bg-stone-700/30 ${closed ? 'opacity-60' : ''}`}
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative shrink-0">
@@ -129,9 +153,16 @@ function AccountGroup({ title, accounts, total, projectedTotal, totalColor, onVi
                   >
                     {maskAccountName(account.name)}
                   </button>
-                  <span className={`hidden sm:inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${getAccountBadgeColor(account.type)} mt-0.5`}>
-                    {ACCOUNT_TYPES[account.type]?.label || account.type}
-                  </span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`hidden sm:inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${getAccountBadgeColor(account.type)}`}>
+                      {ACCOUNT_TYPES[account.type]?.label || account.type}
+                    </span>
+                    {closed && (
+                      <span className="inline-block rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-medium text-stone-600 dark:bg-stone-600 dark:text-stone-300">
+                        Closed {account.closed_at}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

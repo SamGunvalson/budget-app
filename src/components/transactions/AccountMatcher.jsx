@@ -32,18 +32,21 @@ export default function AccountMatcher({ mappedRows, accounts, onConfirm, onBack
     return Array.from(names).sort();
   }, [mappedRows]);
 
-  // Auto-match: try case-insensitive exact match to existing accounts
+  // Exclude closed accounts from matching and selection
+  const openAccounts = useMemo(() => accounts.filter((a) => !a.closed_at), [accounts]);
+
+  // Auto-match: try case-insensitive exact match to existing open accounts
   const autoMatches = useMemo(() => {
     const matches = {};
     csvAccountNames.forEach((csvName) => {
       const lower = csvName.toLowerCase();
-      const match = accounts.find(
+      const match = openAccounts.find(
         (a) => a.name.toLowerCase() === lower
       );
       if (match) matches[csvName] = match.id;
     });
     return matches;
-  }, [csvAccountNames, accounts]);
+  }, [csvAccountNames, openAccounts]);
 
   // Manual overrides
   const [manualOverrides, setManualOverrides] = useState({});
@@ -73,8 +76,8 @@ export default function AccountMatcher({ mappedRows, accounts, onConfirm, onBack
     const trimmed = newAccountName.trim();
     if (!trimmed) return;
 
-    // Check if an account with this name already exists (case-insensitive)
-    const existing = accounts.find(
+    // Check if an open account with this name already exists (case-insensitive)
+    const existing = openAccounts.find(
       (a) => a.name.toLowerCase() === trimmed.toLowerCase()
     );
     if (existing) {
@@ -248,7 +251,7 @@ export default function AccountMatcher({ mappedRows, accounts, onConfirm, onBack
                         }`}
                       >
                         <option value="">— Select account —</option>
-                        {accounts.map((acct) => (
+                        {openAccounts.map((acct) => (
                           <option key={acct.id} value={acct.id}>
                             {maskAccountName(acct.name)} ({ACCOUNT_TYPES[acct.type]?.label || acct.type})
                           </option>

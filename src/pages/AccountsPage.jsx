@@ -12,6 +12,11 @@ import {
   deleteAccountOffline as deleteAccount,
   getNetWorthHistoryOffline as getNetWorthHistory,
   getMaxProjectedDateOffline as getMaxProjectedDate,
+  closeAccountOffline as closeAccount,
+  reopenAccountOffline as reopenAccount,
+  pauseRecurringTemplateOffline as pauseTemplate,
+  resumeRecurringTemplateOffline as resumeTemplate,
+  getTemplatesForAccountOffline as getTemplatesForAccount,
 } from '../services/offlineAware';
 
 // ================================================
@@ -117,6 +122,28 @@ export default function AccountsPage() {
     await refreshAccounts();
   }
 
+  async function handleManageClose(id, closedAt) {
+    // Pause linked recurring templates
+    const templates = await getTemplatesForAccount(id);
+    for (const t of templates) {
+      if (!t.is_paused) await pauseTemplate(t.id);
+    }
+    await closeAccount(id, closedAt);
+    setShowManagerModal(false);
+    await refreshAccounts();
+  }
+
+  async function handleManageReopen(id) {
+    // Resume paused recurring templates linked to this account
+    const templates = await getTemplatesForAccount(id);
+    for (const t of templates) {
+      if (t.is_paused) await resumeTemplate(t.id);
+    }
+    await reopenAccount(id);
+    setShowManagerModal(false);
+    await refreshAccounts();
+  }
+
   function handleViewTransactions(accountId) {
     navigate(`/app/transactions?account=${accountId}`);
   }
@@ -131,7 +158,8 @@ export default function AccountsPage() {
   const projectedNetWorth = projectedTotalAssets - projectedTotalLiabilities;
 
   // Detect negative asset account balances — may indicate inverted imports
-  const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0);
+  // Exclude closed accounts from this warning
+  const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0 && !a.closed_at);
   const hasNegativeAssets = negativeAssets.length > 0;
 
   // ---------- Render ----------
@@ -255,6 +283,8 @@ export default function AccountsPage() {
             accounts={accounts}
             onSubmit={handleManageSubmit}
             onDelete={handleManageDelete}
+            onClose={handleManageClose}
+            onReopen={handleManageReopen}
             onCancel={() => setShowManagerModal(false)}
           />
         </Modal>
