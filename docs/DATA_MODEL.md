@@ -104,6 +104,7 @@ const defaultCategories = [
 **Known preference keys**:
 
 - `type_group_order`: Array of type strings defining display order, e.g. `["income", "needs", "wants", "savings"]`
+- `favorite_accounts`: Array of account UUIDs marked as favorites, e.g. `["uuid1", "uuid2"]`. Surfaced as a "⭐ Favorites" optgroup at the top of account selectors in the transaction form.
 
 **RLS**: Users can only access their own preferences
 
@@ -167,6 +168,7 @@ const defaultCategories = [
 | `type`             | TEXT        | NOT NULL                | Account type (see CHECK below)        |
 | `starting_balance` | BIGINT      | DEFAULT 0               | Opening balance in cents              |
 | `is_active`        | BOOLEAN     | DEFAULT TRUE            | Soft delete flag                      |
+| `closed_at`        | DATE        | DEFAULT NULL            | Closure date (NULL = open)            |
 | `created_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp                    |
 | `updated_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Last update timestamp                 |
 
@@ -258,6 +260,7 @@ const defaultCategories = [
 | `group_order`       | INT         | DEFAULT 0                                   | Sort order within group (children)                                                                                                                         |
 | `auto_confirm`      | BOOLEAN     | NOT NULL, DEFAULT TRUE                      | If true, applied transactions start as 'posted'; if false, start as 'pending'                                                                              |
 | `projected_through` | DATE        | NULL                                        | Last date through which projected transactions have been generated                                                                                         |
+| `is_paused`         | BOOLEAN     | DEFAULT FALSE                               | If true, template is paused and skipped during projection (auto-set when account is closed)                                                                |
 | `is_active`         | BOOLEAN     | DEFAULT TRUE                                | Active status                                                                                                                                              |
 | `created_at`        | TIMESTAMPTZ | DEFAULT NOW()                               | Creation timestamp                                                                                                                                         |
 
@@ -303,6 +306,7 @@ interface RecurringTemplate {
   group_order: number;
   auto_confirm: boolean;
   projected_through?: string;
+  is_paused: boolean;
   is_active: boolean;
   created_at: string;
   // Joined relations
@@ -546,6 +550,7 @@ CREATE TABLE accounts (
   type TEXT NOT NULL CHECK (type IN ('checking', 'savings', 'credit_card', 'retirement', 'brokerage', 'loan', 'mortgage')),
   starting_balance BIGINT DEFAULT 0,
   is_active BOOLEAN DEFAULT TRUE,
+  closed_at DATE DEFAULT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -648,6 +653,7 @@ CREATE TABLE recurring_templates (
   group_order INT DEFAULT 0,
   auto_confirm BOOLEAN NOT NULL DEFAULT TRUE,
   projected_through DATE,
+  is_paused BOOLEAN DEFAULT FALSE,
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
@@ -733,6 +739,7 @@ export interface Account {
     | "mortgage";
   starting_balance: number; // in cents
   is_active: boolean;
+  closed_at?: string; // ISO date string, NULL = open
   created_at: string;
   updated_at: string;
 }
@@ -784,6 +791,7 @@ export interface RecurringTemplate {
   auto_confirm: boolean;
   projected_through?: string;
   group_order: number;
+  is_paused: boolean;
   is_active: boolean;
   created_at: string;
   // Joined relations (when fetched with select)

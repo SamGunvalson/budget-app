@@ -200,6 +200,21 @@ export default function AnnualActualsTable({ year: yearProp }) {
     return g;
   }, [budgetableCategories, typeOrder]);
 
+  // ── Per-type monthly subtotals { [type]: { [month]: cents } } ──
+  const groupSubtotals = useMemo(() => {
+    const result = {};
+    typeOrder.forEach((type) => {
+      result[type] = {};
+      MONTHS.forEach((m) => {
+        result[type][m] = (grouped[type] || []).reduce(
+          (sum, cat) => sum + (actualData[m]?.[cat.id] || 0),
+          0,
+        );
+      });
+    });
+    return result;
+  }, [typeOrder, grouped, actualData]);
+
   const incomeCatIds = useMemo(
     () => new Set(categories.filter((c) => c.type === 'income').map((c) => c.id)),
     [categories],
@@ -363,7 +378,23 @@ export default function AnnualActualsTable({ year: yearProp }) {
                           {typeStyle.label}
                         </span>
                       </td>
-                      <td colSpan={MONTHS.length + 1} className={`border-t ${typeStyle.headerBorder} ${typeStyle.headerBg}`} />
+                      {MONTHS.map((m) => {
+                          const val = groupSubtotals[type]?.[m] || 0;
+                          return (
+                            <td
+                              key={m}
+                              className={`border-t ${typeStyle.headerBorder} ${typeStyle.headerBg} px-0.5 py-1.5 text-center text-[11px] font-bold ${typeStyle.headerText}`}
+                            >
+                              {val === 0 ? <span className="opacity-30">–</span> : formatCurrency(val, 'USD', { hideCents: true })}
+                            </td>
+                          );
+                        })}
+                      <td className={`border-t ${typeStyle.headerBorder} ${typeStyle.headerBg} px-2 py-1.5 text-right text-[11px] font-bold ${typeStyle.headerText}`}>
+                        {(() => {
+                          const annual = MONTHS.reduce((s, m) => s + (groupSubtotals[type]?.[m] || 0), 0);
+                          return annual === 0 ? <span className="opacity-30">–</span> : formatCurrency(annual, 'USD', { hideCents: true });
+                        })()}
+                      </td>
                     </tr>
 
                     {/* Category rows */}

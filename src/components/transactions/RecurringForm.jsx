@@ -62,10 +62,11 @@ export default function RecurringForm({
     }))
     .filter((g) => g.items.length > 0);
 
-  // Group accounts by type
+  // Group accounts by type — exclude closed accounts unless already selected (editing)
+  const openAccounts = accounts.filter((a) => !a.closed_at || a.id === accountId || a.id === toAccountId || a.id === linkedAccountId);
   const groupedAccounts = Object.entries(
-    accounts.reduce((acc, a) => {
-      const label = ACCOUNT_TYPES[a.type]?.label || a.type;
+    openAccounts.reduce((acc, a) => {
+      const label = (ACCOUNT_TYPES[a.type]?.label || a.type) + (a.closed_at ? ' (Closed)' : '');
       if (!acc[label]) acc[label] = [];
       acc[label].push(a);
       return acc;

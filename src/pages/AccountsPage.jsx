@@ -12,7 +12,13 @@ import {
   deleteAccountOffline as deleteAccount,
   getNetWorthHistoryOffline as getNetWorthHistory,
   getMaxProjectedDateOffline as getMaxProjectedDate,
+  closeAccountOffline as closeAccount,
+  reopenAccountOffline as reopenAccount,
+  pauseRecurringTemplateOffline as pauseTemplate,
+  resumeRecurringTemplateOffline as resumeTemplate,
+  getTemplatesForAccountOffline as getTemplatesForAccount,
 } from '../services/offlineAware';
+import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
 
 // ================================================
 // AccountsPage
@@ -24,6 +30,7 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [favoriteAccountIds, setFavoriteAccountIdsState] = useState([]);
 
   // Chart state
   const [chartData, setChartData] = useState([]);
@@ -53,8 +60,10 @@ export default function AccountsPage() {
           getNetWorthHistory(),
           getMaxProjectedDate(),
         ]);
+        const favIds = await getFavoriteAccountIds().catch(() => []);
         if (!cancelled) {
           setAccounts(data);
+          setFavoriteAccountIdsState(favIds);
           setChartData(nwHistory.history ?? nwHistory);
           setProjectedChartData(nwHistory.projectedFuture ?? []);
           if (maxDate && !projectedToDate) {
@@ -111,8 +120,38 @@ export default function AccountsPage() {
     await refreshAccounts();
   }
 
+  async function handleToggleFavorite(id) {
+    const next = favoriteAccountIds.includes(id)
+      ? favoriteAccountIds.filter((fid) => fid !== id)
+      : [...favoriteAccountIds, id];
+    setFavoriteAccountIdsState(next);
+    await setFavoriteAccountIds(next).catch(() => {});
+  }
+
   async function handleManageDelete(id) {
     await deleteAccount(id);
+    setShowManagerModal(false);
+    await refreshAccounts();
+  }
+
+  async function handleManageClose(id, closedAt) {
+    // Pause linked recurring templates
+    const templates = await getTemplatesForAccount(id);
+    for (const t of templates) {
+      if (!t.is_paused) await pauseTemplate(t.id);
+    }
+    await closeAccount(id, closedAt);
+    setShowManagerModal(false);
+    await refreshAccounts();
+  }
+
+  async function handleManageReopen(id) {
+    // Resume paused recurring templates linked to this account
+    const templates = await getTemplatesForAccount(id);
+    for (const t of templates) {
+      if (t.is_paused) await resumeTemplate(t.id);
+    }
+    await reopenAccount(id);
     setShowManagerModal(false);
     await refreshAccounts();
   }
@@ -131,7 +170,8 @@ export default function AccountsPage() {
   const projectedNetWorth = projectedTotalAssets - projectedTotalLiabilities;
 
   // Detect negative asset account balances — may indicate inverted imports
-  const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0);
+  // Exclude closed accounts from this warning
+  const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0 && !a.closed_at);
   const hasNegativeAssets = negativeAssets.length > 0;
 
   // ---------- Render ----------
@@ -255,7 +295,11 @@ export default function AccountsPage() {
             accounts={accounts}
             onSubmit={handleManageSubmit}
             onDelete={handleManageDelete}
+            onClose={handleManageClose}
+            onReopen={handleManageReopen}
             onCancel={() => setShowManagerModal(false)}
+            favoriteAccountIds={favoriteAccountIds}
+            onToggleFavorite={handleToggleFavorite}
           />
         </Modal>
       )}

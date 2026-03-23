@@ -369,10 +369,10 @@ const TransactionItem = forwardRef(function TransactionItem({
     label: `${c.name} (${c.type})`,
   }));
 
-  // Build account options for dropdown
+  // Build account options for dropdown — include closed accounts with label since this edits existing transactions
   const accountOptions = (accounts || []).map((a) => ({
     value: a.id,
-    label: maskAccountName(a.name),
+    label: maskAccountName(a.name) + (a.closed_at ? ' (Closed)' : ''),
   }));
 
   // Determine displayed values (pendingEdits override originals)

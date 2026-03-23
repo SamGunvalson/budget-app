@@ -40,6 +40,9 @@ export async function getRecurringTemplates() {
     t.to_account = t.to_accounts || null;
     delete t.to_accounts;
 
+    // Skip paused templates
+    if (t.is_paused) continue;
+
     if (t.group_id) {
       // This is a child of a group
       if (!childMap.has(t.group_id)) childMap.set(t.group_id, []);
@@ -191,6 +194,8 @@ export async function updateRecurringTemplate(id, updates) {
     payload.group_order = updates.group_order;
   if (updates.auto_confirm !== undefined)
     payload.auto_confirm = updates.auto_confirm;
+  if (updates.is_paused !== undefined)
+    payload.is_paused = updates.is_paused;
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -315,6 +320,39 @@ export async function deleteRecurringTemplate(id) {
     .eq("id", id);
 
   if (error) throw error;
+}
+
+/**
+ * Pause a recurring template (set is_paused = true).
+ * Paused templates are skipped during projected transaction generation.
+ * @param {string} id
+ */
+export async function pauseRecurringTemplate(id) {
+  return updateRecurringTemplate(id, { is_paused: true });
+}
+
+/**
+ * Resume a paused recurring template (set is_paused = false).
+ * @param {string} id
+ */
+export async function resumeRecurringTemplate(id) {
+  return updateRecurringTemplate(id, { is_paused: false });
+}
+
+/**
+ * Fetch all active recurring templates (including paused) that reference
+ * a given account as account_id or to_account_id.
+ * @param {string} accountId
+ * @returns {Promise<Array>}
+ */
+export async function getTemplatesForAccount(accountId) {
+  const { data, error } = await supabase
+    .from("recurring_templates")
+    .select("id, description, account_id, to_account_id, is_paused, group_id, is_group_parent")
+    .eq("is_active", true)
+    .or(`account_id.eq.${accountId},to_account_id.eq.${accountId}`);
+  if (error) throw error;
+  return data || [];
 }
 
 // ── Apply Logic ──

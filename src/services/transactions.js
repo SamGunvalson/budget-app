@@ -1,6 +1,23 @@
 import { supabase, getCurrentUser } from "./supabase";
 
 /**
+ * Guard: reject transaction creation if the target account is closed.
+ * @param {string} accountId
+ */
+async function assertAccountOpen(accountId) {
+  if (!accountId) return;
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("closed_at")
+    .eq("id", accountId)
+    .single();
+  if (error) throw error;
+  if (data?.closed_at) {
+    throw new Error("Cannot create transactions on a closed account.");
+  }
+}
+
+/**
  * Fetch active transactions for the current user, optionally filtered by month/year and status.
  * Joins with categories for display.
  * @param {{ month?: number, year?: number, status?: 'projected'|'pending'|'posted'|'all' }} filters
@@ -64,6 +81,8 @@ export async function createTransaction({
   status,
   recurring_template_id,
 }) {
+  await assertAccountOpen(account_id);
+
   const {
     data: { user },
     error: userError,
@@ -165,6 +184,9 @@ export async function createTransfer({
   transaction_date,
   category_id,
 }) {
+  await assertAccountOpen(from_account_id);
+  await assertAccountOpen(to_account_id);
+
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 
@@ -221,6 +243,9 @@ export async function createLinkedTransfer({
   transaction_date,
   is_income,
 }) {
+  await assertAccountOpen(account_id);
+  await assertAccountOpen(linked_account_id);
+
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 

@@ -16,7 +16,7 @@ import Dexie from "dexie";
 
 export const db = new Dexie("BudgetAppOffline");
 
-db.version(1).stores({
+db.version(2).stores({
   // ── Core tables (mirror Supabase) ──
   transactions: [
     "id",
@@ -71,6 +71,7 @@ db.version(1).stores({
     "user_id",
     "type",
     "is_active",
+    "closed_at",
     "_offline",
     "_action",
     "_offlineAt",
@@ -93,6 +94,7 @@ db.version(1).stores({
     "category_id",
     "frequency",
     "is_active",
+    "is_paused",
     "group_id",
     "is_group_parent",
     "_offline",

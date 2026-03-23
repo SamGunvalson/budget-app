@@ -133,6 +133,7 @@ CREATE TABLE accounts (
                                 )),
   starting_balance BIGINT     DEFAULT 0,
   is_active       BOOLEAN     DEFAULT TRUE,
+  closed_at       DATE        DEFAULT NULL,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -240,6 +241,7 @@ CREATE TABLE recurring_templates (
   group_order      INT         DEFAULT 0,
   auto_confirm     BOOLEAN     NOT NULL DEFAULT TRUE,
   projected_through DATE,
+  is_paused        BOOLEAN     DEFAULT FALSE,
   is_active        BOOLEAN     DEFAULT TRUE,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)

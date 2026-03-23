@@ -5,6 +5,15 @@ import {
   isIncomeDebit,
 } from "../utils/helpers";
 
+const CATEGORY_TYPE_ORDER = { income: 0, needs: 1, wants: 2, savings: 3 };
+
+function sortCategories(a, b) {
+  const ta = CATEGORY_TYPE_ORDER[a.categoryType] ?? 4;
+  const tb = CATEGORY_TYPE_ORDER[b.categoryType] ?? 4;
+  if (ta !== tb) return ta - tb;
+  return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+}
+
 /**
  * Get (or return null) the budget plan for a specific month/year.
  * @param {number} month 1-12
@@ -154,7 +163,9 @@ export async function getPlanVsActual({ month, year }) {
   if (plan) {
     const { data: items, error: itemsError } = await supabase
       .from("budget_items")
-      .select("category_id, planned_amount, categories(id, name, color, type)")
+      .select(
+        "category_id, planned_amount, categories(id, name, color, type, sort_order)",
+      )
       .eq("budget_plan_id", plan.id);
     if (itemsError) throw itemsError;
     budgetItems = items || [];
@@ -176,7 +187,7 @@ export async function getPlanVsActual({ month, year }) {
     const { data, error: txError } = await supabase
       .from("transactions")
       .select(
-        "category_id, amount, is_income, categories(id, name, color, type)",
+        "category_id, amount, is_income, categories(id, name, color, type, sort_order)",
       )
       .eq("user_id", user.id)
       .is("deleted_at", null)
@@ -205,6 +216,7 @@ export async function getPlanVsActual({ month, year }) {
         categoryName: item.categories?.name || "Unknown",
         categoryColor: item.categories?.color || "#A8A29E",
         categoryType: item.categories?.type || "expense",
+        sortOrder: item.categories?.sort_order ?? 999,
         planned: 0,
         actual: 0,
       };
@@ -222,6 +234,7 @@ export async function getPlanVsActual({ month, year }) {
         categoryName: tx.categories?.name || "Uncategorized",
         categoryColor: tx.categories?.color || "#A8A29E",
         categoryType: tx.categories?.type || "expense",
+        sortOrder: tx.categories?.sort_order ?? 999,
         planned: 0,
         actual: 0,
       };
@@ -246,7 +259,7 @@ export async function getPlanVsActual({ month, year }) {
   );
   const actualIncome = incomeCats.reduce((sum, c) => sum + c.actual, 0);
 
-  const categories = Object.values(map).sort((a, b) => b.actual - a.actual);
+  const categories = Object.values(map).sort(sortCategories);
   return {
     categories,
     plannedIncome: plan?.total_income || 0,
@@ -294,7 +307,9 @@ export async function getPlanVsActualYTD({ year, throughMonth }) {
   if (planIds.length > 0) {
     const { data: items, error: itemsError } = await supabase
       .from("budget_items")
-      .select("category_id, planned_amount, categories(id, name, color, type)")
+      .select(
+        "category_id, planned_amount, categories(id, name, color, type, sort_order)",
+      )
       .in("budget_plan_id", planIds);
     if (itemsError) throw itemsError;
     budgetItems = items || [];
@@ -316,7 +331,7 @@ export async function getPlanVsActualYTD({ year, throughMonth }) {
     const { data, error: txError } = await supabase
       .from("transactions")
       .select(
-        "category_id, amount, is_income, categories(id, name, color, type)",
+        "category_id, amount, is_income, categories(id, name, color, type, sort_order)",
       )
       .eq("user_id", user.id)
       .is("deleted_at", null)
@@ -345,6 +360,7 @@ export async function getPlanVsActualYTD({ year, throughMonth }) {
         categoryName: item.categories?.name || "Unknown",
         categoryColor: item.categories?.color || "#A8A29E",
         categoryType: item.categories?.type || "expense",
+        sortOrder: item.categories?.sort_order ?? 999,
         planned: 0,
         actual: 0,
       };
@@ -362,6 +378,7 @@ export async function getPlanVsActualYTD({ year, throughMonth }) {
         categoryName: tx.categories?.name || "Uncategorized",
         categoryColor: tx.categories?.color || "#A8A29E",
         categoryType: tx.categories?.type || "expense",
+        sortOrder: tx.categories?.sort_order ?? 999,
         planned: 0,
         actual: 0,
       };
@@ -385,7 +402,7 @@ export async function getPlanVsActualYTD({ year, throughMonth }) {
     .filter((c) => c.categoryType === "income")
     .reduce((sum, c) => sum + c.actual, 0);
 
-  const categories = Object.values(map).sort((a, b) => b.actual - a.actual);
+  const categories = Object.values(map).sort(sortCategories);
   return {
     categories,
     plannedIncome,

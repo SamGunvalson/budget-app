@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toCents, toDollars } from '../../utils/helpers';
-import { ACCOUNT_TYPES } from '../../services/accounts';
+import { ACCOUNT_TYPES, isAccountClosed } from '../../services/accounts';
 
 const ACCOUNT_TYPE_GROUPS = [
   {
@@ -14,15 +14,17 @@ const ACCOUNT_TYPE_GROUPS = [
 ];
 
 /**
- * AccountForm — create, edit, or delete a financial account.
+ * AccountForm — create, edit, close/reopen, or delete a financial account.
  *
  * Props:
  *  - accounts: array of existing account objects (for the selector)
  *  - onSubmit(values): called with { name, type, starting_balance, id? }
  *  - onDelete(id): called when an account is confirmed for deletion
+ *  - onClose(id, closedAt): called when closing an account
+ *  - onReopen(id): called when reopening a closed account
  *  - onCancel(): close form
  */
-export default function AccountForm({ accounts = [], onSubmit, onDelete, onCancel }) {
+export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose, onReopen, onCancel, favoriteAccountIds = [], onToggleFavorite }) {
   const [selectedId, setSelectedId] = useState('');
   const [name, setName] = useState('');
   const [type, setType] = useState('checking');
@@ -32,14 +34,21 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onCance
   const [submitError, setSubmitError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [closureDate, setClosureDate] = useState('');
 
   const isEditing = selectedId !== '';
+  const selectedAccount = isEditing ? accounts.find((a) => a.id === selectedId) : null;
+  const isClosed = isAccountClosed(selectedAccount);
 
   // Populate or clear form when account selection changes
   useEffect(() => {
     setErrors({});
     setSubmitError('');
     setShowDeleteConfirm(false);
+    setShowCloseConfirm(false);
+    setClosureDate('');
     if (!selectedId) {
       setName('');
       setType('checking');
@@ -95,6 +104,28 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onCance
     }
   }
 
+  async function handleClose() {
+    const dateVal = closureDate || new Date().toISOString().slice(0, 10);
+    setIsClosing(true);
+    try {
+      await onClose(selectedId, dateVal);
+    } catch (err) {
+      setSubmitError(err?.message || 'Failed to close account.');
+      setIsClosing(false);
+      setShowCloseConfirm(false);
+    }
+  }
+
+  async function handleReopen() {
+    setIsClosing(true);
+    try {
+      await onReopen(selectedId);
+    } catch (err) {
+      setSubmitError(err?.message || 'Failed to reopen account.');
+      setIsClosing(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Account selector */}
@@ -108,7 +139,7 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onCance
           <option value="">── New Account ──</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.name}
+              {a.name}{isAccountClosed(a) ? ' (Closed)' : ''}
             </option>
           ))}
         </select>
@@ -177,6 +208,29 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onCance
         {errors.startingBalance && <p className="text-xs text-red-500">{errors.startingBalance}</p>}
       </div>
 
+      {/* Favorite toggle — only shown when editing an existing account */}
+      {isEditing && onToggleFavorite && (
+        <div className="border-t border-stone-100 pt-4 dark:border-stone-700">
+          <button
+            type="button"
+            onClick={() => onToggleFavorite(selectedId)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-6 py-2 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+          >
+            {favoriteAccountIds.includes(selectedId) ? (
+              <>
+                <span aria-hidden="true">★</span>
+                Remove from Favorites
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">☆</span>
+                Add to Favorites
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Primary actions */}
       <div className="flex gap-3 pt-4">
         <button
@@ -194,6 +248,77 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onCance
           Cancel
         </button>
       </div>
+
+      {/* Closed account banner */}
+      {isEditing && isClosed && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            This account was closed on {selectedAccount.closed_at}.
+          </p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            Closed accounts are hidden from transaction forms and recurring templates are paused.
+          </p>
+        </div>
+      )}
+
+      {/* Close / Reopen section — only for existing accounts */}
+      {isEditing && (
+        <div className="border-t border-stone-100 pt-4 dark:border-stone-700">
+          {isClosed ? (
+            <button
+              type="button"
+              onClick={handleReopen}
+              disabled={isClosing}
+              className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-2 text-sm font-medium text-emerald-700 transition-all hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 dark:hover:bg-emerald-900"
+            >
+              {isClosing ? 'Reopening…' : 'Reopen Account'}
+            </button>
+          ) : !showCloseConfirm ? (
+            <button
+              type="button"
+              onClick={() => {
+                setClosureDate(new Date().toISOString().slice(0, 10));
+                setShowCloseConfirm(true);
+              }}
+              className="w-full rounded-xl border border-amber-200 bg-amber-50 px-6 py-2 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+            >
+              Close Account
+            </button>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+              <p className="mb-2 text-sm text-amber-800 dark:text-amber-300">
+                Closing this account will hide it from transaction forms and pause any linked recurring templates.
+              </p>
+              <div className="mb-3 space-y-1.5">
+                <label className="block text-xs font-medium text-amber-700 dark:text-amber-400">Closure date</label>
+                <input
+                  type="date"
+                  value={closureDate}
+                  onChange={(e) => setClosureDate(e.target.value)}
+                  className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700 dark:bg-stone-800 dark:text-stone-100"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  disabled={isClosing}
+                  className="flex-1 rounded-lg bg-amber-500 px-4 py-1.5 text-sm font-semibold text-white transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isClosing ? 'Closing…' : 'Confirm Close'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCloseConfirm(false)}
+                  className="flex-1 rounded-lg border border-stone-200 bg-white px-4 py-1.5 text-sm font-medium text-stone-600 transition-all hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Delete section — only shown when editing an existing account */}
       {isEditing && (
