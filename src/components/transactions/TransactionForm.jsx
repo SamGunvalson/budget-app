@@ -18,7 +18,7 @@ import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
  *  - defaultAccountId: optional pre-selected account
  *  - linkedAccountId: pre-resolved linked account ID when editing a linked transfer
  */
-export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, linkedAccountId: initialLinkedAccountId, partnership, hasSplit }) {
+export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
   const [accountId, setAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
@@ -238,6 +238,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
 
   // Group accounts for dropdown — exclude closed accounts unless already selected (editing)
   const openAccounts = accounts.filter((a) => !a.closed_at || a.id === accountId || a.id === toAccountId || a.id === linkedAccountId);
+  const favoriteAccounts = openAccounts.filter((a) => favoriteAccountIds.includes(a.id));
   const assetAccounts = openAccounts.filter((a) => isAssetAccount(a.type));
   const liabilityAccounts = openAccounts.filter((a) => !isAssetAccount(a.type));
   const acctLabel = (a) => maskAccountName(a.name) + (a.closed_at ? ' (Closed)' : '');
@@ -331,6 +332,13 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">Account…</option>
+              {favoriteAccounts.length > 0 && (
+                <optgroup label="⭐ Favorites">
+                  {favoriteAccounts.map((a) => (
+                    <option key={`fav-${a.id}`} value={a.id}>{acctLabel(a)}</option>
+                  ))}
+                </optgroup>
+              )}
               {assetAccounts.length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.map((a) => (
@@ -360,6 +368,13 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">None</option>
+              {favoriteAccounts.filter((a) => a.id !== accountId).length > 0 && (
+                <optgroup label="⭐ Favorites">
+                  {favoriteAccounts.filter((a) => a.id !== accountId).map((a) => (
+                    <option key={`fav-${a.id}`} value={a.id}>{acctLabel(a)}</option>
+                  ))}
+                </optgroup>
+              )}
               {assetAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.filter((a) => a.id !== accountId).map((a) => (
@@ -389,6 +404,13 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">Account…</option>
+              {favoriteAccounts.length > 0 && (
+                <optgroup label="⭐ Favorites">
+                  {favoriteAccounts.map((a) => (
+                    <option key={`fav-${a.id}`} value={a.id}>{acctLabel(a)}</option>
+                  ))}
+                </optgroup>
+              )}
               {assetAccounts.length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.map((a) => (
@@ -418,6 +440,13 @@ export default function TransactionForm({ categories = [], accounts = [], initia
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">None (adjustment)</option>
+              {favoriteAccounts.filter((a) => a.id !== accountId).length > 0 && (
+                <optgroup label="⭐ Favorites">
+                  {favoriteAccounts.filter((a) => a.id !== accountId).map((a) => (
+                    <option key={`fav-${a.id}`} value={a.id}>{acctLabel(a)}</option>
+                  ))}
+                </optgroup>
+              )}
               {assetAccounts.filter((a) => a.id !== accountId).length > 0 && (
                 <optgroup label="Assets">
                   {assetAccounts.filter((a) => a.id !== accountId).map((a) => (

@@ -104,6 +104,7 @@ const defaultCategories = [
 **Known preference keys**:
 
 - `type_group_order`: Array of type strings defining display order, e.g. `["income", "needs", "wants", "savings"]`
+- `favorite_accounts`: Array of account UUIDs marked as favorites, e.g. `["uuid1", "uuid2"]`. Surfaced as a "⭐ Favorites" optgroup at the top of account selectors in the transaction form.
 
 **RLS**: Users can only access their own preferences
 

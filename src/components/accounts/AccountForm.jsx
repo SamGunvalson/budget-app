@@ -24,7 +24,7 @@ const ACCOUNT_TYPE_GROUPS = [
  *  - onReopen(id): called when reopening a closed account
  *  - onCancel(): close form
  */
-export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose, onReopen, onCancel }) {
+export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose, onReopen, onCancel, favoriteAccountIds = [], onToggleFavorite }) {
   const [selectedId, setSelectedId] = useState('');
   const [name, setName] = useState('');
   const [type, setType] = useState('checking');
@@ -207,6 +207,29 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
         </p>
         {errors.startingBalance && <p className="text-xs text-red-500">{errors.startingBalance}</p>}
       </div>
+
+      {/* Favorite toggle — only shown when editing an existing account */}
+      {isEditing && onToggleFavorite && (
+        <div className="border-t border-stone-100 pt-4 dark:border-stone-700">
+          <button
+            type="button"
+            onClick={() => onToggleFavorite(selectedId)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-6 py-2 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+          >
+            {favoriteAccountIds.includes(selectedId) ? (
+              <>
+                <span aria-hidden="true">★</span>
+                Remove from Favorites
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">☆</span>
+                Add to Favorites
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Primary actions */}
       <div className="flex gap-3 pt-4">

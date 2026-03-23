@@ -18,6 +18,7 @@ import {
   resumeRecurringTemplateOffline as resumeTemplate,
   getTemplatesForAccountOffline as getTemplatesForAccount,
 } from '../services/offlineAware';
+import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
 
 // ================================================
 // AccountsPage
@@ -29,6 +30,7 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [favoriteAccountIds, setFavoriteAccountIdsState] = useState([]);
 
   // Chart state
   const [chartData, setChartData] = useState([]);
@@ -58,8 +60,10 @@ export default function AccountsPage() {
           getNetWorthHistory(),
           getMaxProjectedDate(),
         ]);
+        const favIds = await getFavoriteAccountIds().catch(() => []);
         if (!cancelled) {
           setAccounts(data);
+          setFavoriteAccountIdsState(favIds);
           setChartData(nwHistory.history ?? nwHistory);
           setProjectedChartData(nwHistory.projectedFuture ?? []);
           if (maxDate && !projectedToDate) {
@@ -114,6 +118,14 @@ export default function AccountsPage() {
     }
     setShowManagerModal(false);
     await refreshAccounts();
+  }
+
+  async function handleToggleFavorite(id) {
+    const next = favoriteAccountIds.includes(id)
+      ? favoriteAccountIds.filter((fid) => fid !== id)
+      : [...favoriteAccountIds, id];
+    setFavoriteAccountIdsState(next);
+    await setFavoriteAccountIds(next).catch(() => {});
   }
 
   async function handleManageDelete(id) {
@@ -286,6 +298,8 @@ export default function AccountsPage() {
             onClose={handleManageClose}
             onReopen={handleManageReopen}
             onCancel={() => setShowManagerModal(false)}
+            favoriteAccountIds={favoriteAccountIds}
+            onToggleFavorite={handleToggleFavorite}
           />
         </Modal>
       )}

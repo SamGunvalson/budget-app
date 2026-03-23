@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { getUserPreference, setUserPreference } from "./categories";
 
 /**
  * Account type constants and groupings.
@@ -595,4 +596,23 @@ export async function closeAccount(id, closedAt) {
  */
 export async function reopenAccount(id) {
   return updateAccount(id, { closed_at: null });
+}
+
+// ── Favorite Accounts ──
+
+/**
+ * Get the list of account IDs the user has marked as favorites.
+ * @returns {Promise<string[]>} Array of account UUID strings
+ */
+export async function getFavoriteAccountIds() {
+  return (await getUserPreference('favorite_accounts')) ?? [];
+}
+
+/**
+ * Persist the full list of favorite account IDs.
+ * @param {string[]} ids
+ * @returns {Promise<void>}
+ */
+export async function setFavoriteAccountIds(ids) {
+  await setUserPreference('favorite_accounts', ids);
 }

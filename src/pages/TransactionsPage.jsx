@@ -32,7 +32,7 @@ import {
   clearProjectedTransactionsForTemplate,
 } from '../services/recurring';
 import { toCents } from '../utils/helpers';
-import { isAssetAccount } from '../services/accounts';
+import { isAssetAccount, getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
@@ -53,6 +53,7 @@ export default function TransactionsPage() {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [accountBalances, setAccountBalances] = useState([]);
+  const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -134,11 +135,13 @@ export default function TransactionsPage() {
           ? getTransactionsForYear({ year })
           : getTransactions({ month, year });
         const [txData, catData, acctData, balData] = await Promise.all([txPromise, getCategories(), getAccounts(), getAccountBalancesOffline()]);
+        const favIds = await getFavoriteAccountIds().catch(() => []);
         if (!cancelled) {
           setTransactions(txData);
           setCategories(catData);
           setAccounts(acctData);
           setAccountBalances(balData);
+          setFavoriteAccountIds(favIds);
           setDataLoadKey((k) => k + 1);
         }
       } catch (err) {
@@ -679,6 +682,7 @@ export default function TransactionsPage() {
             onSubmitAdjustment={handleCreateAdjustment}
             onCancel={() => setShowCreateModal(false)}
             partnership={partnership}
+            favoriteAccountIds={favoriteAccountIds}
           />
         </Modal>
       )}
@@ -719,6 +723,7 @@ export default function TransactionsPage() {
                   )?.account_id
                 : undefined
             }
+            favoriteAccountIds={favoriteAccountIds}
           />
         </Modal>
       )}
