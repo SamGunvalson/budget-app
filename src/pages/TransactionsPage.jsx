@@ -256,6 +256,11 @@ export default function TransactionsPage() {
   const balanceMap = useMemo(() => {
     if (!accountBalances.length || !transactions.length) return new Map();
 
+    // Today's date string — same cutoff used by getAccountBalances when computing info.balance.
+    // info.balance only includes posted transactions with transaction_date <= todayStr.
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     // Build lookup: account_id → { balance (current cumulative in cents), is_asset }
     const balLookup = {};
     for (const ab of accountBalances) {
@@ -282,10 +287,12 @@ export default function TransactionsPage() {
         return (a.is_income ? 1 : 0) - (b.is_income ? 1 : 0);
       });
 
-      // Calculate the total net delta for these transactions (posted only, matching getAccountBalances)
+      // Back out only the transactions that are already included in info.balance:
+      // posted transactions on or before today. This matches the getAccountBalances cutoff
+      // exactly, so `running` starts at the correct opening balance before this period.
       let periodNet = 0;
       for (const tx of sorted) {
-        if (tx.status !== 'posted') continue;
+        if (tx.status !== 'posted' || tx.transaction_date > todayStr) continue;
         const amt = Math.abs(tx.amount);
         const delta = info.is_asset
           ? (tx.is_income ? amt : -amt)
@@ -293,10 +300,12 @@ export default function TransactionsPage() {
         periodNet += delta;
       }
 
-      // Balance before the first transaction in this period
+      // Opening balance before the first transaction in this set
       let running = info.balance - periodNet;
 
-      // Walk forward through all transactions, accumulating the running balance
+      // Walk forward through ALL transactions (posted + pending + projected) to build a
+      // forecast balance. This lets users see what their account balance will look like
+      // assuming every upcoming transaction goes through as planned.
       for (const tx of sorted) {
         const amt = Math.abs(tx.amount);
         const delta = info.is_asset
