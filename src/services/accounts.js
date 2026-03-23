@@ -605,7 +605,7 @@ export async function reopenAccount(id) {
  * @returns {Promise<string[]>} Array of account UUID strings
  */
 export async function getFavoriteAccountIds() {
-  return (await getUserPreference('favorite_accounts')) ?? [];
+  return (await getUserPreference("favorite_accounts")) ?? [];
 }
 
 /**
@@ -614,5 +614,5 @@ export async function getFavoriteAccountIds() {
  * @returns {Promise<void>}
  */
 export async function setFavoriteAccountIds(ids) {
-  await setUserPreference('favorite_accounts', ids);
+  await setUserPreference("favorite_accounts", ids);
 }
