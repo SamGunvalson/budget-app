@@ -77,11 +77,11 @@ export default function CategoryComparison({
       {/* Column header */}
       <div className="mb-1 grid grid-cols-12 gap-2 px-1 text-xs font-medium uppercase tracking-wide text-stone-400 dark:text-stone-500">
         <div className="col-span-1" />
-        <div className="col-span-3">Category</div>
+        <div className="col-span-5 sm:col-span-3">Category</div>
         <div className="col-span-2 text-right">Planned</div>
         <div className="col-span-2 text-right">Actual</div>
         <div className="col-span-2 text-right">Variance</div>
-        <div className="col-span-2 text-right">Used</div>
+        <div className="hidden sm:block sm:col-span-2 text-right">Used</div>
       </div>
 
       {/* Type groups */}
@@ -110,16 +110,16 @@ export default function CategoryComparison({
                   >
                     <div className="grid grid-cols-12 items-center gap-2">
                       {/* Label spanning icon + name columns */}
-                      <div className={`col-span-4 text-xs font-bold uppercase tracking-wider ${labelClass}`}>
+                      <div className={`col-span-6 sm:col-span-4 text-xs font-bold uppercase tracking-wider ${labelClass}`}>
                         {style ? style.label : 'Other'}
                       </div>
                       {/* Planned total */}
                       <div className={`col-span-2 text-right text-xs font-bold ${labelClass}`}>
-                        {formatCurrency(groupPlanned)}
+                        {formatCurrency(groupPlanned, 'USD', { hideCents: true })}
                       </div>
                       {/* Actual total */}
                       <div className={`col-span-2 text-right text-xs font-bold ${labelClass}`}>
-                        {formatCurrency(groupActual)}
+                        {formatCurrency(groupActual, 'USD', { hideCents: true })}
                       </div>
                       {/* Variance total */}
                       <div
@@ -133,11 +133,11 @@ export default function CategoryComparison({
                       >
                         {groupVariance === 0
                           ? '—'
-                          : `${groupIsOver ? '+' : '-'}${formatCurrency(Math.abs(groupVariance))}`}
+                          : `${groupIsOver ? '+' : '-'}${formatCurrency(Math.abs(groupVariance), 'USD', { hideCents: true })}`}
                       </div>
                       {/* % used/received */}
                       <div
-                        className={`col-span-2 text-right text-xs font-bold ${
+                        className={`hidden sm:block sm:col-span-2 text-right text-xs font-bold ${
                           groupPct === null
                             ? labelClass
                             : isIncomeGroup
@@ -202,7 +202,7 @@ export default function CategoryComparison({
                           </div>
 
                           {/* Category name + color dot */}
-                          <div className="col-span-3 flex items-center gap-2.5">
+                          <div className="col-span-5 sm:col-span-3 flex items-center gap-2.5">
                             <span
                               className="h-3 w-3 shrink-0 rounded-full"
                               style={{ backgroundColor: item.categoryColor }}
@@ -214,12 +214,12 @@ export default function CategoryComparison({
 
                           {/* Planned */}
                           <div className="col-span-2 text-right text-sm text-stone-600 dark:text-stone-400">
-                            {formatCurrency(item.planned)}
+                            {formatCurrency(item.planned, 'USD', { hideCents: true })}
                           </div>
 
                           {/* Actual */}
                           <div className="col-span-2 text-right text-sm font-medium text-stone-900 dark:text-stone-100">
-                            {formatCurrency(item.actual)}
+                            {formatCurrency(item.actual, 'USD', { hideCents: true })}
                           </div>
 
                           {/* Variance — income: positive is good; expenses: positive is bad */}
@@ -229,12 +229,12 @@ export default function CategoryComparison({
                             }`}
                           >
                             {isOver ? '+' : variance !== 0 ? '-' : ''}
-                            {formatCurrency(Math.abs(variance))}
+                            {formatCurrency(Math.abs(variance), 'USD', { hideCents: true })}
                           </div>
 
                           {/* % Used / Received */}
                           <div
-                            className={`col-span-2 text-right text-sm font-semibold ${
+                            className={`hidden sm:block sm:col-span-2 text-right text-sm font-semibold ${
                               isIncome
                                 ? pct === null
                                   ? 'text-stone-400 dark:text-stone-500'

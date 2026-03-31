@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatCurrency } from '../../utils/helpers';
 
 /**
@@ -58,6 +59,7 @@ export default function BudgetAlert({
 
   const showAmounts =
     actual !== undefined && planned !== undefined && planned > 0;
+  const [detailOpen, setDetailOpen] = useState(false);
 
   return (
     <div
@@ -113,7 +115,7 @@ export default function BudgetAlert({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className={`text-sm font-semibold ${s.title}`}>{title}</p>
+          <p className={`flex-1 text-sm font-semibold ${s.title}`}>{title}</p>
           {varianceText && (
             <span
               className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${s.badge}`}
@@ -121,15 +123,39 @@ export default function BudgetAlert({
               {varianceText}
             </span>
           )}
+          {(message || showAmounts) && (
+            <button
+              type="button"
+              onClick={() => setDetailOpen((d) => !d)}
+              aria-label={detailOpen ? 'Hide details' : 'Show details'}
+              className={`sm:hidden shrink-0 rounded-full p-0.5 transition-opacity hover:opacity-70 ${s.icon}`}
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
+                />
+              </svg>
+            </button>
+          )}
         </div>
-        {message && (
-          <p className={`mt-0.5 text-sm ${s.message}`}>{message}</p>
-        )}
-        {showAmounts && (
-          <p className={`mt-0.5 text-xs ${s.message}`}>
-            {formatCurrency(actual)} spent of {formatCurrency(planned)} planned
-          </p>
-        )}
+        <div className={`${detailOpen ? '' : 'hidden'} sm:block`}>
+          {message && (
+            <p className={`mt-0.5 text-sm ${s.message}`}>{message}</p>
+          )}
+          {showAmounts && (
+            <p className={`mt-0.5 text-xs ${s.message}`}>
+              {formatCurrency(actual)} spent of {formatCurrency(planned)} planned
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
