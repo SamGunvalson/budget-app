@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AccountForm from '../components/accounts/AccountForm';
 import AccountList from '../components/accounts/AccountList';
 import NetWorthSummary from '../components/accounts/NetWorthSummary';
+import CashflowChart from '../components/accounts/CashflowChart';
+import AvailableToSpend from '../components/accounts/AvailableToSpend';
+import UpcomingTransactions from '../components/accounts/UpcomingTransactions';
+import SpendingPlayground from '../components/accounts/SpendingPlayground';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
+import useSessionState from '../hooks/useSessionState';
 import {
   getAccountBalancesOffline as getAccountBalances,
   createAccountOffline as createAccount,
@@ -17,6 +22,7 @@ import {
   pauseRecurringTemplateOffline as pauseTemplate,
   resumeRecurringTemplateOffline as resumeTemplate,
   getTemplatesForAccountOffline as getTemplatesForAccount,
+  getUpcomingTransactionsOffline as getUpcomingTransactions,
 } from '../services/offlineAware';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
 
@@ -25,6 +31,9 @@ import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accoun
 // ================================================
 export default function AccountsPage() {
   const navigate = useNavigate();
+
+  // Section tab: 'overview' | 'cashflow' | 'playground'
+  const [activeSection, setActiveSection] = useSessionState('accountsActiveSection', 'overview');
 
   // Data state
   const [accounts, setAccounts] = useState([]);
@@ -44,6 +53,11 @@ export default function AccountsPage() {
   const [projectedToDate, setProjectedToDate] = useState(null);
   const [maxProjectedDate, setMaxProjectedDate] = useState(null);
   const debounceRef = useRef(null);
+
+  // Cashflow state
+  const [cashflowAccountIds, setCashflowAccountIds] = useSessionState('cashflowAccountIds', []);
+  const [upcomingTx, setUpcomingTx] = useState([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(false);
 
   useEffect(() => { document.title = 'Budget App | Accounts'; }, []);
 
@@ -97,6 +111,31 @@ export default function AccountsPage() {
     } catch (err) {
       setLoadError(err?.message || 'Failed to refresh accounts.');
     }
+  }
+
+  // ---------- Cashflow: load upcoming transactions when selected accounts change ----------
+  const loadUpcoming = useCallback(async (ids) => {
+    if (!ids?.length) { setUpcomingTx([]); return; }
+    setUpcomingLoading(true);
+    try {
+      const data = await getUpcomingTransactions({ accountIds: ids });
+      setUpcomingTx(data);
+    } catch {
+      setUpcomingTx([]);
+    } finally {
+      setUpcomingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'cashflow') loadUpcoming(cashflowAccountIds);
+  }, [activeSection, cashflowAccountIds, loadUpcoming]);
+
+  function handleCashflowAccountToggle(id) {
+    setCashflowAccountIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      return next;
+    });
   }
 
   function handleProjectedToDateChange(e) {
@@ -235,56 +274,163 @@ export default function AccountsPage() {
           </div>
         )}
 
-        {/* Net Worth Summary */}
-        <div className="mb-6">
-          <NetWorthSummary
-            netWorth={netWorth}
-            totalAssets={totalAssets}
-            totalLiabilities={totalLiabilities}
-            projectedNetWorth={projectedNetWorth}
-            isLoading={isLoading}
-            chartData={chartData}
-            projectedChartData={projectedChartData}
-            chartLoading={chartLoading}
-          />
+        {/* Section tabs */}
+        <div className="mb-6 inline-flex rounded-xl border border-stone-200/60 bg-stone-50 p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-700/30">
+          {[
+            { key: 'overview', label: 'Overview' },
+            { key: 'cashflow', label: 'Cashflow' },
+            { key: 'playground', label: 'Playground' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveSection(tab.key)}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                activeSection === tab.key
+                  ? 'bg-amber-500 text-white shadow-sm shadow-amber-200/50'
+                  : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Negative asset balance warning */}
-        {!isLoading && hasNegativeAssets && (
-          <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
-            <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-            </svg>
-            <div>
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-                {negativeAssets.length === 1
-                  ? `"${negativeAssets[0].name}" has a negative balance`
-                  : `${negativeAssets.length} asset accounts have negative balances`}
-              </p>
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                Asset accounts with negative balances may indicate that imported transactions have income/expense reversed.
-                Review the transactions on {negativeAssets.length === 1 ? 'this account' : 'these accounts'} and consider re-importing with corrected column mapping.
-              </p>
+        {/* ════════════════ Overview section ════════════════ */}
+        {activeSection === 'overview' && (
+          <>
+            {/* Net Worth Summary */}
+            <div className="mb-6">
+              <NetWorthSummary
+                netWorth={netWorth}
+                totalAssets={totalAssets}
+                totalLiabilities={totalLiabilities}
+                projectedNetWorth={projectedNetWorth}
+                isLoading={isLoading}
+                chartData={chartData}
+                projectedChartData={projectedChartData}
+                chartLoading={chartLoading}
+              />
             </div>
-          </div>
+
+            {/* Negative asset balance warning */}
+            {!isLoading && hasNegativeAssets && (
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
+                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                    {negativeAssets.length === 1
+                      ? `"${negativeAssets[0].name}" has a negative balance`
+                      : `${negativeAssets.length} asset accounts have negative balances`}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                    Asset accounts with negative balances may indicate that imported transactions have income/expense reversed.
+                    Review the transactions on {negativeAssets.length === 1 ? 'this account' : 'these accounts'} and consider re-importing with corrected column mapping.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Loading skeleton */}
+            {isLoading ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-16 animate-pulse rounded-xl bg-stone-200/60 dark:bg-stone-700/60"
+                    style={{ animationDelay: `${i * 80}ms` }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <AccountList
+                accounts={accounts}
+                onViewTransactions={handleViewTransactions}
+              />
+            )}
+          </>
         )}
 
-        {/* Loading skeleton */}
-        {isLoading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="h-16 animate-pulse rounded-xl bg-stone-200/60 dark:bg-stone-700/60"
-                style={{ animationDelay: `${i * 80}ms` }}
+        {/* ════════════════ Cashflow section ════════════════ */}
+        {activeSection === 'cashflow' && (
+          <>
+            {/* Account selector chips */}
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                Select Accounts
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {accounts.filter((a) => !a.closed_at).map((acct) => {
+                  const isSelected = cashflowAccountIds.includes(acct.id);
+                  return (
+                    <button
+                      key={acct.id}
+                      type="button"
+                      onClick={() => handleCashflowAccountToggle(acct.id)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                        isSelected
+                          ? 'bg-teal-500 text-white shadow-sm shadow-teal-200/50'
+                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-teal-300 hover:text-teal-700 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
+                      }`}
+                    >
+                      {acct.name}
+                    </button>
+                  );
+                })}
+                {accounts.filter((a) => !a.closed_at).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allIds = accounts.filter((a) => !a.closed_at).map((a) => a.id);
+                      setCashflowAccountIds(
+                        cashflowAccountIds.length === allIds.length ? [] : allIds,
+                      );
+                    }}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-stone-400 transition-colors hover:text-stone-600 dark:hover:text-stone-300"
+                  >
+                    {cashflowAccountIds.length === accounts.filter((a) => !a.closed_at).length ? 'Clear All' : 'Select All'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cashflow chart */}
+            <CashflowChart
+              accounts={accounts}
+              selectedAccountIds={cashflowAccountIds}
+            />
+
+            {/* Available to spend */}
+            {!isLoading && (
+              <AvailableToSpend
+                accounts={accounts}
+                selectedAccountIds={cashflowAccountIds}
+                upcomingTransactions={upcomingTx}
               />
-            ))}
-          </div>
-        ) : (
-          <AccountList
-            accounts={accounts}
-            onViewTransactions={handleViewTransactions}
-          />
+            )}
+
+            {/* Upcoming transactions */}
+            {!upcomingLoading && (
+              <UpcomingTransactions
+                transactions={upcomingTx}
+                onViewTransaction={(accountId) => navigate(`/app/transactions?account=${accountId}`)}
+              />
+            )}
+            {upcomingLoading && (
+              <div className="mt-6 space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-12 animate-pulse rounded-xl bg-stone-100 dark:bg-stone-700/50" />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ════════════════ Playground section ════════════════ */}
+        {activeSection === 'playground' && (
+          <SpendingPlayground accounts={accounts} />
         )}
       </div>
 

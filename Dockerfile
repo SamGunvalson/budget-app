@@ -17,7 +17,7 @@ COPY . .
 RUN npm run build
 
 # ----- Stage 2: Serve with Nginx -----
-FROM nginx:stable-alpine
+FROM nginx:stable-alpine-slim
 
 # Fix CVE-2026-25646, CVE-2026-33636, CVE-2026-33416 (libpng); CVE-2026-22184, CVE-2026-27171 (zlib); CVE-2026-32767, CVE-2026-32776, CVE-2026-32777, CVE-2026-32778 (expat); CVE-2026-27654, CVE-2026-27651, CVE-2026-27784, CVE-2026-32647, CVE-2026-28753, CVE-2026-28755 (nginx)
 RUN apk upgrade --no-cache libpng zlib expat nginx
