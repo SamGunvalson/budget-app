@@ -23,6 +23,7 @@ import { getMonthName, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
+import CalendarView from '../components/reports/CalendarView';
 
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
@@ -30,6 +31,7 @@ export default function ReportsPage() {
   const [error, setError] = useState('');
   const [viewMode, setViewMode] = useSessionState('reportsViewMode', 'monthly'); // 'monthly' | 'ytd'
   // 'summary' | 'planVsActual' | 'trends' | 'annualActuals'
+  // 'summary' | 'planVsActual' | 'trends' | 'annualActuals' | 'calendar'
   const [activeView, setActiveView] = useSessionState('reportsActiveView', 'summary');
 
   // Trend-specific state — owned here so TrendSummary stays in sync
@@ -274,33 +276,37 @@ export default function ReportsPage() {
       <TopBar pageName="Reports" />
 
       {/* Content */}
-      <div className={`mx-auto px-4 py-8 sm:px-6 ${activeView === 'annualActuals' ? 'max-w-full' : 'max-w-6xl'}`}>
+      <div className={`mx-auto px-4 py-8 sm:px-6 ${activeView === 'annualActuals' || activeView === 'calendar' ? 'max-w-full' : 'max-w-6xl'}`}>
         {/* Header row */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="animate-fade-in">
             <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
-              {activeView === 'annualActuals'
-                ? 'Annual Actuals'
-                : activeView === 'trends'
-                  ? 'Spending Trends'
-                  : activeView === 'planVsActual'
-                    ? 'Plan vs Actual'
-                    : viewMode === 'monthly'
-                      ? 'Monthly Summary'
-                      : 'YTD Summary'}
+              {activeView === 'calendar'
+                ? 'Transaction Calendar'
+                : activeView === 'annualActuals'
+                  ? 'Annual Actuals'
+                  : activeView === 'trends'
+                    ? 'Spending Trends'
+                    : activeView === 'planVsActual'
+                      ? 'Plan vs Actual'
+                      : viewMode === 'monthly'
+                        ? 'Monthly Summary'
+                        : 'YTD Summary'}
             </h1>
             <p className="mt-1 text-base text-stone-500 dark:text-stone-400">
-              {activeView === 'annualActuals'
-                ? `${year} actual spending by category`
-                : activeView === 'trends'
-                  ? 'Track your spending patterns over time'
-                  : activeView === 'planVsActual'
-                    ? (viewMode === 'ytd'
-                        ? `Jan \u2013 ${getMonthName(month)} ${year} budget comparison`
-                        : `${getMonthName(month)} ${year} budget comparison`)
-                    : viewMode === 'monthly'
-                      ? `${getMonthName(month)} ${year} overview`
-                      : `Jan \u2013 ${getMonthName(month)} ${year} overview`}
+              {activeView === 'calendar'
+                ? `${getMonthName(month)} ${year} daily view`
+                : activeView === 'annualActuals'
+                  ? `${year} actual spending by category`
+                  : activeView === 'trends'
+                    ? 'Track your spending patterns over time'
+                    : activeView === 'planVsActual'
+                      ? (viewMode === 'ytd'
+                          ? `Jan \u2013 ${getMonthName(month)} ${year} budget comparison`
+                          : `${getMonthName(month)} ${year} budget comparison`)
+                      : viewMode === 'monthly'
+                        ? `${getMonthName(month)} ${year} overview`
+                        : `Jan \u2013 ${getMonthName(month)} ${year} overview`}
             </p>
             {pendingReviewCount > 0 && (
               <Link
@@ -322,6 +328,7 @@ export default function ReportsPage() {
                 { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
                 { id: 'trends',        label: 'Trends',         shortLabel: 'Trends',  activeClass: 'bg-sky-500 text-white shadow-md shadow-sky-200/50' },
                 { id: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual',  activeClass: 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md shadow-violet-200/50 dark:shadow-violet-900/30' },
+                { id: 'calendar',      label: 'Calendar',       shortLabel: 'Cal',     activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200/50 dark:shadow-rose-900/30' },
               ].map(({ id, label, shortLabel, activeClass }) => (
                 <button
                   key={id}
@@ -342,6 +349,10 @@ export default function ReportsPage() {
             {/* Month/year selector for Trends view */}
             {activeView === 'trends' && (
               <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent="sky" />
+            )}
+            {/* Month/year selector for Calendar view */}
+            {activeView === 'calendar' && (
+              <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent="rose" />
             )}
             {/* Time-period controls — only for Summary and Plan vs Actual */}
             {(activeView === 'summary' || activeView === 'planVsActual') && (
@@ -397,7 +408,9 @@ export default function ReportsPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {activeView === 'annualActuals' ? (
+            {activeView === 'calendar' ? (
+              <CalendarView month={month} year={year} />
+            ) : activeView === 'annualActuals' ? (
               <AnnualActualsTable year={year} />
             ) : activeView === 'trends' ? (
               <>
