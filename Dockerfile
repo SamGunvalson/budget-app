@@ -1,8 +1,8 @@
 # ----- Stage 1: Build the SPA -----
 FROM node:22-alpine AS build
 
-# Fix CVE-2026-25646 (libpng) and CVE-2026-22184, CVE-2026-27171 (zlib)
-RUN apk upgrade --no-cache libpng zlib
+# Fix CVE-2026-25646, CVE-2026-33636, CVE-2026-33416 (libpng); CVE-2026-22184, CVE-2026-27171 (zlib); CVE-2026-32767, CVE-2026-32776, CVE-2026-32777, CVE-2026-32778 (expat)
+RUN apk upgrade --no-cache libpng zlib expat
 
 WORKDIR /app
 
@@ -19,8 +19,8 @@ RUN npm run build
 # ----- Stage 2: Serve with Nginx -----
 FROM nginx:stable-alpine
 
-# Fix CVE-2026-25646 (libpng) and CVE-2026-22184, CVE-2026-27171 (zlib)
-RUN apk upgrade --no-cache libpng zlib
+# Fix CVE-2026-25646, CVE-2026-33636, CVE-2026-33416 (libpng); CVE-2026-22184, CVE-2026-27171 (zlib); CVE-2026-32767, CVE-2026-32776, CVE-2026-32777, CVE-2026-32778 (expat); CVE-2026-27654, CVE-2026-27651, CVE-2026-27784, CVE-2026-32647, CVE-2026-28753, CVE-2026-28755 (nginx)
+RUN apk upgrade --no-cache libpng zlib expat nginx
 
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf

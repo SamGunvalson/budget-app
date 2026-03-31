@@ -187,7 +187,7 @@ export default function PlanVsActual({
       {/* Loading skeleton */}
       {isLoading ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-6">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
@@ -245,11 +245,11 @@ export default function PlanVsActual({
           )}
 
           {/* Summary stat cards */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-6">
             {/* Total Planned */}
-            <div className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-              <div className="mb-3 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-stone-100 dark:bg-stone-700">
+            <div className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-3 sm:p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
+              <div className="mb-1 sm:mb-3 flex items-center gap-3">
+                <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-stone-100 dark:bg-stone-700">
                   <svg
                     className="h-5 w-5 text-stone-600 dark:text-stone-400"
                     fill="none"
@@ -264,23 +264,24 @@ export default function PlanVsActual({
                     />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-stone-500 dark:text-stone-400">
-                  Total Planned
+                <p className="text-xs sm:text-sm font-medium text-stone-500 dark:text-stone-400">
+                  <span className="sm:hidden">Planned</span>
+                  <span className="hidden sm:inline">Total Planned</span>
                 </p>
               </div>
-              <p className="text-3xl font-bold text-stone-700 dark:text-stone-300">
-                {formatCurrency(totalPlanned)}
+              <p className="text-xl sm:text-3xl font-bold text-stone-700 dark:text-stone-300">
+                {formatCurrency(totalPlanned, 'USD', { hideCents: true })}
               </p>
             </div>
 
             {/* Total Actual */}
             <div
-              className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
+              className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-3 sm:p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
               style={{ animationDelay: '80ms' }}
             >
-              <div className="mb-3 flex items-center gap-3">
+              <div className="mb-1 sm:mb-3 flex items-center gap-3">
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  className={`hidden sm:flex h-10 w-10 items-center justify-center rounded-xl ${
                     isOverBudget ? 'bg-red-100' : 'bg-amber-100'
                   }`}
                 >
@@ -298,27 +299,28 @@ export default function PlanVsActual({
                     />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-stone-500 dark:text-stone-400">
-                  Total Actual
+                <p className="text-xs sm:text-sm font-medium text-stone-500 dark:text-stone-400">
+                  <span className="sm:hidden">Actual</span>
+                  <span className="hidden sm:inline">Total Actual</span>
                 </p>
               </div>
               <p
-                className={`text-3xl font-bold ${
+                className={`text-xl sm:text-3xl font-bold ${
                   isOverBudget ? 'text-red-600' : 'text-amber-600'
                 }`}
               >
-                {formatCurrency(totalActual)}
+                {formatCurrency(totalActual, 'USD', { hideCents: true })}
               </p>
             </div>
 
             {/* Variance */}
             <div
-              className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
+              className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-3 sm:p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
               style={{ animationDelay: '160ms' }}
             >
-              <div className="mb-3 flex items-center gap-3">
+              <div className="mb-1 sm:mb-3 flex items-center gap-3">
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  className={`hidden sm:flex h-10 w-10 items-center justify-center rounded-xl ${
                     isOverBudget ? 'bg-red-100' : 'bg-emerald-100'
                   }`}
                 >
@@ -336,17 +338,17 @@ export default function PlanVsActual({
                     />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-stone-500 dark:text-stone-400">Variance</p>
+                <p className="text-xs sm:text-sm font-medium text-stone-500 dark:text-stone-400">Variance</p>
               </div>
               <p
-                className={`text-3xl font-bold ${
+                className={`text-xl sm:text-3xl font-bold ${
                   isOverBudget ? 'text-red-600' : 'text-emerald-600'
                 }`}
               >
                 {isOverBudget ? '+' : '-'}
-                {formatCurrency(Math.abs(totalVariance))}
+                {formatCurrency(Math.abs(totalVariance), 'USD', { hideCents: true })}
               </p>
-              <p className="mt-1 text-xs text-stone-400 dark:text-stone-500">
+              <p className="mt-1 hidden sm:block text-xs text-stone-400 dark:text-stone-500">
                 {isOverBudget
                   ? `${overall.pct}% of budget used — over by ${formatCurrency(Math.abs(totalVariance))}`
                   : totalPlanned > 0
