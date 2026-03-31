@@ -343,6 +343,8 @@ import {
   closeAccount as _closeAccount,
   reopenAccount as _reopenAccount,
   isAssetAccount,
+  getAccountBalanceHistory as _getAccountBalanceHistory,
+  getUpcomingTransactions as _getUpcomingTransactions,
 } from "./accounts";
 
 export async function getAccountsOffline() {
@@ -790,6 +792,149 @@ export async function reopenAccountOffline(id) {
     existing._offline ? existing._action : "update",
   );
   return updated;
+}
+
+/**
+ * Fetch per-account daily balance history — Supabase first, fall back to IndexedDB.
+ */
+export async function getAccountBalanceHistoryOffline(opts) {
+  const result = await tryOnline(() => _getAccountBalanceHistory(opts));
+  if (!result.offline) return result.data;
+
+  // Offline fallback: compute from IndexedDB
+  const { accountIds, startDate, endDate } = opts;
+  if (!accountIds?.length) return [];
+
+  let accounts = await db.accounts.toArray();
+  accounts = accounts.filter(
+    (a) => a.is_active !== false && accountIds.includes(a.id),
+  );
+  if (!accounts.length) return [];
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  let allTx = await db.transactions.toArray();
+  allTx = allTx.filter(
+    (t) => !t.deleted_at && accountIds.includes(t.account_id),
+  );
+  allTx.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+
+  const txByAccountDate = {};
+  for (const acct of accounts) txByAccountDate[acct.id] = {};
+  for (const tx of allTx) {
+    if (!txByAccountDate[tx.account_id]) continue;
+    const d = tx.transaction_date;
+    const isPast = d <= todayStr;
+    const status = tx.status || "posted";
+    if (isPast && status === "projected") continue;
+    if (!txByAccountDate[tx.account_id][d])
+      txByAccountDate[tx.account_id][d] = [];
+    txByAccountDate[tx.account_id][d].push(tx);
+  }
+
+  const dates = [];
+  const cur = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    dates.push(
+      `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`,
+    );
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const runningBalances = {};
+  for (const acct of accounts) {
+    runningBalances[acct.id] = acct.starting_balance || 0;
+    const asset = isAssetAccount(acct.type);
+    for (const tx of allTx) {
+      if (tx.account_id !== acct.id) continue;
+      if (tx.transaction_date >= startDate) break;
+      const isPast = tx.transaction_date <= todayStr;
+      const status = tx.status || "posted";
+      if (isPast && status === "projected") continue;
+      const amt = Math.abs(tx.amount);
+      const sign = tx.is_income ? 1 : -1;
+      runningBalances[acct.id] += asset ? sign * amt : -sign * amt;
+    }
+  }
+
+  const series = [];
+  for (const date of dates) {
+    for (const acct of accounts) {
+      const asset = isAssetAccount(acct.type);
+      const dayTx = txByAccountDate[acct.id][date] || [];
+      for (const tx of dayTx) {
+        const amt = Math.abs(tx.amount);
+        const sign = tx.is_income ? 1 : -1;
+        runningBalances[acct.id] += asset ? sign * amt : -sign * amt;
+      }
+    }
+    const balances = {};
+    let total = 0;
+    for (const acct of accounts) {
+      balances[acct.id] = runningBalances[acct.id];
+      total += runningBalances[acct.id];
+    }
+    series.push({ date, balances, total });
+  }
+
+  if (series.length > 90) {
+    const weekly = [];
+    for (let i = 0; i < series.length; i += 7) {
+      weekly.push(series[Math.min(i, series.length - 1)]);
+    }
+    if (weekly[weekly.length - 1].date !== series[series.length - 1].date) {
+      weekly.push(series[series.length - 1]);
+    }
+    return weekly;
+  }
+  return series;
+}
+
+/**
+ * Fetch upcoming transactions — Supabase first, fall back to IndexedDB.
+ */
+export async function getUpcomingTransactionsOffline(opts) {
+  const result = await tryOnline(() => _getUpcomingTransactions(opts));
+  if (!result.offline) return result.data;
+
+  const { accountIds } = opts;
+  if (!accountIds?.length) return [];
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  let rows = await db.transactions.toArray();
+  rows = rows.filter(
+    (r) =>
+      !r.deleted_at &&
+      accountIds.includes(r.account_id) &&
+      (r.status === "pending" || r.status === "projected") &&
+      r.transaction_date >= todayStr,
+  );
+
+  // Attach cached category/account data
+  const cats = Object.fromEntries(
+    (await db.categories.toArray()).map((c) => [
+      c.id,
+      { id: c.id, name: c.name, color: c.color, type: c.type },
+    ]),
+  );
+  const accts = Object.fromEntries(
+    (await db.accounts.toArray()).map((a) => [
+      a.id,
+      { id: a.id, name: a.name, type: a.type },
+    ]),
+  );
+  rows = rows.map((r) => ({
+    ...r,
+    categories: r.categories || cats[r.category_id] || null,
+    accounts: r.accounts || accts[r.account_id] || null,
+  }));
+
+  rows.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+  return rows;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

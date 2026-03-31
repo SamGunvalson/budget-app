@@ -598,6 +598,178 @@ export async function reopenAccount(id) {
   return updateAccount(id, { closed_at: null });
 }
 
+// ── Cashflow: per-account daily balance history ──
+
+/**
+ * Compute a daily running-balance series for the given accounts over a date range.
+ *
+ * Returns one data point per day per account:
+ *   { date: 'YYYY-MM-DD', balances: { [accountId]: cents }, total: cents }
+ *
+ * For dates in the past, only posted/pending transactions are used.
+ * For dates in the future (> today), projected + future-posted transactions are included.
+ *
+ * When the range exceeds 90 days, data is aggregated to weekly (every 7th day).
+ *
+ * @param {{ accountIds: string[], startDate: string, endDate: string }} opts
+ * @returns {Promise<Array<{ date: string, balances: Record<string, number>, total: number }>>}
+ */
+export async function getAccountBalanceHistory({
+  accountIds,
+  startDate,
+  endDate,
+}) {
+  if (!accountIds?.length) return [];
+
+  // Fetch relevant accounts
+  const accounts = await getAccounts();
+  const selected = accounts.filter((a) => accountIds.includes(a.id));
+  if (!selected.length) return [];
+
+  // Fetch all non-deleted transactions for these accounts
+  const PAGE_SIZE = 1000;
+  let allTx = [];
+  let from = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("account_id, amount, is_income, transaction_date, status")
+      .in("account_id", accountIds)
+      .is("deleted_at", null)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    allTx = allTx.concat(data);
+    if (data.length < PAGE_SIZE) hasMore = false;
+    else from += PAGE_SIZE;
+  }
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  // Sort transactions by date ascending
+  allTx.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+
+  // Build per-account transaction lists bucketed by date
+  const txByAccountDate = {};
+  for (const acct of selected) txByAccountDate[acct.id] = {};
+  for (const tx of allTx) {
+    if (!txByAccountDate[tx.account_id]) continue;
+    const d = tx.transaction_date;
+    const isPast = d <= todayStr;
+    const status = tx.status || "posted";
+    // Past: include posted + pending only.  Future: include all statuses.
+    if (isPast && status === "projected") continue;
+    if (!txByAccountDate[tx.account_id][d])
+      txByAccountDate[tx.account_id][d] = [];
+    txByAccountDate[tx.account_id][d].push(tx);
+  }
+
+  // Generate date range
+  const dates = [];
+  const cur = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    dates.push(
+      `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`,
+    );
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Compute running balance per account per day
+  const runningBalances = {};
+  for (const acct of selected) {
+    runningBalances[acct.id] = acct.starting_balance || 0;
+  }
+
+  // Pre-process: apply all transactions BEFORE startDate to build opening balances
+  for (const acct of selected) {
+    const asset = isAssetAccount(acct.type);
+    for (const tx of allTx) {
+      if (tx.account_id !== acct.id) continue;
+      if (tx.transaction_date >= startDate) break;
+      const isPast = tx.transaction_date <= todayStr;
+      const status = tx.status || "posted";
+      if (isPast && status === "projected") continue;
+      const amt = Math.abs(tx.amount);
+      const sign = tx.is_income ? 1 : -1;
+      runningBalances[acct.id] += asset ? sign * amt : -sign * amt;
+    }
+  }
+
+  // Walk through each date
+  const series = [];
+  for (const date of dates) {
+    for (const acct of selected) {
+      const asset = isAssetAccount(acct.type);
+      const dayTx = txByAccountDate[acct.id][date] || [];
+      for (const tx of dayTx) {
+        const amt = Math.abs(tx.amount);
+        const sign = tx.is_income ? 1 : -1;
+        runningBalances[acct.id] += asset ? sign * amt : -sign * amt;
+      }
+    }
+    const balances = {};
+    let total = 0;
+    for (const acct of selected) {
+      balances[acct.id] = runningBalances[acct.id];
+      total += runningBalances[acct.id];
+    }
+    series.push({ date, balances, total });
+  }
+
+  // Downsample to weekly if range > 90 days
+  if (series.length > 90) {
+    const weekly = [];
+    for (let i = 0; i < series.length; i += 7) {
+      weekly.push(series[Math.min(i, series.length - 1)]);
+    }
+    // Always include the last point
+    if (weekly[weekly.length - 1].date !== series[series.length - 1].date) {
+      weekly.push(series[series.length - 1]);
+    }
+    return weekly;
+  }
+
+  return series;
+}
+
+/**
+ * Fetch upcoming (pending + projected) transactions for the given accounts.
+ * Returns transactions sorted by date ascending with joined category/account data.
+ *
+ * @param {{ accountIds: string[] }} opts
+ * @returns {Promise<Array>}
+ */
+export async function getUpcomingTransactions({ accountIds }) {
+  if (!accountIds?.length) return [];
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const PAGE_SIZE = 1000;
+  let allData = [];
+  let from = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*, categories(id, name, color, type), accounts(id, name, type)")
+      .in("account_id", accountIds)
+      .is("deleted_at", null)
+      .or("status.eq.pending,status.eq.projected")
+      .gte("transaction_date", todayStr)
+      .order("transaction_date", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    allData = allData.concat(data);
+    if (data.length < PAGE_SIZE) hasMore = false;
+    else from += PAGE_SIZE;
+  }
+
+  return allData;
+}
+
 // ── Favorite Accounts ──
 
 /**
