@@ -1,0 +1,57 @@
+name: Docker Scout Scheduled Scan
+
+# Runs weekly to catch newly-disclosed CVEs in the published image,
+# even if the source hasn't changed since the last push.
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # Mondays 09:00 UTC (after npm audit at 08:00)
+  workflow_dispatch:       # allow manual trigger
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/budget-app
+
+jobs:
+  scout:
+    name: Scan published image for CVEs
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF to GitHub Security tab
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Full report of all severities — uploaded to the Security tab for review.
+      # exit-code is false so a flaky CVE doesn't permanently brick the schedule.
+      - name: Docker Scout - full CVE report (latest image)
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ env.IMAGE_NAME }}:latest
+          only-severities: critical,high,medium
+          sarif-file: scout-results.sarif
+          exit-code: false
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scout-results.sarif
+
+      # Separate step that DOES fail to make critical+fixable CVEs visible as a
+      # workflow failure, prompting a Dockerfile patch without blocking the schedule
+      # from reporting results first.
+      - name: Fail on fixable critical CVEs
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ env.IMAGE_NAME }}:latest
+          only-severities: critical
+          only-fixed: true
+          exit-code: true
