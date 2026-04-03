@@ -36,6 +36,8 @@ export default function RecurringForm({
   const [dayOfMonth, setDayOfMonth] = useState('1');
   const [dayOfMonth2, setDayOfMonth2] = useState('15');
   const [dayOfWeek, setDayOfWeek] = useState('0');
+  const [customInterval, setCustomInterval] = useState(2);
+  const [customUnit, setCustomUnit] = useState('days');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [autoConfirm, setAutoConfirm] = useState(true);
@@ -74,7 +76,8 @@ export default function RecurringForm({
   );
 
   // Whether we need day_of_month, day_of_month_2, or day_of_week
-  const needsDayOfMonth = ['monthly', 'semi_monthly', 'quarterly', 'yearly'].includes(frequency);
+  const needsDayOfMonth = ['monthly', 'semi_monthly', 'quarterly', 'yearly'].includes(frequency)
+    || (frequency === 'custom' && customUnit === 'months');
   const needsDayOfMonth2 = frequency === 'semi_monthly';
   const needsDayOfWeek = ['weekly', 'biweekly'].includes(frequency);
 
@@ -103,6 +106,8 @@ export default function RecurringForm({
       setDayOfMonth(String(initialValues.day_of_month || 1));
       setDayOfMonth2(String(initialValues.day_of_month_2 || 15));
       setDayOfWeek(String(initialValues.day_of_week ?? 0));
+      setCustomInterval(initialValues.custom_interval || 2);
+      setCustomUnit(initialValues.custom_unit || 'months');
       setStartDate(initialValues.start_date || '');
       setEndDate(initialValues.end_date || '');
       if (initialValues.auto_confirm !== undefined) setAutoConfirm(initialValues.auto_confirm);
@@ -141,6 +146,10 @@ export default function RecurringForm({
     if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
     if (!startDate) errs.startDate = 'Start date is required';
     if (endDate && endDate < startDate) errs.endDate = 'End date must be after start date';
+    if (frequency === 'custom') {
+      const iv = parseInt(customInterval, 10);
+      if (isNaN(iv) || iv < 1) errs.customInterval = 'Interval must be at least 1';
+    }
     if (needsDayOfMonth) {
       const d = parseInt(dayOfMonth, 10);
       if (isNaN(d) || d < 1 || d > 31) errs.dayOfMonth = 'Day must be 1–31';
@@ -153,7 +162,7 @@ export default function RecurringForm({
       }
     }
     setErrors(errs);
-    const hasScheduleErrors = ['startDate', 'endDate', 'dayOfMonth', 'dayOfMonth2'].some((k) => errs[k]);
+    const hasScheduleErrors = ['startDate', 'endDate', 'dayOfMonth', 'dayOfMonth2', 'customInterval'].some((k) => errs[k]);
     if (hasScheduleErrors) setScheduleOpen(true);
     return Object.keys(errs).length === 0;
   };
@@ -181,6 +190,8 @@ export default function RecurringForm({
         day_of_month: needsDayOfMonth ? parseInt(dayOfMonth, 10) : null,
         day_of_month_2: needsDayOfMonth2 ? parseInt(dayOfMonth2, 10) : null,
         day_of_week: needsDayOfWeek ? parseInt(dayOfWeek, 10) : null,
+        custom_interval: frequency === 'custom' ? parseInt(customInterval, 10) : null,
+        custom_unit: frequency === 'custom' ? customUnit : null,
         start_date: startDate,
         end_date: endDate || null,
         auto_confirm: autoConfirm,
@@ -402,6 +413,32 @@ export default function RecurringForm({
                   </option>
                 ))}
               </select>
+              {/* Custom interval inputs — tucked under the frequency selector */}
+              {frequency === 'custom' && (
+                <div className="mt-2">
+                  <label className={labelClass}>Repeat Every *</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={customInterval}
+                      onChange={(e) => setCustomInterval(e.target.value)}
+                      className="w-16 shrink-0 rounded-xl border border-stone-200 bg-white px-3 py-1.5 sm:py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                    />
+                    <select
+                      value={customUnit}
+                      onChange={(e) => setCustomUnit(e.target.value)}
+                      className="flex-1 min-w-0 rounded-xl border border-stone-200 bg-white px-3 py-1.5 sm:py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                    >
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
+                  {errors.customInterval && <p className={errorClass}>{errors.customInterval}</p>}
+                </div>
+              )}
             </div>
 
             {needsDayOfMonth && (

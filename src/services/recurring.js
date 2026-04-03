@@ -80,6 +80,8 @@ export async function createRecurringTemplate({
   day_of_month,
   day_of_month_2,
   day_of_week,
+  custom_interval,
+  custom_unit,
   start_date,
   end_date,
   to_account_id,
@@ -104,6 +106,8 @@ export async function createRecurringTemplate({
       day_of_month: day_of_month || null,
       day_of_month_2: day_of_month_2 || null,
       day_of_week: day_of_week != null ? day_of_week : null,
+      custom_interval: custom_interval || null,
+      custom_unit: custom_unit || null,
       start_date,
       end_date: end_date || null,
       to_account_id: to_account_id || null,
@@ -146,6 +150,8 @@ export async function createRecurringGroup(parentData, childrenData) {
       day_of_month: parentData.day_of_month,
       day_of_month_2: parentData.day_of_month_2,
       day_of_week: parentData.day_of_week,
+      custom_interval: parentData.custom_interval,
+      custom_unit: parentData.custom_unit,
       start_date: parentData.start_date,
       end_date: parentData.end_date,
     });
@@ -194,8 +200,11 @@ export async function updateRecurringTemplate(id, updates) {
     payload.group_order = updates.group_order;
   if (updates.auto_confirm !== undefined)
     payload.auto_confirm = updates.auto_confirm;
-  if (updates.is_paused !== undefined)
-    payload.is_paused = updates.is_paused;
+  if (updates.is_paused !== undefined) payload.is_paused = updates.is_paused;
+  if (updates.custom_interval !== undefined)
+    payload.custom_interval = updates.custom_interval || null;
+  if (updates.custom_unit !== undefined)
+    payload.custom_unit = updates.custom_unit || null;
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -348,7 +357,9 @@ export async function resumeRecurringTemplate(id) {
 export async function getTemplatesForAccount(accountId) {
   const { data, error } = await supabase
     .from("recurring_templates")
-    .select("id, description, account_id, to_account_id, is_paused, group_id, is_group_parent")
+    .select(
+      "id, description, account_id, to_account_id, is_paused, group_id, is_group_parent",
+    )
     .eq("is_active", true)
     .or(`account_id.eq.${accountId},to_account_id.eq.${accountId}`);
   if (error) throw error;

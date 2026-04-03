@@ -228,11 +228,14 @@ CREATE TABLE recurring_templates (
   frequency        TEXT        NOT NULL
                      CHECK (frequency IN (
                        'weekly', 'biweekly', 'semi_monthly',
-                       'monthly', 'quarterly', 'yearly'
+                       'monthly', 'quarterly', 'yearly',
+                       'custom'
                      )),
   day_of_month     INT         CHECK (day_of_month  IS NULL OR day_of_month  BETWEEN 1 AND 31),
   day_of_month_2   INT         CHECK (day_of_month_2 IS NULL OR day_of_month_2 BETWEEN 1 AND 31),
   day_of_week      INT         CHECK (day_of_week   IS NULL OR day_of_week   BETWEEN 0 AND 6),
+  custom_interval  INT         CHECK (custom_interval IS NULL OR custom_interval >= 1),
+  custom_unit      TEXT        CHECK (custom_unit IS NULL OR custom_unit IN ('days', 'weeks', 'months')),
   start_date       DATE        NOT NULL,
   end_date         DATE,
   last_applied     DATE,
