@@ -1,6 +1,55 @@
 import { supabase, getCurrentUser } from "./supabase";
 
 /**
+ * Compute payer_share, partner_share, and paidByUserId from a template's
+ * split configuration. Used by both the auto-confirm path (service layer) and
+ * the manual-confirm path (TransactionsPage) so the logic is not duplicated.
+ *
+ * @param {number} totalCents - Total expense amount in cents (positive)
+ * @param {'equal'|'full'|'custom'} splitMethod
+ * @param {'me'|'partner'} splitPayer - Who paid ('me' = current user)
+ * @param {number|null} splitPartnerSharePct - Partner's share % (0–100); only for 'custom'
+ * @param {string} currentUserId
+ * @param {string} partnerId
+ * @returns {{ payerShare: number, partnerShare: number, paidByUserId: string }}
+ */
+export function computeShares(
+  totalCents,
+  splitMethod,
+  splitPayer,
+  splitPartnerSharePct,
+  currentUserId,
+  partnerId,
+) {
+  const paidByUserId = splitPayer === "me" ? currentUserId : partnerId;
+
+  let payerShare, partnerShare;
+
+  if (splitMethod === "equal") {
+    const half = Math.floor(totalCents / 2);
+    // Payer keeps the extra cent when odd — mirrors SplitExpenseForm logic
+    payerShare = totalCents - half;
+    partnerShare = half;
+  } else if (splitMethod === "full") {
+    // Non-payer owes the entire amount; payer owes nothing to the other
+    if (splitPayer === "me") {
+      payerShare = 0;
+      partnerShare = totalCents;
+    } else {
+      payerShare = totalCents;
+      partnerShare = 0;
+    }
+  } else {
+    // custom: partner owes splitPartnerSharePct% of the total
+    const pct = Math.max(0, Math.min(100, splitPartnerSharePct ?? 50));
+    partnerShare = Math.round((totalCents * pct) / 100);
+    payerShare = totalCents - partnerShare;
+  }
+
+  return { payerShare, partnerShare, paidByUserId };
+}
+
+/**
  * Get all active (non-deleted) split expenses for a partnership.
  * @param {string} partnershipId
  * @returns {Promise<Array>} List of split expenses, newest first

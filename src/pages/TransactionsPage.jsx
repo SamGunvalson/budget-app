@@ -30,13 +30,14 @@ import {
   updateRecurringGroup,
   generateProjectedTransactions,
   clearProjectedTransactionsForTemplate,
+  getRecurringTemplateById,
 } from '../services/recurring';
 import { toCents } from '../utils/helpers';
 import { isAssetAccount, getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
-import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense } from '../services/splitExpenses';
+import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 
@@ -419,7 +420,43 @@ export default function TransactionsPage() {
     setEditingGroup(group);
   };
 
+  // ---------- Confirm with auto-split ----------
+  const handleConfirmWithSplit = async (txId) => {
+    const tx = transactions.find((t) => t.id === txId);
+    await mgr.handleConfirm(txId);
+    if (tx?.recurring_template_id && partnership && currentUser) {
+      try {
+        const tpl = await getRecurringTemplateById(tx.recurring_template_id);
+        if (tpl && tpl.is_split && !tpl.is_transfer) {
+          const pid = getPartnerId(partnership, currentUser.id);
+          const { payerShare, partnerShare, paidByUserId } = computeShares(
+            Math.abs(tpl.amount),
+            tpl.split_method,
+            tpl.split_payer,
+            tpl.split_partner_share_pct,
+            currentUser.id,
+            pid,
+          );
+          await createSplitExpense({
+            partnershipId: partnership.id,
+            description: tx.description || tpl.description,
+            totalAmount: Math.abs(tpl.amount),
+            payerShare,
+            partnerShare,
+            paidByUserId,
+            transactionId: txId,
+            expenseDate: tx.transaction_date,
+          });
+          setSplitTransactionIds((prev) => new Set([...prev, txId]));
+        }
+      } catch (err) {
+        console.warn('handleConfirmWithSplit: failed to create split expense:', err?.message);
+      }
+    }
+  };
+
   const handleCreateGroup = async (parentData, childrenData) => {
+
     await createRecurringGroup(parentData, childrenData);
     // Generate projected transactions immediately so they appear without a page refresh
     await generateProjectedTransactions().catch((err) =>
@@ -619,7 +656,7 @@ export default function TransactionsPage() {
             categories={categories}
             accounts={accounts}
             balanceMap={balanceMap}
-            onConfirm={mgr.handleConfirm}
+            onConfirm={handleConfirmWithSplit}
             onSkip={mgr.handleSkip}
             onSplit={partnership ? (tx) => setSplittingTransaction(tx) : undefined}
             splitTransactionIds={splitTransactionIds}
@@ -755,6 +792,8 @@ export default function TransactionsPage() {
             accounts={accounts}
             onSubmit={handleCreateRecurring}
             onCancel={() => setShowRecurringForm(false)}
+            partnership={partnership}
+            partnerEmail={partnerEmail}
           />
         </Modal>
       )}
@@ -769,6 +808,8 @@ export default function TransactionsPage() {
             onSubmit={handleUpdateRecurring}
             onCancel={() => setEditingTemplate(null)}
             isEditing
+            partnership={partnership}
+            partnerEmail={partnerEmail}
           />
         </Modal>
       )}

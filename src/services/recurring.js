@@ -4,6 +4,8 @@ import {
   getPendingOccurrences,
   getOccurrencesInRange,
 } from "../utils/recurringCalculations";
+import { getPartnership, getPartnerId } from "./partnerships";
+import { computeShares, createSplitExpense } from "./splitExpenses";
 
 // ── Concurrency guard for generateProjectedTransactions ──
 // Prevents duplicate projected transactions when the function is called
@@ -89,6 +91,10 @@ export async function createRecurringTemplate({
   group_id,
   is_group_parent,
   group_order,
+  is_split,
+  split_method,
+  split_payer,
+  split_partner_share_pct,
 }) {
   const user = await getCurrentUser();
 
@@ -115,6 +121,10 @@ export async function createRecurringTemplate({
       group_id: group_id || null,
       is_group_parent: is_group_parent || false,
       group_order: group_order || 0,
+      is_split: is_transfer ? false : (is_split || false),
+      split_method: is_transfer ? null : (split_method || null),
+      split_payer: is_transfer ? null : (split_payer || null),
+      split_partner_share_pct: is_transfer ? null : (split_partner_share_pct ?? null),
     })
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type)",
@@ -205,6 +215,14 @@ export async function updateRecurringTemplate(id, updates) {
     payload.custom_interval = updates.custom_interval || null;
   if (updates.custom_unit !== undefined)
     payload.custom_unit = updates.custom_unit || null;
+  if (updates.is_split !== undefined)
+    payload.is_split = updates.is_transfer ? false : (updates.is_split || false);
+  if (updates.split_method !== undefined)
+    payload.split_method = updates.is_transfer ? null : (updates.split_method || null);
+  if (updates.split_payer !== undefined)
+    payload.split_payer = updates.is_transfer ? null : (updates.split_payer || null);
+  if (updates.split_partner_share_pct !== undefined)
+    payload.split_partner_share_pct = updates.is_transfer ? null : (updates.split_partner_share_pct ?? null);
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -281,6 +299,25 @@ export async function updateRecurringGroup(groupId, parentData, childrenData) {
   // Reload the parent with children
   const templates = await getRecurringTemplates();
   return templates.find((t) => t.id === groupId);
+}
+
+/**
+ * Fetch a single recurring template by ID.
+ * Returns only the fields needed by the split-on-confirm path.
+ * @param {string} id
+ * @returns {Promise<Object|null>}
+ */
+export async function getRecurringTemplateById(id) {
+  const { data, error } = await supabase
+    .from("recurring_templates")
+    .select(
+      "id, description, amount, is_transfer, is_split, split_method, split_payer, split_partner_share_pct",
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
 }
 
 /**
@@ -898,10 +935,10 @@ export async function autoConfirmDueTransactions(todayOverride) {
   const today = startOfDay(todayOverride || new Date());
   const todayStr = format(today, "yyyy-MM-dd");
 
-  // Find pending transactions due today or earlier
+  // Find pending transactions due today or earlier (fetch date for split expense)
   const { data: pendingTxs, error: fetchErr } = await supabase
     .from("transactions")
-    .select("id, recurring_template_id")
+    .select("id, recurring_template_id, transaction_date, description")
     .eq("status", "pending")
     .is("deleted_at", null)
     .lte("transaction_date", todayStr);
@@ -909,7 +946,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
 
   if (!pendingTxs?.length) return 0;
 
-  // Get auto_confirm status for all linked templates
+  // Get auto_confirm + split status for all linked templates
   const templateIds = [
     ...new Set(
       pendingTxs
@@ -919,16 +956,22 @@ export async function autoConfirmDueTransactions(todayOverride) {
   ];
 
   let autoConfirmSet = new Set();
+  // templateId → template object (for split logic)
+  const splitTemplateMap = new Map();
+
   if (templateIds.length > 0) {
     const { data: templates, error: tplErr } = await supabase
       .from("recurring_templates")
-      .select("id, auto_confirm")
+      .select(
+        "id, auto_confirm, is_transfer, is_split, split_method, split_payer, split_partner_share_pct, amount, description",
+      )
       .in("id", templateIds);
     if (tplErr) throw tplErr;
 
-    autoConfirmSet = new Set(
-      (templates || []).filter((t) => t.auto_confirm).map((t) => t.id),
-    );
+    for (const t of templates || []) {
+      if (t.auto_confirm) autoConfirmSet.add(t.id);
+      splitTemplateMap.set(t.id, t);
+    }
   }
 
   // Determine which transactions to auto-confirm:
@@ -947,6 +990,59 @@ export async function autoConfirmDueTransactions(todayOverride) {
     .update({ status: "posted", updated_at: new Date().toISOString() })
     .in("id", confirmIds);
   if (updateErr) throw updateErr;
+
+  // ── Auto-create split expenses for qualifying confirmed transactions ──
+  const splitTxs = toConfirm.filter((tx) => {
+    const tpl = splitTemplateMap.get(tx.recurring_template_id);
+    return tpl && tpl.is_split && !tpl.is_transfer;
+  });
+
+  if (splitTxs.length > 0) {
+    // Load partnership once; skip silently if none active
+    let partnership = null;
+    let currentUser = null;
+    try {
+      [partnership, currentUser] = await Promise.all([
+        getPartnership(),
+        getCurrentUser(),
+      ]);
+    } catch (err) {
+      console.warn("autoConfirmDueTransactions: failed to load partnership", err?.message);
+    }
+
+    if (partnership && currentUser) {
+      const partnerId = getPartnerId(partnership, currentUser.id);
+
+      for (const tx of splitTxs) {
+        const tpl = splitTemplateMap.get(tx.recurring_template_id);
+        try {
+          const { payerShare, partnerShare, paidByUserId } = computeShares(
+            Math.abs(tpl.amount),
+            tpl.split_method,
+            tpl.split_payer,
+            tpl.split_partner_share_pct,
+            currentUser.id,
+            partnerId,
+          );
+          await createSplitExpense({
+            partnershipId: partnership.id,
+            description: tx.description || tpl.description,
+            totalAmount: Math.abs(tpl.amount),
+            payerShare,
+            partnerShare,
+            paidByUserId,
+            transactionId: tx.id,
+            expenseDate: tx.transaction_date,
+          });
+        } catch (err) {
+          console.warn(
+            `autoConfirmDueTransactions: failed to create split for tx ${tx.id}:`,
+            err?.message,
+          );
+        }
+      }
+    }
+  }
 
   return confirmIds.length;
 }

@@ -22,6 +22,8 @@ export default function RecurringForm({
   onSubmit,
   onCancel,
   isEditing = false,
+  partnership = null,
+  partnerEmail = '',
 }) {
   // 'expense' | 'income' | 'transfer'
   const [txType, setTxType] = useState('expense');
@@ -41,6 +43,11 @@ export default function RecurringForm({
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [autoConfirm, setAutoConfirm] = useState(true);
+  // Split expense configuration
+  const [isSplit, setIsSplit] = useState(false);
+  const [splitMethod, setSplitMethod] = useState('equal');
+  const [splitPayer, setSplitPayer] = useState('me');
+  const [splitPartnerSharePct, setSplitPartnerSharePct] = useState(50);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -111,6 +118,10 @@ export default function RecurringForm({
       setStartDate(initialValues.start_date || '');
       setEndDate(initialValues.end_date || '');
       if (initialValues.auto_confirm !== undefined) setAutoConfirm(initialValues.auto_confirm);
+      setIsSplit(initialValues.is_split || false);
+      setSplitMethod(initialValues.split_method || 'equal');
+      setSplitPayer(initialValues.split_payer || 'me');
+      setSplitPartnerSharePct(initialValues.split_partner_share_pct ?? 50);
     }
   }, [initialValues]);
 
@@ -146,6 +157,10 @@ export default function RecurringForm({
     if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
     if (!startDate) errs.startDate = 'Start date is required';
     if (endDate && endDate < startDate) errs.endDate = 'End date must be after start date';
+    if (!isTransfer && isSplit && splitMethod === 'custom') {
+      const pct = parseInt(splitPartnerSharePct, 10);
+      if (isNaN(pct) || pct < 1 || pct > 99) errs.splitPartnerSharePct = 'Partner share must be 1–99%';
+    }
     if (frequency === 'custom') {
       const iv = parseInt(customInterval, 10);
       if (isNaN(iv) || iv < 1) errs.customInterval = 'Interval must be at least 1';
@@ -195,6 +210,13 @@ export default function RecurringForm({
         start_date: startDate,
         end_date: endDate || null,
         auto_confirm: autoConfirm,
+        is_split: isTransfer ? false : isSplit,
+        split_method: !isTransfer && isSplit ? splitMethod : null,
+        split_payer: !isTransfer && isSplit ? splitPayer : null,
+        split_partner_share_pct:
+          !isTransfer && isSplit && splitMethod === 'custom'
+            ? parseInt(splitPartnerSharePct, 10)
+            : null,
       });
     } catch (err) {
       setSubmitError(err?.message || 'Failed to save recurring template');
@@ -534,6 +556,144 @@ export default function RecurringForm({
           </div>
         </>)}
       </div>
+
+      {/* Split expense configuration — hidden for transfers */}
+      {!isTransfer && (
+        <div className="rounded-xl border border-stone-200/60 bg-stone-50/50 p-4 dark:border-stone-700/40 dark:bg-stone-800/50">
+          <p className="mb-3 text-sm font-semibold text-stone-800 dark:text-stone-200">Split Expense</p>
+
+          {!partnership ? (
+            /* No partnership — show disabled toggle with tooltip */
+            <div className="flex items-center gap-3 opacity-50">
+              <label className="relative inline-flex cursor-not-allowed items-center">
+                <input type="checkbox" disabled className="peer sr-only" />
+                <div className="peer h-5 w-9 rounded-full bg-stone-300 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] dark:bg-stone-600" />
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium text-stone-700 dark:text-stone-300">Split with partner</span>
+                <span className="group relative inline-flex cursor-default">
+                  <svg className="h-3.5 w-3.5 text-stone-400 dark:text-stone-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                  </svg>
+                  <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-stone-800 px-3 py-2 text-xs font-normal text-stone-100 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-stone-700">
+                    Set up a partner in Split Expenses to use this feature.
+                  </span>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Split toggle */}
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    checked={isSplit}
+                    onChange={(e) => setIsSplit(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div className="peer h-5 w-9 rounded-full bg-stone-300 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-pink-500 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-pink-500 dark:bg-stone-600 dark:peer-checked:bg-pink-500" />
+                </label>
+                <span className="text-sm font-medium text-stone-700 dark:text-stone-300">
+                  Split with {partnerEmail || 'partner'}
+                </span>
+              </div>
+
+              {/* Split configuration — visible when isSplit */}
+              {isSplit && (
+                <div className="mt-3 space-y-3">
+                  {/* Who pays */}
+                  <div>
+                    <label className={labelClass}>Who pays?</label>
+                    <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+                      <button
+                        type="button"
+                        onClick={() => setSplitPayer('me')}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                          splitPayer === 'me'
+                            ? 'bg-pink-500 text-white shadow-md shadow-pink-200/50'
+                            : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        I pay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSplitPayer('partner')}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                          splitPayer === 'partner'
+                            ? 'bg-pink-500 text-white shadow-md shadow-pink-200/50'
+                            : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        {partnerEmail || 'Partner'} pays
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Split method */}
+                  <div>
+                    <label className={labelClass}>Split</label>
+                    <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+                      <button
+                        type="button"
+                        onClick={() => setSplitMethod('equal')}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                          splitMethod === 'equal'
+                            ? 'bg-pink-500 text-white shadow-md shadow-pink-200/50'
+                            : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        Equal (50/50)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSplitMethod('full')}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                          splitMethod === 'full'
+                            ? 'bg-pink-500 text-white shadow-md shadow-pink-200/50'
+                            : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        Full (100%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSplitMethod('custom')}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                          splitMethod === 'custom'
+                            ? 'bg-pink-500 text-white shadow-md shadow-pink-200/50'
+                            : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Custom share % */}
+                  {splitMethod === 'custom' && (
+                    <div className="max-w-[12rem]">
+                      <label className={labelClass}>Partner's share (%)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={splitPartnerSharePct}
+                        onChange={(e) => setSplitPartnerSharePct(e.target.value)}
+                        className={inputClass}
+                      />
+                      {errors.splitPartnerSharePct && (
+                        <p className={errorClass}>{errors.splitPartnerSharePct}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-2">

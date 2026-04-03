@@ -247,6 +247,11 @@ CREATE TABLE recurring_templates (
   is_paused        BOOLEAN     DEFAULT FALSE,
   is_active        BOOLEAN     DEFAULT TRUE,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
+  -- Split expense configuration (non-transfer, non-group templates only)
+  is_split         BOOLEAN     NOT NULL DEFAULT FALSE,
+  split_method     TEXT        CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
+  split_payer      TEXT        CHECK (split_payer  IS NULL OR split_payer  IN ('me', 'partner')),
+  split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
 );
 
