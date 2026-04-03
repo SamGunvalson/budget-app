@@ -56,11 +56,19 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
       for (const d of dates) {
         const key = format(d, 'yyyy-MM-dd');
         if (!map.has(key)) map.set(key, []);
+        // For groups, compute net from children so stale stored amounts don't mislead
+        const children = t.children || [];
+        const occurrenceAmount = t.is_group_parent && children.length > 0
+          ? children.reduce((sum, c) => {
+              if (c.is_transfer) return sum;
+              return sum + (c.is_income ? c.amount : -c.amount);
+            }, 0)
+          : t.amount;
         map.get(key).push({
           templateId: t.id,
           description: t.description,
-          amount: t.amount,
-          is_income: t.is_income,
+          amount: occurrenceAmount,
+          is_income: t.is_group_parent ? occurrenceAmount >= 0 : t.is_income,
           is_transfer: t.is_transfer,
           is_group: t.is_group_parent,
           categoryColor: t.categories?.color || '#8B5CF6',

@@ -90,8 +90,13 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
         if (t.is_group_parent) {
           // Group: show as a single entry with children info
           const children = t.children || [];
-          // Net is stored on the parent amount (sum of signed child amounts)
-          const netAmount = t.amount;
+          // Compute net from children: income minus expenses, transfers excluded
+          const netAmount = children.length > 0
+            ? children.reduce((sum, c) => {
+                if (c.is_transfer) return sum;
+                return sum + (c.is_income ? c.amount : -c.amount);
+              }, 0)
+            : t.amount;
           items.push({
             templateId: t.id,
             description: t.description,
@@ -299,6 +304,13 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
               const next = getNextOccurrence(t, startOfDay(new Date()));
               const isGroup = t.is_group_parent;
               const isExpanded = expandedGroups.has(t.id);
+              // For groups, compute net from children so stale stored amounts don't mislead
+              const groupNet = isGroup && t.children?.length > 0
+                ? t.children.reduce((sum, c) => {
+                    if (c.is_transfer) return sum;
+                    return sum + (c.is_income ? c.amount : -c.amount);
+                  }, 0)
+                : t.amount;
 
               return (
                 <div key={t.id}>
@@ -340,11 +352,11 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
                         )}
                         {isGroup ? (
                           <span className={`text-sm font-semibold ${
-                            t.amount >= 0
+                            groupNet >= 0
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-red-600 dark:text-red-400'
                           }`}>
-                            {t.amount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(t.amount))}
+                            {groupNet >= 0 ? '+' : '−'}{formatCurrency(Math.abs(groupNet))}
                           </span>
                         ) : (
                           <span className={`text-sm font-semibold ${
@@ -577,8 +589,8 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
                         <span className="font-medium text-stone-700 dark:text-stone-400">
                           Net
                         </span>
-                        <span className={`font-bold ${t.amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {t.amount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(t.amount))}
+                        <span className={`font-bold ${groupNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {groupNet >= 0 ? '+' : '−'}{formatCurrency(Math.abs(groupNet))}
                         </span>
                       </div>
                     </div>

@@ -109,7 +109,8 @@ export default function RecurringGroupForm({
       else if (child.txType === 'expense') expenseCents += cents;
       else if (child.txType === 'transfer') transferCents += cents;
     }
-    const netCents = incomeCents - expenseCents - transferCents;
+    // Transfers are excluded (not subtracted), matching what gets stored on the parent
+    const netCents = incomeCents - expenseCents;
     return { incomeCents, expenseCents, transferCents, netCents };
   }, [children]);
 
