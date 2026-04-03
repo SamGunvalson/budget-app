@@ -25,7 +25,7 @@ function TransactionStatusBadges({
         )}
         {isPending && (
           <span title="Pending" className="inline-flex shrink-0 items-center">
-            <svg className="h-3.5 w-3.5 text-violet-500 dark:text-violet-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <svg className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
             </svg>
           </span>
@@ -72,7 +72,7 @@ function TransactionStatusBadges({
         </span>
       )}
       {isPending && (
-        <span className="inline-flex shrink-0 items-center rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+        <span className="inline-flex shrink-0 items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
           PENDING
         </span>
       )}
@@ -350,6 +350,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   onSplit,
   splitTransactionIds,
   isMobile = false,
+  isGroupChild = false,
   ...rest
 }, ref) {
   const category = transaction.categories;
@@ -407,9 +408,11 @@ const TransactionItem = forwardRef(function TransactionItem({
         ref={ref}
         {...rest}
         className={`border-b border-stone-100 align-top transition-colors dark:border-stone-700/50 ${
+          isGroupChild ? 'border-l-2 border-l-violet-300 bg-violet-50/20 dark:border-l-violet-700 dark:bg-violet-900/10' : ''
+        } ${
           isProjected ? 'bg-stone-50/30 opacity-60 dark:bg-stone-800/30'
-          : isPending ? 'bg-violet-50/30 dark:bg-violet-900/10'
-          : 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30'
+          : isPending ? 'bg-amber-50/30 dark:bg-amber-900/10'
+          : !isGroupChild ? 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30' : ''
         } ${hasPending ? 'border-l-2 border-l-amber-400' : ''}`}
       >
         <td className="px-3 py-2 whitespace-nowrap">
@@ -497,10 +500,12 @@ const TransactionItem = forwardRef(function TransactionItem({
       ref={ref}
       {...rest}
       className={`group border-b border-stone-100 transition-colors cursor-pointer dark:border-stone-700/50 ${
+        isGroupChild ? 'border-l-2 border-l-violet-300 bg-violet-50/20 dark:border-l-violet-700 dark:bg-violet-900/10' : ''
+      } ${
         isSelected ? 'bg-amber-50/50 dark:bg-amber-900/20'
         : isProjected ? 'bg-stone-50/30 opacity-50 dark:bg-stone-800/30'
-        : isPending ? 'bg-violet-50/30 dark:bg-violet-900/10'
-        : 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30'
+        : isPending ? 'bg-amber-50/30 dark:bg-amber-900/10'
+        : !isGroupChild ? 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30' : ''
       } ${hasPending ? 'border-l-2 border-l-amber-400' : ''}`}
     >
       {/* Checkbox */}

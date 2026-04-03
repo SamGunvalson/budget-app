@@ -11,6 +11,8 @@ import {
 } from 'date-fns';
 import { getTransactionsOffline } from '../../services/offlineAware';
 import { formatCurrency, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../../utils/helpers';
+import { getRecurringTemplates } from '../../services/recurring';
+import { buildTemplateLookup, groupTransactions } from '../../utils/transactionGrouping';
 import Modal from '../common/Modal';
 
 const CHIP_LIMIT = 3;
@@ -24,10 +26,21 @@ const CHIP_LIMIT = 3;
  */
 export default function CalendarView({ month, year }) {
   const [transactions, setTransactions] = useState([]);
+  const [recurringTemplates, setRecurringTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedDays, setExpandedDays] = useState(new Set());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [expandedModalGroups, setExpandedModalGroups] = useState(new Set());
+
+  const toggleModalGroupExpand = (groupKey) => {
+    setExpandedModalGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  };
 
   const toggleDayExpand = (key, e) => {
     if (e) e.stopPropagation();
@@ -39,7 +52,7 @@ export default function CalendarView({ month, year }) {
     });
   };
 
-  // Fetch transactions for the selected month
+  // Fetch transactions and recurring templates for the selected month
   useEffect(() => {
     let cancelled = false;
 
@@ -48,9 +61,16 @@ export default function CalendarView({ month, year }) {
       setError('');
       setExpandedDays(new Set());
       setSelectedDay(null);
+      setExpandedModalGroups(new Set());
       try {
-        const data = await getTransactionsOffline({ month, year, status: 'all' });
-        if (!cancelled) setTransactions(data);
+        const [data, templates] = await Promise.all([
+          getTransactionsOffline({ month, year, status: 'all' }),
+          getRecurringTemplates().catch(() => []),
+        ]);
+        if (!cancelled) {
+          setTransactions(data);
+          setRecurringTemplates(templates);
+        }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Failed to load transactions');
       } finally {
@@ -61,6 +81,11 @@ export default function CalendarView({ month, year }) {
     load();
     return () => { cancelled = true; };
   }, [month, year]);
+
+  const templateLookup = useMemo(
+    () => buildTemplateLookup(recurringTemplates),
+    [recurringTemplates],
+  );
 
   // Build date → transactions map
   const transactionsByDay = useMemo(() => {
@@ -74,6 +99,16 @@ export default function CalendarView({ month, year }) {
     }
     return map;
   }, [transactions]);
+
+  // Build date → grouped items map for calendar chip display
+  const groupedByDay = useMemo(() => {
+    const map = new Map();
+    for (const [dayKey, dayTxs] of transactionsByDay) {
+      const grouped = groupTransactions(dayTxs, templateLookup);
+      map.set(dayKey, grouped);
+    }
+    return map;
+  }, [transactionsByDay, templateLookup]);
 
   // Calendar grid computation
   const calendarMonth = new Date(year, month - 1, 1);
@@ -106,16 +141,18 @@ export default function CalendarView({ month, year }) {
     return 'text-red-600 dark:text-red-400';
   };
 
-  // Day detail modal: transactions for selected day
-  const selectedDayTransactions = useMemo(() => {
+  // Grouped items for the selected day modal
+  const selectedDayGrouped = useMemo(() => {
     if (!selectedDay) return [];
-    return transactionsByDay.get(selectedDay) || [];
-  }, [selectedDay, transactionsByDay]);
+    return groupedByDay.get(selectedDay) || [];
+  }, [selectedDay, groupedByDay]);
 
-  // Compute daily net for modal footer (exclude transfers)
+  // Compute daily net for modal footer (exclude transfers) — use raw transactions
   const selectedDayNet = useMemo(() => {
+    if (!selectedDay) return 0;
+    const dayTxs = transactionsByDay.get(selectedDay) || [];
     let net = 0;
-    for (const t of selectedDayTransactions) {
+    for (const t of dayTxs) {
       const type = classifyTx(t);
       if (type === 'transfer') continue;
       if (type === 'income') net += t.amount;
@@ -124,7 +161,7 @@ export default function CalendarView({ month, year }) {
       else net -= t.amount;
     }
     return net;
-  }, [selectedDayTransactions]);
+  }, [selectedDay, transactionsByDay]);
 
   if (error) {
     return (
@@ -166,15 +203,16 @@ export default function CalendarView({ month, year }) {
           const key = format(day, 'yyyy-MM-dd');
           const inMonth = isSameMonth(day, calendarMonth);
           const isCurrentDay = isToday(day);
-          const items = transactionsByDay.get(key) || [];
+          const dayItems = groupedByDay.get(key) || [];
+          const rawItems = transactionsByDay.get(key) || [];
           const isExpanded = expandedDays.has(key);
-          const visible = isExpanded ? items : items.slice(0, CHIP_LIMIT);
-          const overflow = isExpanded ? 0 : items.length - CHIP_LIMIT;
+          const visible = isExpanded ? dayItems : dayItems.slice(0, CHIP_LIMIT);
+          const overflow = isExpanded ? 0 : dayItems.length - CHIP_LIMIT;
 
           return (
             <div
               key={key}
-              onClick={() => items.length > 0 && setSelectedDay(key)}
+              onClick={() => rawItems.length > 0 && setSelectedDay(key)}
               className={`flex min-h-22 cursor-pointer flex-col gap-0.5 p-1.5 transition-colors hover:bg-rose-50/50 dark:hover:bg-rose-950/20 ${
                 inMonth
                   ? isCurrentDay
@@ -196,8 +234,34 @@ export default function CalendarView({ month, year }) {
                 {format(day, 'd')}
               </span>
 
-              {/* Transaction chips */}
-              {visible.map((t, i) => {
+              {/* Transaction chips (grouped) */}
+              {visible.map((item, i) => {
+                if (item.type === 'group') {
+                  const groupNet = item.netAmount;
+                  const isPositive = groupNet >= 0;
+                  const catColor = item.categoryColor || '#A8A29E';
+                  return (
+                    <button
+                      key={`group-${item.groupKey}-${i}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedDay(key);
+                      }}
+                      title={`${item.label} (${item.children.length} items) · ${isPositive ? '+' : '−'}${formatCurrency(Math.abs(groupNet))}`}
+                      className="w-full truncate rounded px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-white transition-opacity hover:opacity-80 focus:outline-none focus:ring-1 focus:ring-white focus:ring-offset-1"
+                      style={{ backgroundColor: catColor }}
+                    >
+                      {item.label}
+                      <span className="ml-0.5 opacity-90">
+                        {' '}{isPositive ? '+' : '−'}{formatCurrency(Math.abs(groupNet))}
+                      </span>
+                      <span className="ml-0.5 opacity-70">({item.children.length})</span>
+                    </button>
+                  );
+                }
+
+                const t = item.transaction;
                 const type = classifyTx(t);
                 const catColor = t.categories?.color || '#A8A29E';
                 const label = t.description || t.payee || 'Transaction';
@@ -234,7 +298,7 @@ export default function CalendarView({ month, year }) {
                   +{overflow} more
                 </button>
               )}
-              {isExpanded && items.length > CHIP_LIMIT && (
+              {isExpanded && dayItems.length > CHIP_LIMIT && (
                 <button
                   type="button"
                   onClick={(e) => toggleDayExpand(key, e)}
@@ -252,13 +316,91 @@ export default function CalendarView({ month, year }) {
       {selectedDay && (
         <Modal
           title={format(new Date(selectedDay + 'T00:00:00'), 'EEEE, MMMM d, yyyy')}
-          onClose={() => setSelectedDay(null)}
+          onClose={() => { setSelectedDay(null); setExpandedModalGroups(new Set()); }}
         >
-          {selectedDayTransactions.length === 0 ? (
+          {selectedDayGrouped.length === 0 ? (
             <p className="text-sm text-stone-500 dark:text-stone-400">No transactions on this day.</p>
           ) : (
             <div className="space-y-2">
-              {selectedDayTransactions.map((t) => {
+              {selectedDayGrouped.map((item) => {
+                if (item.type === 'group') {
+                  const isGroupExpanded = expandedModalGroups.has(item.groupKey);
+                  const groupNet = item.netAmount;
+                  const isPositive = groupNet >= 0;
+                  return (
+                    <div key={item.groupKey}>
+                      {/* Group header */}
+                      <button
+                        type="button"
+                        onClick={() => toggleModalGroupExpand(item.groupKey)}
+                        className="flex w-full items-center gap-3 rounded-lg border border-stone-200 bg-stone-100 px-3 py-2.5 transition-colors hover:bg-stone-150 dark:border-stone-600 dark:bg-stone-700/80 dark:hover:bg-stone-700"
+                      >
+                        {/* Chevron */}
+                        <svg
+                          className={`h-4 w-4 shrink-0 text-stone-500 transition-transform dark:text-stone-400 ${isGroupExpanded ? 'rotate-90' : ''}`}
+                          fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                        {/* Category dot */}
+                        {item.categoryColor && (
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: item.categoryColor }}
+                          />
+                        )}
+                        <div className="min-w-0 flex-1 text-left">
+                          <span className="text-sm font-semibold text-stone-800 dark:text-stone-200">
+                            {item.label}
+                          </span>
+                          <span className="ml-2 rounded-full bg-stone-200 px-1.5 py-0.5 text-[10px] font-medium text-stone-600 dark:bg-stone-600 dark:text-stone-300">
+                            {item.children.length} items
+                          </span>
+                        </div>
+                        <span className={`shrink-0 text-sm font-semibold ${
+                          isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          {isPositive ? '+' : '−'}{formatCurrency(Math.abs(groupNet))}
+                        </span>
+                      </button>
+
+                      {/* Expanded children */}
+                      {isGroupExpanded && (
+                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-violet-200 pl-3 dark:border-violet-800">
+                          {item.children.map((t) => {
+                            const type = classifyTx(t);
+                            const catColor = t.categories?.color || '#A8A29E';
+                            return (
+                              <div
+                                key={t.id}
+                                className="flex items-center gap-3 rounded-lg bg-stone-50/80 px-3 py-1.5 dark:bg-stone-800/40"
+                              >
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full"
+                                  style={{ backgroundColor: catColor }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm text-stone-700 dark:text-stone-300">
+                                    {t.description || t.payee || 'Transaction'}
+                                  </p>
+                                  <span className="text-xs text-stone-500 dark:text-stone-400">
+                                    {t.categories?.name || 'Uncategorized'}
+                                  </span>
+                                </div>
+                                <span className={`shrink-0 text-sm font-semibold ${amountColorClass(type)}`}>
+                                  {amountPrefix(type)}{formatCurrency(Math.abs(t.amount))}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Standalone transaction
+                const t = item.transaction;
                 const type = classifyTx(t);
                 const catColor = t.categories?.color || '#A8A29E';
                 return (
@@ -266,12 +408,10 @@ export default function CalendarView({ month, year }) {
                     key={t.id}
                     className="flex items-center gap-3 rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 dark:border-stone-700 dark:bg-stone-800/60"
                   >
-                    {/* Category dot */}
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: catColor }}
                     />
-                    {/* Details */}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-stone-800 dark:text-stone-200">
                         {t.description || t.payee || 'Transaction'}
@@ -288,7 +428,6 @@ export default function CalendarView({ month, year }) {
                         )}
                       </div>
                     </div>
-                    {/* Amount */}
                     <span className={`shrink-0 text-sm font-semibold ${amountColorClass(type)}`}>
                       {amountPrefix(type)}{formatCurrency(Math.abs(t.amount))}
                     </span>

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import TransactionItem from './TransactionItem';
+import TransactionGroupHeader from './TransactionGroupHeader';
 
 const SORT_COLUMNS = [
   { key: 'transaction_date', label: 'Date', align: 'left' },
@@ -49,6 +50,9 @@ function SortArrow({ direction }) {
  */
 export default function TransactionList({
   transactions,
+  groupedItems,
+  expandedGroups,
+  onToggleGroupExpand,
   onEdit,
   onDelete,
   sortColumn,
@@ -67,6 +71,10 @@ export default function TransactionList({
   onSkip,
   onSplit,
   splitTransactionIds,
+  onConfirmAll,
+  onSkipAll,
+  onEditAll,
+  onDeleteAll,
   scrollKey,
   initialScrollToIndex = 0,
 }) {
@@ -86,8 +94,30 @@ export default function TransactionList({
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
+  // Flatten grouped items into virtual rows: group headers, child rows, and standalone transactions
+  const flatRows = useMemo(() => {
+    if (!groupedItems || groupedItems.length === 0) {
+      // Fallback: render flat list if no grouped items provided
+      return transactions.map((tx) => ({ rowType: 'transaction', transaction: tx }));
+    }
+    const rows = [];
+    for (const item of groupedItems) {
+      if (item.type === 'group') {
+        rows.push({ rowType: 'groupHeader', group: item });
+        if (expandedGroups?.has(item.groupKey)) {
+          for (const child of item.children) {
+            rows.push({ rowType: 'groupChild', transaction: child, groupKey: item.groupKey });
+          }
+        }
+      } else {
+        rows.push({ rowType: 'transaction', transaction: item.transaction });
+      }
+    }
+    return rows;
+  }, [groupedItems, expandedGroups, transactions]);
+
   const virtualizer = useVirtualizer({
-    count: transactions.length,
+    count: flatRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => (isMobile ? 56 : 52),
     overscan: 10,
@@ -203,8 +233,53 @@ export default function TransactionList({
               <tr><td colSpan={columnCount} style={{ height: paddingTop, padding: 0 }} /></tr>
             )}
             {virtualItems.map((virtualRow) => {
-              const tx = transactions[virtualRow.index];
+              const row = flatRows[virtualRow.index];
+
+              if (row.rowType === 'groupHeader') {
+                const { group } = row;
+                const isExpanded = expandedGroups?.has(group.groupKey);
+                // Compute running balance for the group: use last child's balance
+                const lastChild = group.children[group.children.length - 1];
+                const groupBalance = lastChild ? (balanceMap?.get(lastChild.id) ?? null) : null;
+                // Check group selection state
+                const allChildIds = group.children.map((c) => c.id);
+                const selectedCount = allChildIds.filter((id) => selectedIds.has(id)).length;
+                const groupAllSelected = selectedCount === allChildIds.length;
+                const groupSomeSelected = selectedCount > 0 && !groupAllSelected;
+
+                return (
+                  <TransactionGroupHeader
+                    key={group.groupKey}
+                    ref={virtualizer.measureElement}
+                    data-index={virtualRow.index}
+                    group={group}
+                    isExpanded={isExpanded}
+                    onToggleExpand={() => onToggleGroupExpand(group.groupKey)}
+                    runningBalance={groupBalance}
+                    isMobile={isMobile}
+                    isSelected={groupAllSelected}
+                    isIndeterminate={groupSomeSelected}
+                    onToggleSelect={() => {
+                      for (const id of allChildIds) {
+                        if (groupAllSelected) {
+                          if (selectedIds.has(id)) onToggleSelect(id);
+                        } else {
+                          if (!selectedIds.has(id)) onToggleSelect(id);
+                        }
+                      }
+                    }}
+                    splitTransactionIds={splitTransactionIds}
+                    onConfirmAll={onConfirmAll}
+                    onSkipAll={onSkipAll}
+                    onEditAll={onEditAll}
+                    onDeleteAll={onDeleteAll}
+                  />
+                );
+              }
+
+              const tx = row.transaction;
               const edits = pendingEdits.get(tx.id) || null;
+              const isChild = row.rowType === 'groupChild';
               return (
                 <TransactionItem
                   key={tx.id}
@@ -219,12 +294,13 @@ export default function TransactionList({
                   onCellEdit={onCellEdit}
                   categories={categories}
                   accounts={accounts}
-                  runningBalance={balanceMap?.get(tx.id) ?? null}
+                  runningBalance={isChild ? null : (balanceMap?.get(tx.id) ?? null)}
                   onConfirm={onConfirm}
                   onSkip={onSkip}
                   onSplit={onSplit}
                   splitTransactionIds={splitTransactionIds}
                   isMobile={isMobile}
+                  isGroupChild={isChild}
                 />
               );
             })}
