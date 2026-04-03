@@ -26,7 +26,7 @@ A personal budget tracking app built with React and Supabase. Features full offl
 
 | Layer       | Technology                  |
 | ----------- | --------------------------- |
-| Frontend    | React 19.2 + Vite 6         |
+| Frontend    | React 19.2 + Vite 7         |
 | Styling     | Tailwind CSS 4.2            |
 | Database    | Supabase (PostgreSQL + RLS) |
 | Offline DB  | Dexie.js (IndexedDB)        |
