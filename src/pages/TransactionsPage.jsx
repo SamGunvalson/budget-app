@@ -22,7 +22,10 @@ import {
   createTransfer,
   createLinkedTransfer,
   createAdjustment,
+  bulkUpdateTransactions,
+  bulkDeleteTransactions,
 } from '../services/transactions';
+import BulkEditModal from '../components/transactions/BulkEditModal';
 import {
   createRecurringTemplate,
   updateRecurringTemplate,
@@ -30,13 +33,16 @@ import {
   updateRecurringGroup,
   generateProjectedTransactions,
   clearProjectedTransactionsForTemplate,
+  getRecurringTemplateById,
+  getRecurringTemplates,
 } from '../services/recurring';
+import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
 import { toCents } from '../utils/helpers';
 import { isAssetAccount, getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
-import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense } from '../services/splitExpenses';
+import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 
@@ -83,6 +89,22 @@ export default function TransactionsPage() {
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [editingGroup, setEditingGroup] = useState(null);
   const [recurringKey, setRecurringKey] = useState(0);
+  const [bulkEditGroup, setBulkEditGroup] = useState(null); // Transaction[] for bulk edit modal
+  const [deletingGroup, setDeletingGroup] = useState(null); // Transaction[] pending group delete
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+
+  // Grouping state
+  const [recurringTemplates, setRecurringTemplates] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
+
+  const toggleGroupExpand = useCallback((groupKey) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }, []);
 
   // Split state
   const [partnership, setPartnership] = useState(null);
@@ -153,6 +175,20 @@ export default function TransactionsPage() {
     load();
     return () => { cancelled = true; };
   }, [month, year, viewMode, reset]);
+
+  // ---------- Load recurring templates (for grouping) ----------
+  useEffect(() => {
+    let cancelled = false;
+    getRecurringTemplates()
+      .then((data) => { if (!cancelled) setRecurringTemplates(data); })
+      .catch(() => {}); // non-fatal
+    return () => { cancelled = true; };
+  }, [recurringKey]); // refresh when recurring templates change
+
+  const templateLookup = useMemo(
+    () => buildTemplateLookup(recurringTemplates),
+    [recurringTemplates],
+  );
 
   // ---------- Client-side filter & sort ----------
   const filteredSorted = useMemo(() => {
@@ -245,6 +281,12 @@ export default function TransactionsPage() {
 
     return result;
   }, [transactions, filters, mgr.sortColumn, mgr.sortDirection]);
+
+  // ---------- Group transactions for display ----------
+  const groupedItems = useMemo(
+    () => groupTransactions(filteredSorted, templateLookup),
+    [filteredSorted, templateLookup],
+  );
 
   // ---------- Index of first posted transaction in the sorted+filtered list ----------
   const firstPostedIndex = useMemo(
@@ -419,7 +461,96 @@ export default function TransactionsPage() {
     setEditingGroup(group);
   };
 
+  // ---------- Group bulk handlers ----------
+  const handleConfirmAll = (children) => {
+    children
+      .filter((c) => c.status !== 'posted')
+      .forEach((c) => handleConfirmWithSplit(c.id));
+  };
+
+  const handleSkipAll = (children) => {
+    children
+      .filter((c) => c.status !== 'posted')
+      .forEach((c) => mgr.handleSkip(c.id));
+  };
+
+  const handleEditAll = (children) => {
+    setBulkEditGroup(children);
+  };
+
+  const handleDeleteAll = (children) => {
+    setDeletingGroup(children);
+  };
+
+  const handleBulkEditSubmit = async (fields) => {
+    if (!bulkEditGroup) return;
+    const updates = bulkEditGroup.map((c) => ({ id: c.id, ...fields }));
+    await bulkUpdateTransactions(updates);
+    // Refresh local state
+    setTransactions((prev) =>
+      prev.map((t) => {
+        const update = updates.find((u) => u.id === t.id);
+        if (!update) return t;
+        const { id: _id, ...rest } = update;
+        return { ...t, ...rest };
+      })
+    );
+    setBulkEditGroup(null);
+  };
+
+  const handleDeleteGroupConfirm = async () => {
+    if (!deletingGroup) return;
+    setIsDeletingGroup(true);
+    try {
+      await bulkDeleteTransactions(deletingGroup.map((c) => c.id));
+      setTransactions((prev) =>
+        prev.filter((t) => !deletingGroup.some((c) => c.id === t.id))
+      );
+      setDeletingGroup(null);
+    } catch (err) {
+      setLoadError(err?.message || 'Failed to delete transactions.');
+    } finally {
+      setIsDeletingGroup(false);
+    }
+  };
+
+  // ---------- Confirm with auto-split ----------
+  const handleConfirmWithSplit = async (txId) => {
+    const tx = transactions.find((t) => t.id === txId);
+    await mgr.handleConfirm(txId);
+    if (tx?.recurring_template_id && partnership && currentUser) {
+      try {
+        const tpl = await getRecurringTemplateById(tx.recurring_template_id);
+        if (tpl && tpl.is_split && !tpl.is_transfer) {
+          const pid = getPartnerId(partnership, currentUser.id);
+          const { payerShare, partnerShare, paidByUserId } = computeShares(
+            Math.abs(tpl.amount),
+            tpl.split_method,
+            tpl.split_payer,
+            tpl.split_partner_share_pct,
+            currentUser.id,
+            pid,
+          );
+          await createSplitExpense({
+            partnershipId: partnership.id,
+            description: tx.description || tpl.description,
+            totalAmount: Math.abs(tpl.amount),
+            payerShare,
+            partnerShare,
+            paidByUserId,
+            transactionId: txId,
+            expenseDate: tx.transaction_date,
+          });
+          setSplitTransactionIds((prev) => new Set([...prev, txId]));
+        }
+      } catch (err) {
+        console.warn('handleConfirmWithSplit: failed to create split expense:', err?.message);
+      }
+    }
+  };
+
   const handleCreateGroup = async (parentData, childrenData) => {
+
     await createRecurringGroup(parentData, childrenData);
     // Generate projected transactions immediately so they appear without a page refresh
     await generateProjectedTransactions().catch((err) =>
@@ -604,6 +735,9 @@ export default function TransactionsPage() {
         ) : (
           <TransactionList
             transactions={filteredSorted}
+            groupedItems={groupedItems}
+            expandedGroups={expandedGroups}
+            onToggleGroupExpand={toggleGroupExpand}
             scrollKey={dataLoadKey}
             initialScrollToIndex={firstPostedIndex}
             onEdit={mgr.setEditingTransaction}
@@ -619,10 +753,14 @@ export default function TransactionsPage() {
             categories={categories}
             accounts={accounts}
             balanceMap={balanceMap}
-            onConfirm={mgr.handleConfirm}
+            onConfirm={handleConfirmWithSplit}
             onSkip={mgr.handleSkip}
             onSplit={partnership ? (tx) => setSplittingTransaction(tx) : undefined}
             splitTransactionIds={splitTransactionIds}
+            onConfirmAll={handleConfirmAll}
+            onSkipAll={handleSkipAll}
+            onEditAll={handleEditAll}
+            onDeleteAll={handleDeleteAll}
             emptyMessage={
               viewMode === 'yearly'
                 ? `No transactions for ${year}.`
@@ -755,6 +893,8 @@ export default function TransactionsPage() {
             accounts={accounts}
             onSubmit={handleCreateRecurring}
             onCancel={() => setShowRecurringForm(false)}
+            partnership={partnership}
+            partnerEmail={partnerEmail}
           />
         </Modal>
       )}
@@ -769,6 +909,8 @@ export default function TransactionsPage() {
             onSubmit={handleUpdateRecurring}
             onCancel={() => setEditingTemplate(null)}
             isEditing
+            partnership={partnership}
+            partnerEmail={partnerEmail}
           />
         </Modal>
       )}
@@ -796,6 +938,49 @@ export default function TransactionsPage() {
             onCancel={() => setEditingGroup(null)}
             isEditing
           />
+        </Modal>
+      )}
+
+      {/* Bulk edit group modal */}
+      {bulkEditGroup && (
+        <BulkEditModal
+          transactions={bulkEditGroup}
+          categories={categories}
+          onSubmit={handleBulkEditSubmit}
+          onCancel={() => setBulkEditGroup(null)}
+        />
+      )}
+
+      {/* Delete group confirmation */}
+      {deletingGroup && (
+        <Modal title="Delete Group" onClose={() => setDeletingGroup(null)}>
+          <p className="mb-2 text-base text-stone-700 dark:text-stone-300">
+            Are you sure you want to delete all{' '}
+            <span className="font-semibold text-stone-900 dark:text-stone-100">
+              {deletingGroup.length} transactions
+            </span>{' '}
+            in this group?
+          </p>
+          <p className="mb-6 text-sm text-stone-500 dark:text-stone-400">
+            This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setDeletingGroup(null)}
+              className="rounded-xl border border-stone-200 bg-white px-5 py-2.5 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteGroupConfirm}
+              disabled={isDeletingGroup}
+              className="rounded-xl bg-red-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-red-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isDeletingGroup ? 'Deleting…' : 'Delete All'}
+            </button>
+          </div>
         </Modal>
       )}
 

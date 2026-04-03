@@ -24,6 +24,7 @@ export const FREQUENCY_OPTIONS = [
   { value: "monthly", label: "Monthly" },
   { value: "quarterly", label: "Quarterly" },
   { value: "yearly", label: "Yearly" },
+  { value: "custom", label: "Custom Interval" },
 ];
 
 /**
@@ -186,6 +187,41 @@ export function getNextOccurrence(template, after) {
       break;
     }
 
+    case "custom": {
+      const interval = template.custom_interval || 1;
+      const unit = template.custom_unit || "months";
+
+      if (unit === "days") {
+        let d = startDate;
+        while (!isAfter(d, afterDate)) {
+          d = addDays(d, interval);
+        }
+        candidate = d;
+      } else if (unit === "weeks") {
+        let d = startDate;
+        while (!isAfter(d, afterDate)) {
+          d = addWeeks(d, interval);
+        }
+        candidate = d;
+      } else {
+        // months — anchor to day_of_month, walk in steps of interval months
+        const targetDay = template.day_of_month || startDate.getDate();
+        let d = clampDay(
+          new Date(startDate.getFullYear(), startDate.getMonth(), 1),
+          targetDay,
+        );
+        // If the aligned day is before start_date, advance one interval
+        if (isBefore(d, startDate)) {
+          d = clampDay(addMonths(d, interval), targetDay);
+        }
+        while (!isAfter(d, afterDate)) {
+          d = clampDay(addMonths(d, interval), targetDay);
+        }
+        candidate = d;
+      }
+      break;
+    }
+
     default:
       return null;
   }
@@ -304,6 +340,20 @@ export function formatSchedule(template) {
         return `Yearly on ${format(d, "MMM d")}`;
       }
       return "Yearly";
+    }
+    case "custom": {
+      const interval = template.custom_interval || 1;
+      const unit = template.custom_unit || "months";
+      if (unit === "days") {
+        return `Every ${interval} day${interval === 1 ? "" : "s"}`;
+      }
+      if (unit === "weeks") {
+        return `Every ${interval} week${interval === 1 ? "" : "s"}`;
+      }
+      // months
+      const day =
+        day_of_month || (start_date ? toLocalDate(start_date).getDate() : 1);
+      return `Every ${interval} month${interval === 1 ? "" : "s"} on the ${ordinal(day)}`;
     }
     default:
       return frequency;

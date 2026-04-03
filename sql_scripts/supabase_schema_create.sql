@@ -228,11 +228,14 @@ CREATE TABLE recurring_templates (
   frequency        TEXT        NOT NULL
                      CHECK (frequency IN (
                        'weekly', 'biweekly', 'semi_monthly',
-                       'monthly', 'quarterly', 'yearly'
+                       'monthly', 'quarterly', 'yearly',
+                       'custom'
                      )),
   day_of_month     INT         CHECK (day_of_month  IS NULL OR day_of_month  BETWEEN 1 AND 31),
   day_of_month_2   INT         CHECK (day_of_month_2 IS NULL OR day_of_month_2 BETWEEN 1 AND 31),
   day_of_week      INT         CHECK (day_of_week   IS NULL OR day_of_week   BETWEEN 0 AND 6),
+  custom_interval  INT         CHECK (custom_interval IS NULL OR custom_interval >= 1),
+  custom_unit      TEXT        CHECK (custom_unit IS NULL OR custom_unit IN ('days', 'weeks', 'months')),
   start_date       DATE        NOT NULL,
   end_date         DATE,
   last_applied     DATE,
@@ -244,6 +247,11 @@ CREATE TABLE recurring_templates (
   is_paused        BOOLEAN     DEFAULT FALSE,
   is_active        BOOLEAN     DEFAULT TRUE,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
+  -- Split expense configuration (non-transfer, non-group templates only)
+  is_split         BOOLEAN     NOT NULL DEFAULT FALSE,
+  split_method     TEXT        CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
+  split_payer      TEXT        CHECK (split_payer  IS NULL OR split_payer  IN ('me', 'partner')),
+  split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
 );
 

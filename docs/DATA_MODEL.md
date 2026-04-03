@@ -236,33 +236,37 @@ const defaultCategories = [
 
 **Group Model**: A group parent row stores administrative defaults (name, payee, account, schedule) that are inherited by child line items. When applied, only child line items generate actual transactions — no auto net deposit is created. The parent's `amount` stores the calculated net (sum of signed child amounts) for display/sorting purposes.
 
-| Column              | Type        | Constraints                                 | Description                                                                                                                                                |
-| ------------------- | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                | UUID        | PRIMARY KEY                                 | Template ID                                                                                                                                                |
-| `user_id`           | UUID        | FOREIGN KEY → users(id)                     | Template owner                                                                                                                                             |
-| `account_id`        | UUID        | FOREIGN KEY → accounts(id), NOT NULL        | Source account (group parent: default for new line items)                                                                                                  |
-| `category_id`       | UUID        | FOREIGN KEY → categories(id)                | Category (group parent: optional reference; children: required)                                                                                            |
-| `description`       | TEXT        | NOT NULL                                    | Transaction description (group parent: group name; children: optional label)                                                                               |
-| `payee`             | TEXT        | NULL                                        | Payee (group parent: required default; children: optional override, inherits from parent at apply-time)                                                    |
-| `amount`            | BIGINT      | NOT NULL                                    | Amount in cents — always a positive absolute value (group parent: absolute net from children; children: absolute amount; `is_income` determines direction) |
-| `is_income`         | BOOLEAN     | DEFAULT FALSE                               | True if income (group parent: true if net >= 0)                                                                                                            |
-| `is_transfer`       | BOOLEAN     | DEFAULT FALSE                               | True if this is a transfer template                                                                                                                        |
-| `to_account_id`     | UUID        | FOREIGN KEY → accounts(id), NULL            | Destination account (transfers only)                                                                                                                       |
-| `frequency`         | TEXT        | NOT NULL                                    | 'weekly', 'biweekly', 'semi_monthly', 'monthly', 'quarterly', 'yearly'                                                                                     |
-| `day_of_month`      | INT         | NULL                                        | Day of month (1-31) for monthly/semi-monthly                                                                                                               |
-| `day_of_month_2`    | INT         | NULL                                        | Second day (1-31) for semi-monthly                                                                                                                         |
-| `day_of_week`       | INT         | NULL                                        | Day of week (0-6) for weekly                                                                                                                               |
-| `start_date`        | DATE        | NOT NULL                                    | First occurrence date                                                                                                                                      |
-| `end_date`          | DATE        | NULL                                        | Optional end date                                                                                                                                          |
-| `last_applied`      | DATE        | NULL                                        | Last date template was applied                                                                                                                             |
-| `group_id`          | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Parent group ID (children only)                                                                                                                            |
-| `is_group_parent`   | BOOLEAN     | DEFAULT FALSE                               | True if this is a group parent                                                                                                                             |
-| `group_order`       | INT         | DEFAULT 0                                   | Sort order within group (children)                                                                                                                         |
-| `auto_confirm`      | BOOLEAN     | NOT NULL, DEFAULT TRUE                      | If true, applied transactions start as 'posted'; if false, start as 'pending'                                                                              |
-| `projected_through` | DATE        | NULL                                        | Last date through which projected transactions have been generated                                                                                         |
-| `is_paused`         | BOOLEAN     | DEFAULT FALSE                               | If true, template is paused and skipped during projection (auto-set when account is closed)                                                                |
-| `is_active`         | BOOLEAN     | DEFAULT TRUE                                | Active status                                                                                                                                              |
-| `created_at`        | TIMESTAMPTZ | DEFAULT NOW()                               | Creation timestamp                                                                                                                                         |
+| Column                    | Type        | Constraints                                 | Description                                                                                                                                                |
+| ------------------------- | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | UUID        | PRIMARY KEY                                 | Template ID                                                                                                                                                |
+| `user_id`                 | UUID        | FOREIGN KEY → users(id)                     | Template owner                                                                                                                                             |
+| `account_id`              | UUID        | FOREIGN KEY → accounts(id), NOT NULL        | Source account (group parent: default for new line items)                                                                                                  |
+| `category_id`             | UUID        | FOREIGN KEY → categories(id)                | Category (group parent: optional reference; children: required)                                                                                            |
+| `description`             | TEXT        | NOT NULL                                    | Transaction description (group parent: group name; children: optional label)                                                                               |
+| `payee`                   | TEXT        | NULL                                        | Payee (group parent: required default; children: optional override, inherits from parent at apply-time)                                                    |
+| `amount`                  | BIGINT      | NOT NULL                                    | Amount in cents — always a positive absolute value (group parent: absolute net from children; children: absolute amount; `is_income` determines direction) |
+| `is_income`               | BOOLEAN     | DEFAULT FALSE                               | True if income (group parent: true if net >= 0)                                                                                                            |
+| `is_transfer`             | BOOLEAN     | DEFAULT FALSE                               | True if this is a transfer template                                                                                                                        |
+| `to_account_id`           | UUID        | FOREIGN KEY → accounts(id), NULL            | Destination account (transfers only)                                                                                                                       |
+| `frequency`               | TEXT        | NOT NULL                                    | 'weekly', 'biweekly', 'semi_monthly', 'monthly', 'quarterly', 'yearly'                                                                                     |
+| `day_of_month`            | INT         | NULL                                        | Day of month (1-31) for monthly/semi-monthly                                                                                                               |
+| `day_of_month_2`          | INT         | NULL                                        | Second day (1-31) for semi-monthly                                                                                                                         |
+| `day_of_week`             | INT         | NULL                                        | Day of week (0-6) for weekly                                                                                                                               |
+| `start_date`              | DATE        | NOT NULL                                    | First occurrence date                                                                                                                                      |
+| `end_date`                | DATE        | NULL                                        | Optional end date                                                                                                                                          |
+| `last_applied`            | DATE        | NULL                                        | Last date template was applied                                                                                                                             |
+| `group_id`                | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Parent group ID (children only)                                                                                                                            |
+| `is_group_parent`         | BOOLEAN     | DEFAULT FALSE                               | True if this is a group parent                                                                                                                             |
+| `group_order`             | INT         | DEFAULT 0                                   | Sort order within group (children)                                                                                                                         |
+| `auto_confirm`            | BOOLEAN     | NOT NULL, DEFAULT TRUE                      | If true, applied transactions start as 'posted'; if false, start as 'pending'                                                                              |
+| `projected_through`       | DATE        | NULL                                        | Last date through which projected transactions have been generated                                                                                         |
+| `is_paused`               | BOOLEAN     | DEFAULT FALSE                               | If true, template is paused and skipped during projection (auto-set when account is closed)                                                                |
+| `is_active`               | BOOLEAN     | DEFAULT TRUE                                | Active status                                                                                                                                              |
+| `created_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Creation timestamp                                                                                                                                         |
+| `is_split`                | BOOLEAN     | NOT NULL, DEFAULT FALSE                     | When true, auto-creates a `split_expenses` record each time this template's transaction is posted (non-transfer, non-group templates only)                 |
+| `split_method`            | TEXT        | NULL                                        | How the expense is divided: `'equal'` (50/50), `'full'` (non-payer owes 100%), `'custom'` (partner owes `split_partner_share_pct`% of total)               |
+| `split_payer`             | TEXT        | NULL                                        | Who pays: `'me'` (current user) or `'partner'`                                                                                                             |
+| `split_partner_share_pct` | INT         | NULL                                        | Partner's share percentage (0–100); only meaningful when `split_method = 'custom'`                                                                         |
 
 **Constraints**:
 
@@ -271,6 +275,9 @@ const defaultCategories = [
 - CHECK: `day_of_month_2 IS NULL OR (day_of_month_2 BETWEEN 1 AND 31)`
 - CHECK: `day_of_week IS NULL OR (day_of_week BETWEEN 0 AND 6)`
 - CHECK: `is_transfer = FALSE OR to_account_id IS NOT NULL`
+- CHECK: `split_method IS NULL OR split_method IN ('equal', 'full', 'custom')`
+- CHECK: `split_payer IS NULL OR split_payer IN ('me', 'partner')`
+- CHECK: `split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100`
 
 **RLS**: Users can only access their own templates
 
@@ -309,6 +316,11 @@ interface RecurringTemplate {
   is_paused: boolean;
   is_active: boolean;
   created_at: string;
+  // Split expense configuration
+  is_split: boolean;
+  split_method?: "equal" | "full" | "custom";
+  split_payer?: "me" | "partner";
+  split_partner_share_pct?: number;
   // Joined relations
   children?: RecurringTemplate[];
   categories?: { id: string; name: string; color: string; type: string };
@@ -656,6 +668,11 @@ CREATE TABLE recurring_templates (
   is_paused BOOLEAN DEFAULT FALSE,
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Split expense configuration (non-transfer, non-group templates only)
+  is_split BOOLEAN NOT NULL DEFAULT FALSE,
+  split_method TEXT CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
+  split_payer TEXT CHECK (split_payer IS NULL OR split_payer IN ('me', 'partner')),
+  split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
 );
 
