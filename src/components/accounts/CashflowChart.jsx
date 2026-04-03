@@ -30,33 +30,51 @@ const ACCOUNT_COLORS = [
 
 // ─── Range presets ────────────────────────────────────────────────────────────
 const RANGE_OPTIONS = [
-  { key: '1m', label: '1M', months: 1 },
-  { key: '3m', label: '3M', months: 3 },
-  { key: '6m', label: '6M', months: 6 },
-  { key: '1y', label: '1Y', months: 12 },
+  { key: '1m', label: '1M', pastMonths: 1, futureMonths: 1 },
+  { key: '3m', label: '3M', pastMonths: 2, futureMonths: 1 },
+  { key: '6m', label: '6M', pastMonths: 4, futureMonths: 2 },
+  { key: '1y', label: '1Y', pastMonths: 9, futureMonths: 3 },
+  { key: 'all', label: 'All', pastMonths: null, futureMonths: 6 },
 ];
 
-function formatDateLabel(dateStr) {
-  const [, m, d] = dateStr.split('-');
-  const SHORT_MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${SHORT_MONTHS[Number(m)]} ${Number(d)}`;
+const SHORT_MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDateLabel(dateStr, includeYear = false) {
+  const [y, m, d] = dateStr.split('-');
+  const base = `${SHORT_MONTHS[Number(m)]} ${Number(d)}`;
+  return includeYear ? `${base} '${y.slice(2)}` : base;
 }
 
 // ─── Custom tooltip ──────────────────────────────────────────────────────────
 function CashflowTooltip({ active, payload, label, accountMap }) {
   if (!active || !payload?.length) return null;
 
+  // Merge actual + projected entries for the same account into one line
+  const merged = new Map();
+  for (const p of payload) {
+    if (p.value == null) continue;
+    const baseKey = p.dataKey.replace(/_proj$/, '');
+    const isProj = p.dataKey.endsWith('_proj');
+    if (!merged.has(baseKey)) {
+      merged.set(baseKey, { color: p.color, value: p.value, projected: isProj });
+    } else if (!merged.get(baseKey).value && p.value != null) {
+      // prefer whichever has a real value
+      merged.set(baseKey, { color: p.color, value: p.value, projected: isProj });
+    }
+  }
+
   return (
     <div className="rounded-xl border border-stone-200/60 bg-white px-4 py-3 shadow-lg shadow-stone-200/40 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-      <p className="mb-1.5 text-sm font-semibold text-stone-700 dark:text-stone-300">{label}</p>
-      {payload.filter((p) => p.value != null).map((p) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+      <p className="mb-1.5 text-sm font-semibold text-stone-700 dark:text-stone-300">{label ? formatDateLabel(label, true) : ''}</p>
+      {[...merged.entries()].map(([key, { color, value, projected }]) => (
+        <div key={key} className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
           <span className="text-xs text-stone-500 dark:text-stone-400">
-            {p.dataKey === 'total' ? 'Total' : maskAccountName(accountMap[p.dataKey] || p.dataKey)}:
+            {key === 'total' ? 'Total' : maskAccountName(accountMap[key] || key)}
+            {projected ? ' (proj)' : ''}:
           </span>
-          <span className={`text-sm font-bold ${p.value < 0 ? 'text-red-600 dark:text-red-400' : 'text-stone-800 dark:text-stone-200'}`}>
-            {p.value < 0 ? '−' : ''}{formatCurrency(Math.abs(Math.round(p.value * 100)))}
+          <span className={`text-sm font-bold ${value < 0 ? 'text-red-600 dark:text-red-400' : 'text-stone-800 dark:text-stone-200'}`}>
+            {value < 0 ? '−' : ''}{formatCurrency(Math.abs(Math.round(value * 100)))}
           </span>
         </div>
       ))}
@@ -98,11 +116,18 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
 
   const { startDate, endDate } = useMemo(() => {
     const preset = RANGE_OPTIONS.find((o) => o.key === range) || RANGE_OPTIONS[1];
-    const halfMonths = Math.ceil(preset.months / 2);
-    const s = new Date(now);
-    s.setMonth(s.getMonth() - halfMonths);
     const e = new Date(now);
-    e.setMonth(e.getMonth() + halfMonths);
+    e.setMonth(e.getMonth() + preset.futureMonths);
+    let s;
+    if (preset.pastMonths === null) {
+      // "All" — go back 10 years as a practical maximum; the service
+      // will only return data from the earliest transaction anyway.
+      s = new Date(now);
+      s.setFullYear(s.getFullYear() - 10);
+    } else {
+      s = new Date(now);
+      s.setMonth(s.getMonth() - preset.pastMonths);
+    }
     return {
       startDate: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`,
       endDate: `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`,
@@ -128,28 +153,40 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Transform for Recharts: flatten balances into top-level keys
+  // Transform for Recharts: split each account into actual (solid) and projected (dashed) series
   const data = useMemo(() => {
     return chartData.map((pt) => {
-      const row = { date: pt.date, label: formatDateLabel(pt.date) };
+      const row = { date: pt.date };
+      const isFuture = pt.date > todayStr;
+      const isToday = pt.date === todayStr;
       let total = 0;
       for (const id of selectedAccountIds) {
         const raw = toDollars(pt.balances?.[id] ?? 0);
         const val = liabilityIds.has(id) ? -raw : raw;
-        row[id] = val;
+        // Actual series: past + today; Projected series: today + future
+        // Today appears in both so the lines connect.
+        row[id] = isFuture ? null : val;
+        row[`${id}_proj`] = (isFuture || isToday) ? val : null;
         total += val;
       }
       if (selectedAccountIds.length > 1) {
-        row.total = total;
+        row.total = isFuture ? null : total;
+        row.total_proj = (isFuture || isToday) ? total : null;
       }
       return row;
     });
-  }, [chartData, selectedAccountIds, liabilityIds]);
+  }, [chartData, selectedAccountIds, liabilityIds, todayStr]);
 
-  const todayLabel = useMemo(() => {
-    const pt = data.find((d) => d.date === todayStr);
-    return pt?.label ?? null;
-  }, [data, todayStr]);
+  // Whether the data spans multiple years — used for tick formatting
+  const multiYear = useMemo(() => {
+    if (data.length < 2) return false;
+    return data[0].date.slice(0, 4) !== data[data.length - 1].date.slice(0, 4);
+  }, [data]);
+
+  const tickFormatter = useCallback(
+    (dateStr) => formatDateLabel(dateStr, multiYear),
+    [multiYear],
+  );
 
   // Detect negative balance regions
   const negativeRegions = useMemo(() => {
@@ -157,14 +194,14 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
     const regions = [];
     let regionStart = null;
     for (const pt of data) {
-      const hasNegative = selectedAccountIds.some((id) => pt[id] < 0);
-      if (hasNegative && !regionStart) regionStart = pt.label;
+      const hasNegative = selectedAccountIds.some((id) => (pt[id] ?? pt[`${id}_proj`]) < 0);
+      if (hasNegative && !regionStart) regionStart = pt.date;
       if (!hasNegative && regionStart) {
-        regions.push({ x1: regionStart, x2: pt.label });
+        regions.push({ x1: regionStart, x2: pt.date });
         regionStart = null;
       }
     }
-    if (regionStart) regions.push({ x1: regionStart, x2: data[data.length - 1].label });
+    if (regionStart) regions.push({ x1: regionStart, x2: data[data.length - 1].date });
     return regions;
   }, [data, selectedAccountIds]);
 
@@ -172,8 +209,9 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
     const n = data.length;
     if (n <= 14) return 0;
     if (n <= 31) return 1;
-    if (n <= 60) return 3;
-    return Math.floor(n / 16);
+    if (n <= 90) return 3;
+    if (n <= 180) return 6;
+    return Math.floor(n / 20);
   }, [data]);
 
   if (isLoading) {
@@ -241,7 +279,8 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
           <LineChart data={data} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" className="dark:stroke-stone-700" />
             <XAxis
-              dataKey="label"
+              dataKey="date"
+              tickFormatter={tickFormatter}
               tick={{ fill: '#78716c', fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -257,9 +296,9 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
             <Tooltip content={<CashflowTooltip accountMap={accountMap} />} />
 
             {/* Today reference line */}
-            {todayLabel && (
+            {todayStr && (
               <ReferenceLine
-                x={todayLabel}
+                x={todayStr}
                 stroke="#a8a29e"
                 strokeDasharray="3 3"
                 strokeWidth={1.5}
@@ -279,11 +318,10 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
               />
             ))}
 
-            {/* Per-account lines */}
+            {/* Per-account lines — solid for actual, dashed for projected */}
             {selectedAccountIds.map((id, i) => {
               const color = ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
-              // Dashed style for future dates
-              return (
+              return [
                 <Line
                   key={id}
                   type="monotone"
@@ -292,14 +330,29 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
                   stroke={color}
                   strokeWidth={2}
                   dot={false}
+                  connectNulls={false}
                   activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: color }}
-                />
-              );
+                />,
+                <Line
+                  key={`${id}_proj`}
+                  type="monotone"
+                  dataKey={`${id}_proj`}
+                  name={`${maskAccountName(accountMap[id] || 'Unknown')} (projected)`}
+                  stroke={color}
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  strokeOpacity={0.6}
+                  dot={false}
+                  connectNulls={false}
+                  activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: color }}
+                />,
+              ];
             })}
 
-            {/* Total line (when multiple accounts) */}
-            {selectedAccountIds.length > 1 && (
+            {/* Total line (when multiple accounts) — solid actual + dashed projected */}
+            {selectedAccountIds.length > 1 && [
               <Line
+                key="total"
                 type="monotone"
                 dataKey="total"
                 name="Total"
@@ -307,9 +360,23 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 dot={false}
+                connectNulls={false}
                 activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#78716c' }}
-              />
-            )}
+              />,
+              <Line
+                key="total_proj"
+                type="monotone"
+                dataKey="total_proj"
+                name="Total (projected)"
+                stroke="#78716c"
+                strokeWidth={2}
+                strokeDasharray="2 2"
+                strokeOpacity={0.5}
+                dot={false}
+                connectNulls={false}
+                activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#78716c' }}
+              />,
+            ]}
           </LineChart>
         </ResponsiveContainer>
       )}

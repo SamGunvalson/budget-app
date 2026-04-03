@@ -26,7 +26,7 @@ function App() {
   // On mount: generate projected transactions, promote due ones, auto-confirm
   useEffect(() => {
     document.title = 'Budget App';
-    initializeRecurringCycle({ windowDays: 30 }).catch((err) => {
+    initializeRecurringCycle({ windowDays: 180 }).catch((err) => {
       console.warn('Recurring cycle init failed:', err?.message || err);
     });
     pullAll().catch((err) => console.warn('Initial pull failed:', err?.message || err));

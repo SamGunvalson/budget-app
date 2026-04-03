@@ -665,9 +665,13 @@ export async function getAccountBalanceHistory({
     txByAccountDate[tx.account_id][d].push(tx);
   }
 
+  // Clamp start to earliest transaction date so we don't generate empty leading days
+  const earliestTx = allTx.length ? allTx[0].transaction_date : startDate;
+  const effectiveStart = startDate < earliestTx ? earliestTx : startDate;
+
   // Generate date range
   const dates = [];
-  const cur = new Date(startDate + "T00:00:00");
+  const cur = new Date(effectiveStart + "T00:00:00");
   const end = new Date(endDate + "T00:00:00");
   while (cur <= end) {
     dates.push(
@@ -687,7 +691,7 @@ export async function getAccountBalanceHistory({
     const asset = isAssetAccount(acct.type);
     for (const tx of allTx) {
       if (tx.account_id !== acct.id) continue;
-      if (tx.transaction_date >= startDate) break;
+      if (tx.transaction_date >= effectiveStart) break;
       const isPast = tx.transaction_date <= todayStr;
       const status = tx.status || "posted";
       if (isPast && status === "projected") continue;
@@ -716,19 +720,6 @@ export async function getAccountBalanceHistory({
       total += runningBalances[acct.id];
     }
     series.push({ date, balances, total });
-  }
-
-  // Downsample to weekly if range > 90 days
-  if (series.length > 90) {
-    const weekly = [];
-    for (let i = 0; i < series.length; i += 7) {
-      weekly.push(series[Math.min(i, series.length - 1)]);
-    }
-    // Always include the last point
-    if (weekly[weekly.length - 1].date !== series[series.length - 1].date) {
-      weekly.push(series[series.length - 1]);
-    }
-    return weekly;
   }
 
   return series;
