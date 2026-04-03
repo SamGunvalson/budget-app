@@ -121,10 +121,12 @@ export async function createRecurringTemplate({
       group_id: group_id || null,
       is_group_parent: is_group_parent || false,
       group_order: group_order || 0,
-      is_split: is_transfer ? false : (is_split || false),
-      split_method: is_transfer ? null : (split_method || null),
-      split_payer: is_transfer ? null : (split_payer || null),
-      split_partner_share_pct: is_transfer ? null : (split_partner_share_pct ?? null),
+      is_split: is_transfer ? false : is_split || false,
+      split_method: is_transfer ? null : split_method || null,
+      split_payer: is_transfer ? null : split_payer || null,
+      split_partner_share_pct: is_transfer
+        ? null
+        : (split_partner_share_pct ?? null),
     })
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type)",
@@ -216,13 +218,19 @@ export async function updateRecurringTemplate(id, updates) {
   if (updates.custom_unit !== undefined)
     payload.custom_unit = updates.custom_unit || null;
   if (updates.is_split !== undefined)
-    payload.is_split = updates.is_transfer ? false : (updates.is_split || false);
+    payload.is_split = updates.is_transfer ? false : updates.is_split || false;
   if (updates.split_method !== undefined)
-    payload.split_method = updates.is_transfer ? null : (updates.split_method || null);
+    payload.split_method = updates.is_transfer
+      ? null
+      : updates.split_method || null;
   if (updates.split_payer !== undefined)
-    payload.split_payer = updates.is_transfer ? null : (updates.split_payer || null);
+    payload.split_payer = updates.is_transfer
+      ? null
+      : updates.split_payer || null;
   if (updates.split_partner_share_pct !== undefined)
-    payload.split_partner_share_pct = updates.is_transfer ? null : (updates.split_partner_share_pct ?? null);
+    payload.split_partner_share_pct = updates.is_transfer
+      ? null
+      : (updates.split_partner_share_pct ?? null);
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -1007,7 +1015,10 @@ export async function autoConfirmDueTransactions(todayOverride) {
         getCurrentUser(),
       ]);
     } catch (err) {
-      console.warn("autoConfirmDueTransactions: failed to load partnership", err?.message);
+      console.warn(
+        "autoConfirmDueTransactions: failed to load partnership",
+        err?.message,
+      );
     }
 
     if (partnership && currentUser) {
