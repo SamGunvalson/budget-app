@@ -35,13 +35,8 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
       partnerShare = half;
     } else if (splitMethod === 'full') {
       // Non-payer owes the entire amount; payer keeps none
-      if (paidBy === 'me') {
-        payerShare = 0;
-        partnerShare = totalCents;
-      } else {
-        payerShare = totalCents;
-        partnerShare = 0;
-      }
+      payerShare = 0;
+      partnerShare = totalCents;
     } else {
       // In custom mode: "my share" / "partner share" are from the current user's perspective
       const myShare = Math.round((parseFloat(customMyShare) || 0) * 100);
