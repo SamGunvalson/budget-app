@@ -382,7 +382,7 @@ interface RecurringTemplate {
 **Balance formula** (from current user's perspective, positive = partner owes you):
 
 - Non-settlements: `+partner_share` when I paid, `-partner_share` when partner paid
-- Settlements: `-total_amount` when I paid partner, `+total_amount` when partner paid me
+- Settlements: `+total_amount` when I paid (my debt decreases), `-total_amount` when partner paid me (their debt to me decreases)
 
 **RLS**: All operations scoped via active partnership membership
 

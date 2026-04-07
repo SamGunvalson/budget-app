@@ -32,13 +32,8 @@ export function computeShares(
     partnerShare = half;
   } else if (splitMethod === "full") {
     // Non-payer owes the entire amount; payer owes nothing to the other
-    if (splitPayer === "me") {
-      payerShare = 0;
-      partnerShare = totalCents;
-    } else {
-      payerShare = totalCents;
-      partnerShare = 0;
-    }
+    payerShare = 0;
+    partnerShare = totalCents;
   } else {
     // custom: partner owes splitPartnerSharePct% of the total
     const pct = Math.max(0, Math.min(100, splitPartnerSharePct ?? 50));
@@ -179,8 +174,9 @@ export async function getBalance(partnershipId) {
     const iPaid = exp.paid_by_user_id === user.id;
 
     if (exp.is_settlement) {
-      // Settlement: payer is paying off debt to the other person
-      balance += iPaid ? -exp.total_amount : exp.total_amount;
+      // Settlement: payer is paying off debt to the other person.
+      // When I pay, my debt decreases (balance goes up); when partner pays, their debt to me decreases (balance goes down).
+      balance += iPaid ? exp.total_amount : -exp.total_amount;
     } else {
       // Regular expense: non-payer owes their share
       balance += iPaid ? exp.partner_share : -exp.partner_share;
