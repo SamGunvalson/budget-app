@@ -64,10 +64,13 @@ export default function SplitNotificationBell({
         aria-label={unseenCount > 0 ? `${unseenCount} new split expense${unseenCount !== 1 ? 's' : ''}` : 'Split notifications'}
         aria-expanded={open}
         onClick={handleToggle}
+        disabled={unseenCount === 0}
         className={`relative flex items-center justify-center rounded-lg p-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
-          open
-            ? 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400'
-            : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200'
+          unseenCount === 0
+            ? 'cursor-default text-stone-300 dark:text-stone-600'
+            : open
+              ? 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400'
+              : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200'
         }`}
       >
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
