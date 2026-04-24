@@ -7,7 +7,7 @@ import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import SettleUpModal from '../components/splits/SettleUpModal';
 import Modal from '../components/common/Modal';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
-import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense } from '../services/splitExpenses';
+import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, markSplitsSeen } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 
 export default function SplitExpensesPage() {
@@ -59,6 +59,11 @@ export default function SplitExpensesPage() {
   useEffect(() => {
     if (currentUser) loadPartnership();
   }, [currentUser, loadPartnership]);
+
+  // Mark split notifications as seen when this page is viewed
+  useEffect(() => {
+    if (currentUser?.id) markSplitsSeen(currentUser.id);
+  }, [currentUser?.id]);
 
   // Load split expenses + balance
   const loadExpenses = useCallback(async () => {

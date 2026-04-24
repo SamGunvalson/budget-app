@@ -219,3 +219,33 @@ export async function getSplitTransactionIds(partnershipId) {
   if (error) throw error;
   return new Set((data ?? []).map((d) => d.transaction_id));
 }
+
+// ─── Notification seen-state helpers (localStorage, no DB required) ───────────
+
+const SEEN_KEY = (userId) => `splitSeenAt_${userId}`;
+
+/**
+ * Record that the current user has seen all split notifications up to now.
+ * @param {string} userId
+ */
+export function markSplitsSeen(userId) {
+  if (!userId) return;
+  try {
+    localStorage.setItem(SEEN_KEY(userId), new Date().toISOString());
+  } catch { /* storage unavailable */ }
+}
+
+/**
+ * Get the ISO timestamp of the last time this user dismissed split notifications.
+ * Returns null if never seen.
+ * @param {string} userId
+ * @returns {string|null}
+ */
+export function getLastSeenSplitsAt(userId) {
+  if (!userId) return null;
+  try {
+    return localStorage.getItem(SEEN_KEY(userId));
+  } catch {
+    return null;
+  }
+}
