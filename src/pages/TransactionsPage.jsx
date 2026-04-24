@@ -288,11 +288,13 @@ export default function TransactionsPage() {
     [filteredSorted, templateLookup],
   );
 
-  // ---------- Index of first posted transaction in the sorted+filtered list ----------
-  const firstPostedIndex = useMemo(
-    () => Math.max(0, filteredSorted.findIndex((t) => t.status === 'posted')),
-    [filteredSorted]
-  );
+  // ---------- ID of the transaction nearest to today (first with date <= today in desc sort) ----------
+  const scrollTargetId = useMemo(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const target = filteredSorted.find((t) => t.transaction_date <= todayStr);
+    return target ? target.id : (filteredSorted.length > 0 ? filteredSorted[filteredSorted.length - 1].id : null);
+  }, [filteredSorted]);
 
   // ---------- Running balance per transaction (unfiltered, cumulative) ----------
   const balanceMap = useMemo(() => {
@@ -739,7 +741,7 @@ export default function TransactionsPage() {
             expandedGroups={expandedGroups}
             onToggleGroupExpand={toggleGroupExpand}
             scrollKey={dataLoadKey}
-            initialScrollToIndex={firstPostedIndex}
+            scrollToTransactionId={scrollTargetId}
             onEdit={mgr.setEditingTransaction}
             onDelete={mgr.setDeletingTransaction}
             sortColumn={mgr.sortColumn}

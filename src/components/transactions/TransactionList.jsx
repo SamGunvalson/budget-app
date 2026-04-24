@@ -76,7 +76,7 @@ export default function TransactionList({
   onEditAll,
   onDeleteAll,
   scrollKey,
-  initialScrollToIndex = 0,
+  scrollToTransactionId = null,
 }) {
   const parentRef = useRef(null);
   const [isMobile, setIsMobile] = useState(() => (
@@ -123,12 +123,13 @@ export default function TransactionList({
     overscan: 10,
   });
 
-  // Scroll to first posted transaction whenever a new data load completes
+  // Scroll to the transaction nearest to today whenever a new data load completes
   useEffect(() => {
-    if (!scrollKey) return;
-    if (initialScrollToIndex > 0) {
+    if (!scrollKey || !scrollToTransactionId) return;
+    const idx = flatRows.findIndex((row) => row.transaction?.id === scrollToTransactionId);
+    if (idx >= 0) {
       requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(initialScrollToIndex, { align: 'center' });
+        virtualizer.scrollToIndex(idx, { align: 'start' });
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

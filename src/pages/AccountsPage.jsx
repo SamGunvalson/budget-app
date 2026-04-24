@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AccountForm from '../components/accounts/AccountForm';
 import AccountList from '../components/accounts/AccountList';
@@ -6,7 +6,7 @@ import NetWorthSummary from '../components/accounts/NetWorthSummary';
 import CashflowChart from '../components/accounts/CashflowChart';
 import AvailableToSpend from '../components/accounts/AvailableToSpend';
 import UpcomingTransactions from '../components/accounts/UpcomingTransactions';
-import SpendingPlayground from '../components/accounts/SpendingPlayground';
+import TestTransactions from '../components/accounts/TestTransactions';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
 import useSessionState from '../hooks/useSessionState';
@@ -25,6 +25,7 @@ import {
   getUpcomingTransactionsOffline as getUpcomingTransactions,
 } from '../services/offlineAware';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
+import { toCents } from '../utils/helpers';
 
 // ================================================
 // AccountsPage
@@ -32,7 +33,7 @@ import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accoun
 export default function AccountsPage() {
   const navigate = useNavigate();
 
-  // Section tab: 'overview' | 'cashflow' | 'playground'
+  // Section tab: 'overview' | 'cashflow'
   const [activeSection, setActiveSection] = useSessionState('accountsActiveSection', 'overview');
 
   // Data state
@@ -49,8 +50,13 @@ export default function AccountsPage() {
   // Modal state
   const [showManagerModal, setShowManagerModal] = useState(false);
 
-  // Projected-to-date
-  const [projectedToDate, setProjectedToDate] = useState(null);
+  // Projected-to-date — default to today + 30 days
+  const defaultProjectedDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const [projectedToDate, setProjectedToDate] = useState(defaultProjectedDate);
   const [maxProjectedDate, setMaxProjectedDate] = useState(null);
   const debounceRef = useRef(null);
 
@@ -58,6 +64,29 @@ export default function AccountsPage() {
   const [cashflowAccountIds, setCashflowAccountIds] = useSessionState('cashflowAccountIds', []);
   const [upcomingTx, setUpcomingTx] = useState([]);
   const [upcomingLoading, setUpcomingLoading] = useState(false);
+
+  // Playground state (lifted so chart + available-to-spend can consume it)
+  const [playgroundItems, setPlaygroundItems] = useState([]);
+  const [showPlayground, setShowPlayground] = useState(false);
+
+  // Merge real upcoming transactions with playground items for AvailableToSpend
+  const mergedUpcomingTx = useMemo(() => {
+    const synthetic = [];
+    for (const item of playgroundItems) {
+      if (!item.accountId || !item.amount || !item.date) continue;
+      const amtCents = toCents(item.amount);
+      if (amtCents === 0) continue;
+      if (item.type === 'expense') {
+        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: false, transaction_date: item.date });
+      } else if (item.type === 'income') {
+        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: true, transaction_date: item.date });
+      } else if (item.type === 'transfer' && item.toAccountId) {
+        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: false, transaction_date: item.date });
+        synthetic.push({ account_id: item.toAccountId, amount: amtCents, is_income: true, transaction_date: item.date });
+      }
+    }
+    return [...upcomingTx, ...synthetic];
+  }, [upcomingTx, playgroundItems]);
 
   useEffect(() => { document.title = 'Budget App | Accounts'; }, []);
 
@@ -70,8 +99,8 @@ export default function AccountsPage() {
       setChartLoading(true);
       try {
         const [data, nwHistory, maxDate] = await Promise.all([
-          getAccountBalances(),
-          getNetWorthHistory(),
+          getAccountBalances({ projectedToDate: defaultProjectedDate }),
+          getNetWorthHistory({ projectedToDate: defaultProjectedDate }),
           getMaxProjectedDate(),
         ]);
         const favIds = await getFavoriteAccountIds().catch(() => []);
@@ -80,9 +109,6 @@ export default function AccountsPage() {
           setFavoriteAccountIdsState(favIds);
           setChartData(nwHistory.history ?? nwHistory);
           setProjectedChartData(nwHistory.projectedFuture ?? []);
-          if (maxDate && !projectedToDate) {
-            setProjectedToDate(maxDate);
-          }
           setMaxProjectedDate(maxDate);
         }
       } catch (err) {
@@ -96,7 +122,7 @@ export default function AccountsPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: initial load only, projectedToDate starts null
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: initial load only, defaultProjectedDate is stable
 
   async function refreshAccounts(opts = {}) {
     const toDate = opts.projectedToDate !== undefined ? opts.projectedToDate : projectedToDate;
@@ -279,7 +305,6 @@ export default function AccountsPage() {
           {[
             { key: 'overview', label: 'Overview' },
             { key: 'cashflow', label: 'Cashflow' },
-            { key: 'playground', label: 'Playground' },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -400,6 +425,7 @@ export default function AccountsPage() {
             <CashflowChart
               accounts={accounts}
               selectedAccountIds={cashflowAccountIds}
+              playgroundItems={playgroundItems}
             />
 
             {/* Available to spend */}
@@ -407,9 +433,44 @@ export default function AccountsPage() {
               <AvailableToSpend
                 accounts={accounts}
                 selectedAccountIds={cashflowAccountIds}
-                upcomingTransactions={upcomingTx}
+                upcomingTransactions={mergedUpcomingTx}
               />
             )}
+
+            {/* ── Test Transactions (collapsible) ── */}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setShowPlayground((v) => !v)}
+                className="flex w-full items-center justify-between rounded-xl border border-stone-200/60 bg-stone-50/60 px-4 py-3 text-left transition-colors hover:bg-stone-100/60 dark:border-stone-700/60 dark:bg-stone-800/40 dark:hover:bg-stone-700/40"
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="h-4 w-4 text-teal-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
+                  </svg>
+                  <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">Test Transactions</span>
+                  {playgroundItems.length > 0 && (
+                    <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:bg-teal-900/40 dark:text-teal-400">
+                      {playgroundItems.length}
+                    </span>
+                  )}
+                </div>
+                <svg
+                  className={`h-4 w-4 text-stone-400 transition-transform ${showPlayground ? 'rotate-180' : ''}`}
+                  fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+              {showPlayground && (
+                <div className="rounded-b-xl border border-t-0 border-stone-200/60 bg-white/60 px-4 pb-4 dark:border-stone-700/60 dark:bg-stone-800/30">
+                  <TestTransactions
+                    accounts={accounts}
+                    onItemsChange={setPlaygroundItems}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Upcoming transactions */}
             {!upcomingLoading && (
@@ -426,11 +487,6 @@ export default function AccountsPage() {
               </div>
             )}
           </>
-        )}
-
-        {/* ════════════════ Playground section ════════════════ */}
-        {activeSection === 'playground' && (
-          <SpendingPlayground accounts={accounts} />
         )}
       </div>
 

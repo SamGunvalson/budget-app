@@ -88,9 +88,9 @@ function CashflowTooltip({ active, payload, label, accountMap }) {
  * Props:
  *  - accounts: Array<{ id, name, type }> — all available accounts
  *  - selectedAccountIds: string[] — which accounts to chart
- *  - onSelectAccounts: (ids: string[]) => void
+ *  - playgroundItems: Array<{ type, accountId, toAccountId, amount, date }> — hypothetical transactions
  */
-export default function CashflowChart({ accounts = [], selectedAccountIds = [] }) {
+export default function CashflowChart({ accounts = [], selectedAccountIds = [], playgroundItems = [] }) {
   const [range, setRange] = useState('3m');
   const [chartData, setChartData] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -154,28 +154,50 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [] }
   useEffect(() => { loadData(); }, [loadData]);
 
   // Transform for Recharts: split each account into actual (solid) and projected (dashed) series
+  // Playground items are overlaid on the projected series from their date onward.
   const data = useMemo(() => {
     return chartData.map((pt) => {
       const row = { date: pt.date };
       const isFuture = pt.date > todayStr;
       const isToday = pt.date === todayStr;
       let total = 0;
+      let totalProjOffset = 0;
       for (const id of selectedAccountIds) {
         const raw = toDollars(pt.balances?.[id] ?? 0);
         const val = liabilityIds.has(id) ? -raw : raw;
+
+        // Accumulate playground offsets for this account at this chart date.
+        // Offsets work in display-space (after liability negation) so the
+        // formula is uniform: expense/transfer-from = −amount, income/transfer-to = +amount.
+        let projOffset = 0;
+        if ((isFuture || isToday) && playgroundItems.length) {
+          for (const item of playgroundItems) {
+            if (!item.date || !item.amount || item.date > pt.date) continue;
+            const amtDollars = parseFloat(item.amount) || 0;
+            if (amtDollars === 0) continue;
+            if (item.type === 'expense' && item.accountId === id) projOffset -= amtDollars;
+            else if (item.type === 'income' && item.accountId === id) projOffset += amtDollars;
+            else if (item.type === 'transfer') {
+              if (item.accountId === id) projOffset -= amtDollars;
+              if (item.toAccountId === id) projOffset += amtDollars;
+            }
+          }
+        }
+
         // Actual series: past + today; Projected series: today + future
         // Today appears in both so the lines connect.
         row[id] = isFuture ? null : val;
-        row[`${id}_proj`] = (isFuture || isToday) ? val : null;
+        row[`${id}_proj`] = (isFuture || isToday) ? val + projOffset : null;
         total += val;
+        totalProjOffset += projOffset;
       }
       if (selectedAccountIds.length > 1) {
         row.total = isFuture ? null : total;
-        row.total_proj = (isFuture || isToday) ? total : null;
+        row.total_proj = (isFuture || isToday) ? total + totalProjOffset : null;
       }
       return row;
     });
-  }, [chartData, selectedAccountIds, liabilityIds, todayStr]);
+  }, [chartData, selectedAccountIds, liabilityIds, todayStr, playgroundItems]);
 
   // Whether the data spans multiple years — used for tick formatting
   const multiYear = useMemo(() => {

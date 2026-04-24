@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { signOut } from '../../services/supabase';
+import { getCurrentUser } from '../../services/supabase';
 import PAGE_REGISTRY from '../../constants/pages';
 import SyncStatus from './SyncStatus';
 import MobilePageDots from './MobilePageDots';
+import SplitNotificationBell from '../splits/SplitNotificationBell';
+import useSplitNotifications from '../../hooks/useSplitNotifications';
+import { getPartnership, getPartnerEmail } from '../../services/partnerships';
 
 const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
 
@@ -18,6 +22,32 @@ export default function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
   const menuRef = useRef(null);
+
+  // Partnership + current user for split notifications
+  const [partnership, setPartnership] = useState(null);
+  const [partnerEmail, setPartnerEmail] = useState('');
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPartnership() {
+      try {
+        const [user, p] = await Promise.all([getCurrentUser(), getPartnership()]);
+        if (cancelled) return;
+        setCurrentUserId(user?.id ?? null);
+        setPartnership(p);
+        if (p && user) {
+          const email = await getPartnerEmail(p, user.id);
+          if (!cancelled) setPartnerEmail(email);
+        }
+      } catch { /* non-fatal */ }
+    }
+    loadPartnership();
+    return () => { cancelled = true; };
+  }, []);
+
+  const { unseenCount, unseenExpenses, markAsSeen, loading: notifLoading } =
+    useSplitNotifications({ partnership, currentUserId });
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -137,8 +167,18 @@ export default function TopBar() {
           })}
         </div>
 
-        {/* Right: sync status + sign out */}
+        {/* Right: sync status + split bell + sign out */}
         <div className="flex items-center gap-2">
+          {partnership && (
+            <SplitNotificationBell
+              unseenCount={unseenCount}
+              unseenExpenses={unseenExpenses}
+              partnerEmail={partnerEmail}
+              currentUserId={currentUserId}
+              onMarkSeen={markAsSeen}
+              loading={notifLoading}
+            />
+          )}
           <SyncStatus />
           <button
           type="button"
