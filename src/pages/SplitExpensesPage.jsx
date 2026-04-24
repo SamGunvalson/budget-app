@@ -209,6 +209,7 @@ export default function SplitExpensesPage() {
           partnerEmail={partnerEmail}
           onSettleUp={() => setShowSettleUp(true)}
           loading={dataLoading}
+          expenseCount={expenses.filter((e) => !e.is_settlement).length}
         />
 
         {/* Expense list */}

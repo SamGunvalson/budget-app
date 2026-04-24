@@ -1,4 +1,4 @@
-export default function BalanceSummary({ balance, partnerEmail, onSettleUp, loading }) {
+export default function BalanceSummary({ balance, partnerEmail, onSettleUp, loading, expenseCount }) {
   const absBalance = Math.abs(balance);
   const dollars = (absBalance / 100).toFixed(2);
   const isSettled = balance === 0;
@@ -24,6 +24,11 @@ export default function BalanceSummary({ balance, partnerEmail, onSettleUp, load
             <p className="text-2xl font-bold text-red-500 dark:text-red-400">
               <span className="text-stone-500 dark:text-stone-400 text-base font-medium">You owe {partnerEmail}</span>{' '}
               ${dollars}
+            </p>
+          )}
+          {!loading && expenseCount != null && (
+            <p className="mt-1 text-xs text-stone-400 dark:text-stone-500">
+              Based on {expenseCount} {expenseCount === 1 ? 'expense' : 'expenses'}
             </p>
           )}
         </div>
