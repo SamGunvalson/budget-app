@@ -232,7 +232,9 @@ export function markSplitsSeen(userId) {
   if (!userId) return;
   try {
     localStorage.setItem(SEEN_KEY(userId), new Date().toISOString());
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 /**
