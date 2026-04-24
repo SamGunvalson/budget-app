@@ -50,8 +50,13 @@ export default function AccountsPage() {
   // Modal state
   const [showManagerModal, setShowManagerModal] = useState(false);
 
-  // Projected-to-date
-  const [projectedToDate, setProjectedToDate] = useState(null);
+  // Projected-to-date — default to today + 30 days
+  const defaultProjectedDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const [projectedToDate, setProjectedToDate] = useState(defaultProjectedDate);
   const [maxProjectedDate, setMaxProjectedDate] = useState(null);
   const debounceRef = useRef(null);
 
@@ -94,8 +99,8 @@ export default function AccountsPage() {
       setChartLoading(true);
       try {
         const [data, nwHistory, maxDate] = await Promise.all([
-          getAccountBalances(),
-          getNetWorthHistory(),
+          getAccountBalances({ projectedToDate: defaultProjectedDate }),
+          getNetWorthHistory({ projectedToDate: defaultProjectedDate }),
           getMaxProjectedDate(),
         ]);
         const favIds = await getFavoriteAccountIds().catch(() => []);
@@ -104,9 +109,6 @@ export default function AccountsPage() {
           setFavoriteAccountIdsState(favIds);
           setChartData(nwHistory.history ?? nwHistory);
           setProjectedChartData(nwHistory.projectedFuture ?? []);
-          if (maxDate && !projectedToDate) {
-            setProjectedToDate(maxDate);
-          }
           setMaxProjectedDate(maxDate);
         }
       } catch (err) {
@@ -120,7 +122,7 @@ export default function AccountsPage() {
     }
     load();
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: initial load only, projectedToDate starts null
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: initial load only, defaultProjectedDate is stable
 
   async function refreshAccounts(opts = {}) {
     const toDate = opts.projectedToDate !== undefined ? opts.projectedToDate : projectedToDate;
