@@ -66,9 +66,18 @@ export async function parseSpreadsheetFile(file) {
       };
     }
 
-    const headers = aoa[0].map((h) => String(h).trim());
+    const rawHeaders = aoa[0].map((h) => String(h).trim());
 
-    // Build row objects keyed by header
+    // Reject headers that would clobber Object.prototype when used as keys.
+    // Belt-and-braces: rows are also constructed via Object.create(null) below,
+    // but rejecting here surfaces a clear error to the user.
+    const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+    const headers = rawHeaders.map((h) =>
+      FORBIDDEN_KEYS.has(h) ? `_${h}` : h,
+    );
+
+    // Build row objects keyed by header (prototype-less to defeat any
+    // remaining injection attempt via crafted column names).
     const rows = [];
     for (let i = 1; i < aoa.length; i++) {
       const cells = aoa[i];
@@ -76,7 +85,7 @@ export async function parseSpreadsheetFile(file) {
       if (cells.every((c) => c === "" || c === null || c === undefined))
         continue;
 
-      const row = {};
+      const row = Object.create(null);
       headers.forEach((header, idx) => {
         row[header] = cells[idx] !== undefined ? cells[idx] : "";
       });

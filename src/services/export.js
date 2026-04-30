@@ -4,6 +4,34 @@ import { supabase, getCurrentUser } from "./supabase";
 // ── Helpers ──
 
 /**
+ * Sanitize a cell value to neutralize CSV formula injection (CWE-1236).
+ *
+ * Spreadsheet apps (Excel, Numbers, Sheets) interpret cells starting with
+ * `=`, `+`, `-`, `@`, tab, or carriage-return as formulas. A malicious
+ * description like `=HYPERLINK(...)` ingested via import would re-execute on
+ * export. Prefixing with a single quote (`'`) forces the value to be treated
+ * as plain text.
+ *
+ * Only operates on strings — numbers, dates, booleans pass through unchanged.
+ */
+function sanitizeCell(value) {
+  if (typeof value !== "string" || value.length === 0) return value;
+  const first = value.charCodeAt(0);
+  // = + - @ \t \r
+  if (
+    first === 0x3d ||
+    first === 0x2b ||
+    first === 0x2d ||
+    first === 0x40 ||
+    first === 0x09 ||
+    first === 0x0d
+  ) {
+    return "'" + value;
+  }
+  return value;
+}
+
+/**
  * Format cents to dollars string (e.g. 15099 → "150.99").
  */
 function centsToDollars(cents) {
@@ -178,18 +206,18 @@ export async function exportTransactionsCSV() {
   ];
   worksheet.addRow(headers);
 
-  // Add data rows
+  // Add data rows (sanitized against CSV formula injection)
   rows.forEach((row) => {
     worksheet.addRow([
-      row.Date,
-      row.Description,
-      row.Payee,
-      row.Category,
-      row.CategoryType,
-      row.Type,
-      row.Account,
-      row.Amount,
-      row.Status,
+      sanitizeCell(row.Date),
+      sanitizeCell(row.Description),
+      sanitizeCell(row.Payee),
+      sanitizeCell(row.Category),
+      sanitizeCell(row.CategoryType),
+      sanitizeCell(row.Type),
+      sanitizeCell(row.Account),
+      sanitizeCell(row.Amount),
+      sanitizeCell(row.Status),
     ]);
   });
 
@@ -299,11 +327,11 @@ export async function exportBudgetCSV() {
   // Add data rows
   rows.forEach((row) => {
     worksheet.addRow([
-      row.Month,
-      row.Year,
-      row.Category,
-      row.Planned,
-      row.Actual,
+      sanitizeCell(row.Month),
+      sanitizeCell(row.Year),
+      sanitizeCell(row.Category),
+      sanitizeCell(row.Planned),
+      sanitizeCell(row.Actual),
     ]);
   });
 

@@ -44,9 +44,19 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2}"],
+        // env-config.js holds runtime credentials (Supabase URL + anon key) and
+        // is templated by docker-entrypoint.sh on container start. It must
+        // never be precached or runtime-cached, otherwise an anon-key rotation
+        // would not propagate to clients with an active service worker.
+        globIgnores: ["**/env-config.js"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api/],
+        navigateFallbackDenylist: [/^\/api/, /^\/env-config\.js$/],
         runtimeCaching: [
+          {
+            // Always go to network for env-config.js; never cache it.
+            urlPattern: /\/env-config\.js$/i,
+            handler: "NetworkOnly",
+          },
           {
             // Cache Supabase REST API calls (network-first so offline
             // falls through to our Dexie layer naturally)
@@ -60,6 +70,12 @@ export default defineConfig({
               },
               networkTimeoutSeconds: 3,
             },
+          },
+          {
+            // Never cache Supabase auth endpoints — tokens must always come
+            // from the live server to avoid stale-session foot-guns.
+            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/v1\/.*/i,
+            handler: "NetworkOnly",
           },
           {
             // Cache Google Fonts (if ever used)

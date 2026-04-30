@@ -342,6 +342,7 @@ export async function updateLinkedTransfer(
   if (!mainLeg || !companionLeg)
     throw new Error("Linked transfer legs are malformed.");
 
+  const user = await getCurrentUser();
   const now = new Date().toISOString();
   const shared = {
     amount,
@@ -356,6 +357,7 @@ export async function updateLinkedTransfer(
     .from("transactions")
     .update({ ...shared, account_id, category_id, is_income })
     .eq("id", mainLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
@@ -365,6 +367,7 @@ export async function updateLinkedTransfer(
     .from("transactions")
     .update({ ...shared, account_id: linked_account_id, is_income: !is_income })
     .eq("id", companionLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (compErr) throw compErr;
@@ -529,6 +532,7 @@ export async function updateTransfer(
   if (!outgoingLeg || !incomingLeg)
     throw new Error("Transfer legs are malformed.");
 
+  const user = await getCurrentUser();
   const now = new Date().toISOString();
   const shared = {
     category_id,
@@ -544,6 +548,7 @@ export async function updateTransfer(
     .from("transactions")
     .update({ ...shared, account_id: from_account_id })
     .eq("id", outgoingLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (outErr) throw outErr;
@@ -553,6 +558,7 @@ export async function updateTransfer(
     .from("transactions")
     .update({ ...shared, account_id: to_account_id })
     .eq("id", incomingLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (inErr) throw inErr;
@@ -651,10 +657,12 @@ export async function bulkDeleteTransactions(ids) {
  * @returns {Promise<Object>} Updated transaction
  */
 export async function confirmTransaction(id) {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from("transactions")
     .update({ status: "posted", updated_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
 
