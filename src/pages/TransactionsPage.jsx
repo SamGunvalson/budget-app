@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import TransactionForm from '../components/transactions/TransactionForm';
 import TransactionList from '../components/transactions/TransactionList';
 import TransactionFilters from '../components/transactions/TransactionFilters';
@@ -10,14 +11,16 @@ import UpcomingRecurring from '../components/reports/UpcomingRecurring';
 import Modal, { ConfirmDeleteModal } from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
 import useTransactionManager from '../hooks/useTransactionManager';
-import { getCategoriesOffline as getCategories } from '../services/offlineAware';
-import { getAccountsOffline as getAccounts } from '../services/offlineAware';
 import {
-  getTransactionsOffline as getTransactions,
   createTransactionOffline as createTransaction,
-  getTransactionsForYearOffline as getTransactionsForYear,
-  getAccountBalancesOffline,
 } from '../services/offlineAware';
+import {
+  useTransactions,
+  useTransactionsForYear,
+  useCategories,
+  useAccounts,
+  useAccountBalances,
+} from '../hooks/queries';
 import {
   createTransfer,
   createLinkedTransfer,
@@ -53,21 +56,69 @@ export default function TransactionsPage() {
   const { month, year, setMonthYear } = useMonthYear();
   const [searchParams] = useSearchParams();
   const accountFilterParam = searchParams.get('account') || '';
-
-  // Data state
-  const [transactions, setTransactions] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [accounts, setAccounts] = useState([]);
-  const [accountBalances, setAccountBalances] = useState([]);
-  const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const queryClient = useQueryClient();
 
   // Period state
   const [viewMode, setViewMode] = useSessionState('transactionsViewMode', 'monthly'); // 'monthly' | 'yearly'
 
+  // ── react-query data sources ───────────────────────────────────────────────
+  const monthlyTxQuery = useTransactions({ month, year }, { enabled: viewMode !== 'yearly' });
+  const yearlyTxQuery = useTransactionsForYear(year, { enabled: viewMode === 'yearly' });
+  const txQuery = viewMode === 'yearly' ? yearlyTxQuery : monthlyTxQuery;
+  const categoriesQuery = useCategories();
+  const accountsQuery = useAccounts();
+  const accountBalancesQuery = useAccountBalances();
+
+  const transactions = useMemo(() => txQuery.data ?? [], [txQuery.data]);
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const accountBalances = useMemo(() => accountBalancesQuery.data ?? [], [accountBalancesQuery.data]);
+
+  // favoriteAccountIds — not yet served by react-query (single user pref). Loaded once.
+  const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    getFavoriteAccountIds()
+      .then((ids) => { if (!cancelled) setFavoriteAccountIds(ids); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const [mutationError, setMutationError] = useState('');
+  const isLoading =
+    txQuery.isLoading ||
+    categoriesQuery.isLoading ||
+    accountsQuery.isLoading ||
+    accountBalancesQuery.isLoading;
+  const loadError =
+    mutationError ||
+    txQuery.error?.message ||
+    categoriesQuery.error?.message ||
+    accountsQuery.error?.message ||
+    accountBalancesQuery.error?.message ||
+    '';
+
+  // setTransactions — proxy that writes to the active transactions query cache so
+  // useTransactionManager's optimistic edits survive until the bridge invalidation
+  // refetches the real data from Dexie/Supabase.
+  const setTransactions = useCallback((updater) => {
+    const key = viewMode === 'yearly'
+      ? ['transactions', 'year', year]
+      : ['transactions', 'list', { month, year, status: null }];
+    queryClient.setQueryData(key, (prev) =>
+      typeof updater === 'function' ? updater(prev ?? []) : updater,
+    );
+  }, [queryClient, viewMode, year, month]);
+
   // Incremented each time a load completes — used to trigger scroll-to-posted
   const [dataLoadKey, setDataLoadKey] = useState(0);
+  const lastUpdatedAtRef = useRef(0);
+  useEffect(() => {
+    if (txQuery.dataUpdatedAt && txQuery.dataUpdatedAt !== lastUpdatedAtRef.current) {
+      lastUpdatedAtRef.current = txQuery.dataUpdatedAt;
+      setDataLoadKey((k) => k + 1);
+    }
+  }, [txQuery.dataUpdatedAt]);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -116,7 +167,7 @@ export default function TransactionsPage() {
   const [splitLoading, setSplitLoading] = useState(false);
 
   // Transaction management hook
-  const handleError = useCallback((msg) => setLoadError(msg), []);
+  const handleError = useCallback((msg) => setMutationError(msg), []);
   const mgr = useTransactionManager({
     transactions,
     setTransactions,
@@ -144,37 +195,15 @@ export default function TransactionsPage() {
     loadPartnership();
   }, []);
 
-  // ---------- Load data ----------
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setLoadError('');
-      // Clear selection & edits on period change
-      reset();
-      try {
-        const txPromise = viewMode === 'yearly'
-          ? getTransactionsForYear({ year })
-          : getTransactions({ month, year });
-        const [txData, catData, acctData, balData] = await Promise.all([txPromise, getCategories(), getAccounts(), getAccountBalancesOffline()]);
-        const favIds = await getFavoriteAccountIds().catch(() => []);
-        if (!cancelled) {
-          setTransactions(txData);
-          setCategories(catData);
-          setAccounts(acctData);
-          setAccountBalances(balData);
-          setFavoriteAccountIds(favIds);
-          setDataLoadKey((k) => k + 1);
-        }
-      } catch (err) {
-        if (!cancelled) setLoadError(err?.message || 'Failed to load transactions.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [month, year, viewMode, reset]);
+  // ---------- Reset selection on period/view change ----------
+  // Render-time pattern (avoids set-state-in-effect lint rule).
+  const periodKey = `${viewMode}-${month}-${year}`;
+  const [lastPeriodKey, setLastPeriodKey] = useState(periodKey);
+  if (lastPeriodKey !== periodKey) {
+    setLastPeriodKey(periodKey);
+    reset();
+    setMutationError('');
+  }
 
   // ---------- Load recurring templates (for grouping) ----------
   useEffect(() => {
@@ -510,7 +539,7 @@ export default function TransactionsPage() {
       );
       setDeletingGroup(null);
     } catch (err) {
-      setLoadError(err?.message || 'Failed to delete transactions.');
+      setMutationError(err?.message || 'Failed to delete transactions.');
     } finally {
       setIsDeletingGroup(false);
     }
@@ -580,11 +609,9 @@ export default function TransactionsPage() {
 
   const handleRecurringApplied = (result) => {
     if (result.applied > 0) {
-      // Refresh transactions to show newly created ones
-      const txPromise = viewMode === 'yearly'
-        ? getTransactionsForYear({ year })
-        : getTransactions({ month, year });
-      txPromise.then(setTransactions).catch(() => {});
+      // Refresh transactions to show newly created ones (recurring service
+      // doesn't go through the offlineAware notifyTable path).
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
   };
 
@@ -1017,7 +1044,7 @@ export default function TransactionsPage() {
                 setSplitTransactionIds((prev) => new Set([...prev, splittingTransaction.id]));
                 setSplittingTransaction(null);
               } catch (err) {
-                setLoadError(err?.message || 'Failed to split transaction.');
+                setMutationError(err?.message || 'Failed to split transaction.');
               } finally {
                 setSplitLoading(false);
               }

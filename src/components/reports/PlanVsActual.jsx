@@ -1,13 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import MonthYearSelector from '../common/MonthYearSelector';
 import BudgetAlert from '../common/BudgetAlert';
 import PlanVsActualChart from './PlanVsActualChart';
 import CategoryComparison from './CategoryComparison';
 import CategoryDrillDown from './CategoryDrillDown';
 import { getPlanVsActual, getPlanVsActualYTD } from '../../services/budgets';
-import { getTransactionsOffline as getTransactions } from '../../services/offlineAware';
-import { getTransactionsYTD } from '../../services/transactions';
-import { getCategoriesOffline as getCategories } from '../../services/offlineAware';
+import { useTransactions, useTransactionsYTD, useCategories } from '../../hooks/queries';
 import { formatCurrency, getMonthName } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
@@ -43,13 +42,40 @@ export default function PlanVsActual({
   const year = externalYear ?? ctxYear;
 
   const [data, setData] = useState({ categories: [], plannedIncome: 0, actualIncome: 0 });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // Raw transactions + categories for drill-down
-  const [rawTransactions, setRawTransactions] = useState([]);
-  const [allCategories, setAllCategories] = useState([]);
+  const [isPlanLoading, setIsPlanLoading] = useState(true);
+  const [planError, setPlanError] = useState('');
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);
+
+  // Raw transactions + categories for drill-down (cached via react-query).
+  const monthlyTxQuery = useTransactions({ month, year }, { enabled: !isYTD });
+  const ytdTxQuery = useTransactionsYTD(year, month, { enabled: isYTD });
+  const categoriesQuery = useCategories();
+  const rawTransactions = useMemo(
+    () => (isYTD ? ytdTxQuery.data : monthlyTxQuery.data) ?? [],
+    [isYTD, ytdTxQuery.data, monthlyTxQuery.data],
+  );
+  const allCategories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const queryClient = useQueryClient();
+  // Setter that mutates the active transactions query cache so optimistic
+  // edits from useTransactionManager (inside CategoryDrillDown) survive
+  // until the bridge invalidation re-runs the query.
+  const setRawTransactions = useCallback((updater) => {
+    const key = isYTD
+      ? ["transactions", "ytd", year, month]
+      : ["transactions", "list", { month, year, status: null }];
+    queryClient.setQueryData(key, (prev) =>
+      typeof updater === 'function' ? updater(prev ?? []) : updater,
+    );
+  }, [queryClient, isYTD, month, year]);
+  const isLoading =
+    isPlanLoading ||
+    (isYTD ? ytdTxQuery.isLoading : monthlyTxQuery.isLoading) ||
+    categoriesQuery.isLoading;
+  const error =
+    planError ||
+    (isYTD ? ytdTxQuery.error?.message : monthlyTxQuery.error?.message) ||
+    categoriesQuery.error?.message ||
+    '';
 
   // User-configurable budget thresholds
   const { thresholds } = useThresholds();
@@ -62,36 +88,23 @@ export default function PlanVsActual({
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      setIsLoading(true);
-      setError('');
+    async function loadPlan() {
+      setIsPlanLoading(true);
+      setPlanError('');
       setExpandedCategoryId(null);
       try {
-        const planPromise = isYTD
-          ? getPlanVsActualYTD({ year, throughMonth: month })
-          : getPlanVsActual({ month, year });
-        const txPromise = isYTD
-          ? getTransactionsYTD({ year, throughMonth: month })
-          : getTransactions({ month, year });
-
-        const [result, txData, cats] = await Promise.all([
-          planPromise,
-          txPromise,
-          getCategories(),
-        ]);
-        if (!cancelled) {
-          setData(result);
-          setRawTransactions(txData);
-          setAllCategories(cats);
-        }
+        const result = isYTD
+          ? await getPlanVsActualYTD({ year, throughMonth: month })
+          : await getPlanVsActual({ month, year });
+        if (!cancelled) setData(result);
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load plan vs actual data');
+        if (!cancelled) setPlanError(err.message || 'Failed to load plan vs actual data');
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) setIsPlanLoading(false);
       }
     }
 
-    load();
+    loadPlan();
     return () => {
       cancelled = true;
     };
@@ -154,7 +167,7 @@ export default function PlanVsActual({
         />
       );
     },
-    [rawTransactions, categories, allCategories, isYTD, month, year],
+    [rawTransactions, categories, allCategories, isYTD, month, year, setRawTransactions],
   );
 
   return (

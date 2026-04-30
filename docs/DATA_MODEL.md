@@ -403,6 +403,116 @@ interface RecurringTemplate {
 
 ---
 
+## Offline cache & sync metadata (IndexedDB / Dexie)
+
+The app keeps a faithful local mirror of the Supabase tables in IndexedDB
+via [Dexie](https://dexie.org/). The mirror lives in the `BudgetAppOffline`
+database (see [`src/services/offlineDb.js`](../src/services/offlineDb.js))
+and is the **primary source for UI reads** as of Phase 1 (cache-first SWR —
+see [`docs/performance/PHASE_1_CACHE_FIRST.md`](./performance/PHASE_1_CACHE_FIRST.md)).
+
+### Mirrored tables
+
+The Dexie database carries the following object stores, each one mirroring
+the Supabase table of the same name:
+
+| Object store          | Indexed fields (queryable via `.where()`)                                                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transactions`        | `id, user_id, account_id, category_id, transaction_date, is_income, status, transfer_group_id, recurring_template_id, deleted_at, _offline, _action, _offlineAt` |
+| `categories`          | `id, user_id, type, is_active, sort_order, _offline, _action, _offlineAt`                                                                                        |
+| `budget_plans`        | `id, user_id, month, year, [user_id+month+year], _offline, _action, _offlineAt`                                                                                  |
+| `budget_items`        | `id, budget_plan_id, category_id, [budget_plan_id+category_id], _offline, _action, _offlineAt`                                                                   |
+| `accounts`            | `id, user_id, type, is_active, closed_at, _offline, _action, _offlineAt`                                                                                         |
+| `user_preferences`    | `id, user_id, preference_key, _offline, _action, _offlineAt`                                                                                                     |
+| `recurring_templates` | `id, user_id, account_id, category_id, is_active, _offline, _action, _offlineAt`                                                                                 |
+
+Every store stores **all** properties of each row (Dexie only requires
+declaring the fields you want to `.where()` on).
+
+### Offline mutation flags
+
+Three additional fields are added to any row that was created or updated
+locally while offline (or while a sync is pending):
+
+| Field        | Type                               | Purpose                                                                      |
+| ------------ | ---------------------------------- | ---------------------------------------------------------------------------- |
+| `_offline`   | `1` (truthy) when pending sync     | Filtered by `where('_offline').equals(1)` to find rows the syncer must push. |
+| `_action`    | `'create' \| 'update' \| 'delete'` | Tells the syncer which Supabase verb to replay.                              |
+| `_offlineAt` | ISO timestamp                      | When the local mutation happened — used for conflict timestamps.             |
+
+The sync engine (`src/services/sync.js`) reads these via the syncQueue
+helper, replays each row to Supabase, and clears the flags via
+`markSynced(table, id)` on success.
+
+### `sync_meta` — incremental-pull watermark
+
+A small bookkeeping store records the last successful pull per table:
+
+| Field         | Type                 | Description                                                          |
+| ------------- | -------------------- | -------------------------------------------------------------------- |
+| `table_name`  | TEXT (primary key)   | One of the seven mirrored tables above.                              |
+| `last_synced` | ISO timestamp string | Watermark used as `.gt('updated_at', last_synced)` on the next pull. |
+
+**Watermark protocol** (Phase 1):
+
+- A successful **full pull** writes `now()` as the watermark (used on cold
+  cache or explicit `pullAll({ full: true })`).
+- A successful **incremental pull** writes `max(updated_at across rows)` as
+  the watermark.
+- An incremental pull that returns **zero rows** does not advance the
+  watermark — this prevents skipping a row whose `updated_at` falls between
+  the watermark and "now-ish on the server".
+- Watermarks are per-table; tables advance independently.
+
+Conflict resolution: **last-write-wins** (server `updated_at` vs local
+`_offlineAt`). Acceptable for a single-user budget app. Cross-tab change
+fanout is deferred (would be implemented as a `BroadcastChannel('budget-sync')`
+listener that mirrors the bridge below).
+
+### Client-side query cache (React Query — Phase 2)
+
+A second cache layer sits on top of Dexie: the
+[`@tanstack/react-query`](https://tanstack.com/query) `QueryClient`
+configured in `services/queryClient.js` with a 5-minute `staleTime` and
+30-minute `gcTime`. UI components consume data through hooks in
+`src/hooks/queries.js` whose `queryFn` is the matching `*Offline` service
+(so cache-first SWR still applies underneath).
+
+Query keys follow the convention **`[tableName, ...specifics]`**. Examples:
+`["transactions", "list", { month, year, status }]`,
+`["accounts", "balances", projectedToDate]`,
+`["budget_plans", month, year]`.
+
+Mutations stay imperative (no `useMutation`). Every `*Offline` mutation
+calls `notifyTable(tableName)` (either inside `putOffline` for the
+offline path, or directly after the online success branch). The
+**query bridge** in `services/queryBridge.js` subscribes to those
+`notifyTable` events and calls
+`queryClient.invalidateQueries({ queryKey: [tableName], refetchType: "active" })`
+so every mounted hook for that table refetches automatically. The bridge
+also installs cross-table dependencies — e.g. a transactions change
+also invalidates the derived account-balances and net-worth-history
+queries.
+
+If you add a mutation that bypasses `offlineAware` (e.g. talking to
+Supabase directly through `services/recurring.js`), you must call
+`notifyTable(t)` or `queryClient.invalidateQueries({ queryKey: [t] })`
+yourself, otherwise React consumers will not refresh until the next
+mount or pull tick. See
+[`docs/performance/PHASE_2_REACT_QUERY.md`](./performance/PHASE_2_REACT_QUERY.md)
+for the full rationale and consumer list.
+
+### Required Postgres columns
+
+Every Supabase table that participates in the cache **must** have a
+trigger-maintained `updated_at TIMESTAMPTZ` column for the incremental
+watermark to work. Tables that support soft-delete also need either
+`deleted_at TIMESTAMPTZ` (transactions) or an `is_active BOOLEAN` flag
+(categories, accounts, recurring_templates) so the incremental pull can
+detect server-side removals and prune the local cache accordingly.
+
+---
+
 ## Relationships
 
 ```

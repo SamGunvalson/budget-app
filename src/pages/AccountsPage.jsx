@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AccountForm from '../components/accounts/AccountForm';
 import AccountList from '../components/accounts/AccountList';
@@ -11,19 +11,21 @@ import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
 import useSessionState from '../hooks/useSessionState';
 import {
-  getAccountBalancesOffline as getAccountBalances,
   createAccountOffline as createAccount,
   updateAccountOffline as updateAccount,
   deleteAccountOffline as deleteAccount,
-  getNetWorthHistoryOffline as getNetWorthHistory,
-  getMaxProjectedDateOffline as getMaxProjectedDate,
   closeAccountOffline as closeAccount,
   reopenAccountOffline as reopenAccount,
   pauseRecurringTemplateOffline as pauseTemplate,
   resumeRecurringTemplateOffline as resumeTemplate,
   getTemplatesForAccountOffline as getTemplatesForAccount,
-  getUpcomingTransactionsOffline as getUpcomingTransactions,
 } from '../services/offlineAware';
+import {
+  useAccountBalances,
+  useNetWorthHistory,
+  useMaxProjectedDate,
+  useUpcomingTransactions,
+} from '../hooks/queries';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
 import { toCents } from '../utils/helpers';
 
@@ -36,38 +38,64 @@ export default function AccountsPage() {
   // Section tab: 'overview' | 'cashflow'
   const [activeSection, setActiveSection] = useSessionState('accountsActiveSection', 'overview');
 
-  // Data state
-  const [accounts, setAccounts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [favoriteAccountIds, setFavoriteAccountIdsState] = useState([]);
-
-  // Chart state
-  const [chartData, setChartData] = useState([]);
-  const [projectedChartData, setProjectedChartData] = useState([]);
-  const [chartLoading, setChartLoading] = useState(true);
+  const [mutationError, setMutationError] = useState('');
 
   // Modal state
   const [showManagerModal, setShowManagerModal] = useState(false);
 
-  // Projected-to-date — default to today + 30 days
-  const defaultProjectedDate = (() => {
+  // Projected-to-date — default to today + 30 days. We keep a separate
+  // debounced value that drives the queries so typing into the date picker
+  // doesn't refetch on every keystroke.
+  const defaultProjectedDate = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
+  }, []);
   const [projectedToDate, setProjectedToDate] = useState(defaultProjectedDate);
-  const [maxProjectedDate, setMaxProjectedDate] = useState(null);
+  const [debouncedProjectedToDate, setDebouncedProjectedToDate] = useState(defaultProjectedDate);
   const debounceRef = useRef(null);
 
   // Cashflow state
   const [cashflowAccountIds, setCashflowAccountIds] = useSessionState('cashflowAccountIds', []);
-  const [upcomingTx, setUpcomingTx] = useState([]);
-  const [upcomingLoading, setUpcomingLoading] = useState(false);
 
   // Playground state (lifted so chart + available-to-spend can consume it)
   const [playgroundItems, setPlaygroundItems] = useState([]);
   const [showPlayground, setShowPlayground] = useState(false);
+
+  // ── react-query data ─────────────────────────────────────────────────────
+  const balancesQuery = useAccountBalances({ projectedToDate: debouncedProjectedToDate });
+  const nwQuery = useNetWorthHistory({ projectedToDate: debouncedProjectedToDate });
+  const maxDateQuery = useMaxProjectedDate();
+  const upcomingQuery = useUpcomingTransactions(
+    { accountIds: cashflowAccountIds },
+    { enabled: activeSection === 'cashflow' && cashflowAccountIds.length > 0 },
+  );
+
+  const accounts = balancesQuery.data ?? [];
+  const isLoading = balancesQuery.isLoading;
+  const chartData = nwQuery.data?.history ?? nwQuery.data ?? [];
+  const projectedChartData = nwQuery.data?.projectedFuture ?? [];
+  const chartLoading = nwQuery.isLoading;
+  const maxProjectedDate = maxDateQuery.data ?? null;
+  // Stabilise the upcomingTx array reference so the mergedUpcomingTx useMemo
+  // below doesn't recompute on every render of this page.
+  const upcomingTx = useMemo(() => upcomingQuery.data ?? [], [upcomingQuery.data]);
+  const upcomingLoading = upcomingQuery.isLoading;
+  const loadError =
+    mutationError ||
+    balancesQuery.error?.message ||
+    nwQuery.error?.message ||
+    '';
+
+  // Favorite account ids — not yet in react-query (single user pref). Loaded once.
+  useEffect(() => {
+    let cancelled = false;
+    getFavoriteAccountIds()
+      .then((ids) => { if (!cancelled) setFavoriteAccountIdsState(ids); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Merge real upcoming transactions with playground items for AvailableToSpend
   const mergedUpcomingTx = useMemo(() => {
@@ -90,73 +118,6 @@ export default function AccountsPage() {
 
   useEffect(() => { document.title = 'Budget App | Accounts'; }, []);
 
-  // ---------- Load data ----------
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setLoadError('');
-      setChartLoading(true);
-      try {
-        const [data, nwHistory, maxDate] = await Promise.all([
-          getAccountBalances({ projectedToDate: defaultProjectedDate }),
-          getNetWorthHistory({ projectedToDate: defaultProjectedDate }),
-          getMaxProjectedDate(),
-        ]);
-        const favIds = await getFavoriteAccountIds().catch(() => []);
-        if (!cancelled) {
-          setAccounts(data);
-          setFavoriteAccountIdsState(favIds);
-          setChartData(nwHistory.history ?? nwHistory);
-          setProjectedChartData(nwHistory.projectedFuture ?? []);
-          setMaxProjectedDate(maxDate);
-        }
-      } catch (err) {
-        if (!cancelled) setLoadError(err?.message || 'Failed to load accounts.');
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-          setChartLoading(false);
-        }
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: initial load only, defaultProjectedDate is stable
-
-  async function refreshAccounts(opts = {}) {
-    const toDate = opts.projectedToDate !== undefined ? opts.projectedToDate : projectedToDate;
-    try {
-      const [data, nwHistory] = await Promise.all([
-        getAccountBalances({ projectedToDate: toDate }),
-        getNetWorthHistory({ projectedToDate: toDate }),
-      ]);
-      setAccounts(data);
-      setChartData(nwHistory.history ?? nwHistory);
-      setProjectedChartData(nwHistory.projectedFuture ?? []);
-    } catch (err) {
-      setLoadError(err?.message || 'Failed to refresh accounts.');
-    }
-  }
-
-  // ---------- Cashflow: load upcoming transactions when selected accounts change ----------
-  const loadUpcoming = useCallback(async (ids) => {
-    if (!ids?.length) { setUpcomingTx([]); return; }
-    setUpcomingLoading(true);
-    try {
-      const data = await getUpcomingTransactions({ accountIds: ids });
-      setUpcomingTx(data);
-    } catch {
-      setUpcomingTx([]);
-    } finally {
-      setUpcomingLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeSection === 'cashflow') loadUpcoming(cashflowAccountIds);
-  }, [activeSection, cashflowAccountIds, loadUpcoming]);
-
   function handleCashflowAccountToggle(id) {
     setCashflowAccountIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
@@ -169,20 +130,23 @@ export default function AccountsPage() {
     setProjectedToDate(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      refreshAccounts({ projectedToDate: val });
+      setDebouncedProjectedToDate(val);
     }, 400);
   }
 
-  // ---------- CRUD ----------
+  // ---------- CRUD (mutations rely on bridge invalidation) ----------
   async function handleManageSubmit(values) {
-    if (values.id) {
-      const { id, ...updates } = values;
-      await updateAccount(id, updates);
-    } else {
-      await createAccount(values);
+    try {
+      if (values.id) {
+        const { id, ...updates } = values;
+        await updateAccount(id, updates);
+      } else {
+        await createAccount(values);
+      }
+      setShowManagerModal(false);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to save account.');
     }
-    setShowManagerModal(false);
-    await refreshAccounts();
   }
 
   async function handleToggleFavorite(id) {
@@ -194,31 +158,40 @@ export default function AccountsPage() {
   }
 
   async function handleManageDelete(id) {
-    await deleteAccount(id);
-    setShowManagerModal(false);
-    await refreshAccounts();
+    try {
+      await deleteAccount(id);
+      setShowManagerModal(false);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to delete account.');
+    }
   }
 
   async function handleManageClose(id, closedAt) {
-    // Pause linked recurring templates
-    const templates = await getTemplatesForAccount(id);
-    for (const t of templates) {
-      if (!t.is_paused) await pauseTemplate(t.id);
+    try {
+      // Pause linked recurring templates
+      const templates = await getTemplatesForAccount(id);
+      for (const t of templates) {
+        if (!t.is_paused) await pauseTemplate(t.id);
+      }
+      await closeAccount(id, closedAt);
+      setShowManagerModal(false);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to close account.');
     }
-    await closeAccount(id, closedAt);
-    setShowManagerModal(false);
-    await refreshAccounts();
   }
 
   async function handleManageReopen(id) {
-    // Resume paused recurring templates linked to this account
-    const templates = await getTemplatesForAccount(id);
-    for (const t of templates) {
-      if (t.is_paused) await resumeTemplate(t.id);
+    try {
+      // Resume paused recurring templates linked to this account
+      const templates = await getTemplatesForAccount(id);
+      for (const t of templates) {
+        if (t.is_paused) await resumeTemplate(t.id);
+      }
+      await reopenAccount(id);
+      setShowManagerModal(false);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to reopen account.');
     }
-    await reopenAccount(id);
-    setShowManagerModal(false);
-    await refreshAccounts();
   }
 
   function handleViewTransactions(accountId) {
@@ -282,7 +255,7 @@ export default function AccountsPage() {
                 {projectedToDate && projectedToDate !== maxProjectedDate && (
                   <button
                     type="button"
-                    onClick={() => { setProjectedToDate(maxProjectedDate); refreshAccounts({ projectedToDate: maxProjectedDate }); }}
+                    onClick={() => { setProjectedToDate(maxProjectedDate); setDebouncedProjectedToDate(maxProjectedDate); }}
                     className="text-xs font-medium text-stone-400 hover:text-amber-600 transition-colors dark:hover:text-amber-400"
                   >
                     Reset to max

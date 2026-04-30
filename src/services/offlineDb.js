@@ -1,4 +1,5 @@
 import Dexie from "dexie";
+import { notifyTable } from "./cache";
 
 /**
  * Dexie (IndexedDB) database mirroring Supabase schema.
@@ -134,6 +135,56 @@ export async function cacheTable(tableName, rows) {
   });
 }
 
+// ── Helper: incremental cache update (Phase 1 — incremental sync) ──
+//
+// Used by sync.js when pulling only rows changed since the last successful
+// sync. Unlike `cacheTable`, this does NOT clear the table — it only upserts
+// the rows it was given and (optionally) hard-deletes ids the caller marks
+// as removed. Pending offline mutations are preserved.
+//
+// `latestUpdatedAt` should be the max `updated_at` value across `rows`; the
+// caller computes it once so we can advance the watermark correctly even when
+// `rows` is empty (no-op pull → bump watermark to "now-ish").
+export async function cacheTableIncremental(
+  tableName,
+  rows,
+  { removedIds = [], latestUpdatedAt = null } = {},
+) {
+  const table = db.table(tableName);
+
+  if (rows.length) {
+    // Don't trample local pending mutations — those rows have `_offline === 1`.
+    const pendingIds = await table.where("_offline").equals(1).primaryKeys();
+    const pendingSet = new Set(pendingIds);
+    const toUpsert = rows.filter((r) => !pendingSet.has(r.id));
+    if (toUpsert.length) await table.bulkPut(toUpsert);
+  }
+
+  if (removedIds.length) {
+    // Only delete rows that aren't in the offline-pending set.
+    const pendingIds = await table.where("_offline").equals(1).primaryKeys();
+    const pendingSet = new Set(pendingIds);
+    const toDelete = removedIds.filter((id) => !pendingSet.has(id));
+    if (toDelete.length) await table.bulkDelete(toDelete);
+  }
+
+  await db.sync_meta.put({
+    table_name: tableName,
+    last_synced: latestUpdatedAt || new Date().toISOString(),
+  });
+}
+
+// ── Helper: read the last-synced timestamp for a table ──
+export async function getTableLastSynced(tableName) {
+  const row = await db.sync_meta.get(tableName);
+  return row?.last_synced ?? null;
+}
+
+// ── Helper: count rows in a table (used to detect a cold cache) ──
+export async function getTableRowCount(tableName) {
+  return db.table(tableName).count();
+}
+
 // ── Helper: get all pending-sync records from a table ──
 export async function getPendingRecords(tableName) {
   return db.table(tableName).where("_offline").equals(1).toArray();
@@ -174,6 +225,9 @@ export async function putOffline(tableName, record, action = "create") {
     _action: action,
     _offlineAt: new Date().toISOString(),
   });
+  // Phase 2: tell react-query (via the bridge) that this table changed so
+  // every active query keyed on it re-runs and picks up the new local row.
+  notifyTable(tableName);
 }
 
 export default db;

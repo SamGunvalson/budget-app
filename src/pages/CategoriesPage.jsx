@@ -6,9 +6,9 @@ import Modal from '../components/common/Modal';
 import {
   createCategoryOffline as createCategory,
   deleteCategoryOffline as deleteCategory,
-  getCategoriesOffline as getCategories,
   updateCategoryOffline as updateCategory,
 } from '../services/offlineAware';
+import { useCategories } from '../hooks/queries';
 
 // Confirm delete dialog
 function ConfirmDeleteModal({ category, onConfirm, onCancel, isDeleting }) {
@@ -44,49 +44,31 @@ function ConfirmDeleteModal({ category, onConfirm, onCancel, isDeleting }) {
 }
 
 function CategoriesPage() {
-  const [categories, setCategories] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const {
+    data: categories = [],
+    isLoading,
+    error: loadErrorObj,
+  } = useCategories();
+  const loadError = loadErrorObj?.message || '';
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [deletingCategory, setDeletingCategory] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [mutationError, setMutationError] = useState('');
 
   useEffect(() => { document.title = 'Budget App | Categories'; }, []);
 
-  // Load categories on mount
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setLoadError('');
-      try {
-        const data = await getCategories();
-        if (!cancelled) setCategories(data);
-      } catch (err) {
-        if (!cancelled) setLoadError(err?.message || 'Failed to load categories.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  // CRUD handlers
+  // CRUD handlers — react-query auto-refreshes via the bridge after each
+  // mutation calls notifyTable inside the offlineAware wrapper.
   const handleCreate = async (values) => {
-    const created = await createCategory(values);
-    setCategories((prev) => [...prev, created]);
+    await createCategory(values);
     setShowCreateModal(false);
   };
 
   const handleUpdate = async (values) => {
-    const updated = await updateCategory(editingCategory.id, values);
-    setCategories((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    );
+    await updateCategory(editingCategory.id, values);
     setEditingCategory(null);
   };
 
@@ -95,10 +77,9 @@ function CategoriesPage() {
     setDeletingId(deletingCategory.id);
     try {
       await deleteCategory(deletingCategory.id);
-      setCategories((prev) => prev.filter((c) => c.id !== deletingCategory.id));
       setDeletingCategory(null);
     } catch (err) {
-      setLoadError(err?.message || 'Failed to delete category.');
+      setMutationError(err?.message || 'Failed to delete category.');
     } finally {
       setDeletingId(null);
     }
@@ -133,9 +114,9 @@ function CategoriesPage() {
         </div>
 
         {/* Error banner */}
-        {loadError && (
+        {(loadError || mutationError) && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-            <span className="mr-1.5">⚠</span>{loadError}
+            <span className="mr-1.5">⚠</span>{mutationError || loadError}
           </div>
         )}
 

@@ -4,7 +4,7 @@ import TopBar from '../components/common/TopBar';
 import ExportData from '../components/common/ExportData';
 import ImportCSV from '../components/transactions/ImportCSV';
 import BudgetImportModal from '../components/budgets/BudgetImportModal';
-import { getCategoriesOffline, getAccountsOffline } from '../services/offlineAware';
+import { useCategories, useAccounts } from '../hooks/queries';
 import useThresholds from '../hooks/useThresholds';
 import useTheme from '../hooks/useTheme';
 import useSafeMode from '../hooks/useSafeMode';
@@ -32,19 +32,12 @@ export default function SettingsPage() {
   // Import modal state
   const [showImportModal, setShowImportModal] = useState(false);
   const [showBudgetImportModal, setShowBudgetImportModal] = useState(false);
-  const [importCategories, setImportCategories] = useState([]);
-  const [importAccounts, setImportAccounts] = useState([]);
 
-  // Lazy-load categories + accounts when either import modal is first opened
-  useEffect(() => {
-    if ((!showImportModal && !showBudgetImportModal) || importCategories.length > 0) return;
-    Promise.all([getCategoriesOffline(), getAccountsOffline()])
-      .then(([cats, accts]) => {
-        setImportCategories(cats);
-        setImportAccounts(accts);
-      })
-      .catch(() => {});
-  }, [showImportModal, showBudgetImportModal, importCategories.length]);
+  // Lazy-load categories + accounts only while an import modal is open. The
+  // queries stay cached afterwards so reopening the modal is instant.
+  const importOpen = showImportModal || showBudgetImportModal;
+  const { data: importCategories = [] } = useCategories({ enabled: importOpen });
+  const { data: importAccounts = [] } = useAccounts({ enabled: importOpen });
 
   // Resolve displayed values: local overrides while editing, else loaded thresholds
   const displayUnderBudget = underBudgetInput ?? thresholds.underBudget;

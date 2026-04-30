@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import {
   LineChart,
   Line,
@@ -11,9 +11,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import { toDollars, formatCurrency, formatAxisDollar, maskAccountName } from '../../utils/helpers';
-import {
-  getAccountBalanceHistoryOffline as getAccountBalanceHistory,
-} from '../../services/offlineAware';
+import { useAccountBalanceHistory } from '../../hooks/queries';
 import { isLiabilityAccount } from '../../services/accounts';
 
 // ─── Account-color palette ───────────────────────────────────────────────────
@@ -92,8 +90,6 @@ function CashflowTooltip({ active, payload, label, accountMap }) {
  */
 export default function CashflowChart({ accounts = [], selectedAccountIds = [], playgroundItems = [] }) {
   const [range, setRange] = useState('3m');
-  const [chartData, setChartData] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   // Account id → name map for tooltip
   const accountMap = useMemo(() => {
@@ -134,24 +130,14 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
     };
   }, [range, now]);
 
-  const loadData = useCallback(async () => {
-    if (!selectedAccountIds.length) { setChartData([]); return; }
-    setIsLoading(true);
-    try {
-      const series = await getAccountBalanceHistory({
-        accountIds: selectedAccountIds,
-        startDate,
-        endDate,
-      });
-      setChartData(series);
-    } catch {
-      setChartData([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedAccountIds, startDate, endDate]);
-
-  useEffect(() => { loadData(); }, [loadData]);
+  // Per-account daily balance series — cache-first via Phase 2 react-query.
+  const balanceQuery = useAccountBalanceHistory({
+    accountIds: selectedAccountIds,
+    startDate,
+    endDate,
+  });
+  const chartData = useMemo(() => balanceQuery.data ?? [], [balanceQuery.data]);
+  const isLoading = balanceQuery.isLoading;
 
   // Transform for Recharts: split each account into actual (solid) and projected (dashed) series
   // Playground items are overlaid on the projected series from their date onward.

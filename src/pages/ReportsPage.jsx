@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import TopBar from '../components/common/TopBar';
 import MonthYearSelector from '../components/common/MonthYearSelector';
 import MonthlyStats from '../components/reports/MonthlyStats';
@@ -9,10 +10,10 @@ import PlanVsActual from '../components/reports/PlanVsActual';
 import TrendChart from '../components/reports/TrendChart';
 import TrendSummary from '../components/reports/TrendSummary';
 import {
-  getTransactionsYTDOffline as getTransactionsYTD,
-  getPendingReviewCountOffline as getPendingReviewCount,
-  getCategoriesOffline as getCategories,
-} from '../services/offlineAware';
+  useTransactionsYTD,
+  usePendingReviewCount,
+  useCategories,
+} from '../hooks/queries';
 import {
   getTrendTransactions,
   getYearlyTrendTransactions,
@@ -27,8 +28,7 @@ import CalendarView from '../components/reports/CalendarView';
 
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useSessionState('reportsViewMode', 'monthly'); // 'monthly' | 'ytd'
   // 'summary' | 'planVsActual' | 'trends' | 'annualActuals'
   // 'summary' | 'planVsActual' | 'trends' | 'annualActuals' | 'calendar'
@@ -40,15 +40,33 @@ export default function ReportsPage() {
   const [trendLoading, setTrendLoading] = useState(true);
   const [trendError, setTrendError] = useState('');
 
-  // Raw transaction & category data for drill-down
-  const [allTransactions, setAllTransactions] = useState([]);
-  const [categories, setCategories] = useState([]);
-
   // Drill-down state: { name: string, type: 'income' | 'expense' } or null
   const [expandedChart, setExpandedChart] = useState(null);
 
-  // Pending review count
-  const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  // Raw transaction & category data for drill-down + pending count.
+  // react-query (Phase 2) handles loading + auto-refresh on table changes.
+  const ytdQuery = useTransactionsYTD(year, month);
+  const categoriesQuery = useCategories();
+  const pendingQuery = usePendingReviewCount();
+  const allTransactions = useMemo(() => ytdQuery.data ?? [], [ytdQuery.data]);
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const pendingReviewCount = pendingQuery.data ?? 0;
+  const isLoading =
+    ytdQuery.isLoading || categoriesQuery.isLoading || pendingQuery.isLoading;
+  const error =
+    ytdQuery.error?.message ||
+    categoriesQuery.error?.message ||
+    pendingQuery.error?.message ||
+    '';
+
+  // Setter that applies optimistic updates to the YTD transactions query cache.
+  // Accepts either a new array or an updater function (matching React setState).
+  const setAllTransactions = useCallback((updater) => {
+    queryClient.setQueryData(
+      ["transactions", "ytd", year, month],
+      (prev) => (typeof updater === 'function' ? updater(prev ?? []) : updater),
+    );
+  }, [queryClient, year, month]);
 
   const handleMonthChange = (m, y) => {
     setMonthYear(m, y);
@@ -56,35 +74,9 @@ export default function ReportsPage() {
 
   useEffect(() => { document.title = 'Budget App | Reports'; }, []);
 
+  // Reset drill-down when the selected period changes.
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
-      setError('');
-      setExpandedChart(null);
-      try {
-        // Single fetch from Jan 1 → end of selected month; split client-side
-        const [allYTD, cats, reviewCount] = await Promise.all([
-          getTransactionsYTD({ year, throughMonth: month }),
-          getCategories(),
-          getPendingReviewCount(),
-        ]);
-        if (cancelled) return;
-        setAllTransactions(allYTD);
-        setCategories(cats);
-        setPendingReviewCount(reviewCount);
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load data');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+    setExpandedChart(null);
   }, [month, year]);
 
   // Derive all report data from raw transactions (so edits propagate)
@@ -268,7 +260,7 @@ export default function ReportsPage() {
         />
       );
     },
-    [getDrillDownTransactions, categories, viewMode, reportData],
+    [getDrillDownTransactions, categories, viewMode, reportData, setAllTransactions],
   );
 
   return (
