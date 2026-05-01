@@ -37,12 +37,12 @@ from any module that loads at first paint. Each chart that uses recharts
 is now a `React.lazy` import wrapped in `<Suspense>` with a skeleton
 fallback:
 
-| Component                | Imported from                                                                                | Loads when                          |
-| ------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `TrendChart`             | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                   | User opens the **Trends** tab       |
-| `PlanVsActual` (+chart)  | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                   | User opens the **Plan vs Actual** tab |
-| `CashflowChart`          | [`pages/AccountsPage.jsx`](../../src/pages/AccountsPage.jsx)                                 | User opens the **Cashflow** tab     |
-| `NetWorthChart`          | [`components/accounts/NetWorthSummary.jsx`](../../src/components/accounts/NetWorthSummary.jsx) | NetWorthSummary mounts (Accounts overview) |
+| Component               | Imported from                                                                                  | Loads when                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `TrendChart`            | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                     | User opens the **Trends** tab              |
+| `PlanVsActual` (+chart) | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                     | User opens the **Plan vs Actual** tab      |
+| `CashflowChart`         | [`pages/AccountsPage.jsx`](../../src/pages/AccountsPage.jsx)                                   | User opens the **Cashflow** tab            |
+| `NetWorthChart`         | [`components/accounts/NetWorthSummary.jsx`](../../src/components/accounts/NetWorthSummary.jsx) | NetWorthSummary mounts (Accounts overview) |
 
 `CategoryChart` is a pure HTML/Tailwind bar list (no recharts), so it
 stays eagerly imported.
@@ -62,10 +62,10 @@ function loadExcelJs() {
 }
 ```
 
-| File                                                                | When it loads                                              |
-| ------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [`src/services/export.js`](../../src/services/export.js)            | First call to `exportTransactionsCSV` / `exportBudgetCSV`  |
-| [`src/utils/csvParser.js`](../../src/utils/csvParser.js)            | First call to `parseSpreadsheetFile` (the import flow)     |
+| File                                                     | When it loads                                             |
+| -------------------------------------------------------- | --------------------------------------------------------- |
+| [`src/services/export.js`](../../src/services/export.js) | First call to `exportTransactionsCSV` / `exportBudgetCSV` |
+| [`src/utils/csvParser.js`](../../src/utils/csvParser.js) | First call to `parseSpreadsheetFile` (the import flow)    |
 
 The Vite `manualChunks: { excel: ["exceljs"] }` rule keeps the lib in a
 single named chunk; the change here is that nothing in the eager module
@@ -140,21 +140,21 @@ handler: "StaleWhileRevalidate",
 
 ## Bundle map (after)
 
-| Chunk                       | Size (gz) | Loads when                           |
-| --------------------------- | --------- | ------------------------------------ |
-| `index-*.js` (entry)        | ~93 KB    | First paint                          |
-| `vendor-*.js`               | ~12 KB    | First paint                          |
-| `supabase-*.js`             | ~46 KB    | First paint                          |
-| `utils-*.js`                | ~40 KB    | First paint                          |
-| `charts-*.js` (recharts)    | ~111 KB   | First chart actually rendered        |
-| `excel-*.js` (exceljs)      | ~271 KB   | First export/import action           |
-| `dnd-*.js` (@dnd-kit)       | ~15 KB    | Categories / Annual budget table     |
-| `TransactionsPage-*.js`     | ~22 KB    | `/app/transactions` nav              |
-| `ReportsPage-*.js`          | ~12 KB    | `/app/reports` nav                   |
-| `TrendChart-*.js`           | ~2 KB     | Reports → Trends tab                 |
-| `PlanVsActual-*.js`         | ~6 KB     | Reports → Plan vs Actual tab         |
-| `CashflowChart-*.js`        | ~3 KB     | Accounts → Cashflow tab              |
-| `NetWorthChart-*.js`        | ~2 KB     | Accounts overview mounts             |
+| Chunk                    | Size (gz) | Loads when                       |
+| ------------------------ | --------- | -------------------------------- |
+| `index-*.js` (entry)     | ~93 KB    | First paint                      |
+| `vendor-*.js`            | ~12 KB    | First paint                      |
+| `supabase-*.js`          | ~46 KB    | First paint                      |
+| `utils-*.js`             | ~40 KB    | First paint                      |
+| `charts-*.js` (recharts) | ~111 KB   | First chart actually rendered    |
+| `excel-*.js` (exceljs)   | ~271 KB   | First export/import action       |
+| `dnd-*.js` (@dnd-kit)    | ~15 KB    | Categories / Annual budget table |
+| `TransactionsPage-*.js`  | ~22 KB    | `/app/transactions` nav          |
+| `ReportsPage-*.js`       | ~12 KB    | `/app/reports` nav               |
+| `TrendChart-*.js`        | ~2 KB     | Reports → Trends tab             |
+| `PlanVsActual-*.js`      | ~6 KB     | Reports → Plan vs Actual tab     |
+| `CashflowChart-*.js`     | ~3 KB     | Accounts → Cashflow tab          |
+| `NetWorthChart-*.js`     | ~2 KB     | Accounts overview mounts         |
 
 (Eager first-paint payload is now ~190 KB gz of JS — the recharts and
 exceljs weight is no longer in the critical path.)
@@ -170,7 +170,7 @@ exceljs weight is no longer in the critical path.)
   becomes a concern.
 - **`useTransactionManager`** still updates local React-Query state
   imperatively. Phase 4's note still applies: switching to `useMutation`
-  + `onMutate` is deferrable until profiling shows real flicker.
+  - `onMutate` is deferrable until profiling shows real flicker.
 - **Aggregation memos** (`groupTransactions`, `reportData` on Reports,
   `mergedUpcomingTx` on Accounts) were already inside `useMemo` after
   Phase 2 / Phase 3 work — no change needed.
