@@ -19,19 +19,19 @@ export async function getCategories() {
 
 /**
  * Bulk-update sort_order for multiple categories.
+ *
+ * Phase 4: a single Postgres RPC (`bulk_update_category_sort_order`) replaces
+ * the per-row UPDATE fan-out. One round-trip regardless of category count.
+ *
  * @param {Array<{ id: string, sort_order: number }>} items
  * @returns {Promise<void>}
  */
 export async function bulkUpdateSortOrder(items) {
-  // Supabase doesn't support bulk partial updates natively,
-  // so we fire individual updates in parallel.
-  const results = await Promise.all(
-    items.map(({ id, sort_order }) =>
-      supabase.from("categories").update({ sort_order }).eq("id", id),
-    ),
-  );
-  const failed = results.find((r) => r.error);
-  if (failed?.error) throw failed.error;
+  if (!Array.isArray(items) || items.length === 0) return;
+  const { error } = await supabase.rpc("bulk_update_category_sort_order", {
+    p_items: items.map(({ id, sort_order }) => ({ id, sort_order })),
+  });
+  if (error) throw error;
 }
 
 /**

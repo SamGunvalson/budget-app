@@ -139,39 +139,31 @@ export async function createRecurringTemplate({
 
 /**
  * Create a recurring group (parent + children) in one operation.
+ *
+ * Phase 4: a single Postgres RPC (`upsert_recurring_group`) replaces the
+ * 1 + N serial inserts. Children inherit the parent's schedule fields
+ * inside the RPC — same behavior the JS path used to enforce.
+ *
  * @param {Object} parentData - Parent template fields
  * @param {Array<Object>} childrenData - Array of child template fields
  * @returns {Promise<Object>} parent template with children attached
  */
 export async function createRecurringGroup(parentData, childrenData) {
-  // Create the parent first
-  const parent = await createRecurringTemplate({
-    ...parentData,
-    is_group_parent: true,
-  });
+  const parentPayload = { ...parentData, is_group_parent: true };
+  const { data: parentId, error } = await supabase.rpc(
+    "upsert_recurring_group",
+    {
+      p_parent_id: null,
+      p_parent: parentPayload,
+      p_children: childrenData || [],
+    },
+  );
+  if (error) throw error;
 
-  // Create each child linked to the parent
-  const children = [];
-  for (let i = 0; i < childrenData.length; i++) {
-    const child = await createRecurringTemplate({
-      ...childrenData[i],
-      group_id: parent.id,
-      group_order: i,
-      // Children inherit parent schedule
-      frequency: parentData.frequency,
-      day_of_month: parentData.day_of_month,
-      day_of_month_2: parentData.day_of_month_2,
-      day_of_week: parentData.day_of_week,
-      custom_interval: parentData.custom_interval,
-      custom_unit: parentData.custom_unit,
-      start_date: parentData.start_date,
-      end_date: parentData.end_date,
-    });
-    children.push(child);
-  }
-
-  parent.children = children;
-  return parent;
+  // Refetch the joined+nested view so callers get the same shape
+  // createRecurringTemplate returned before.
+  const templates = await getRecurringTemplates();
+  return templates.find((t) => t.id === parentId);
 }
 
 /**
@@ -247,64 +239,23 @@ export async function updateRecurringTemplate(id, updates) {
 
 /**
  * Update a recurring group (parent + children).
- * Deletes removed children, updates existing, creates new.
+ * Deletes removed children, updates existing, creates new — all in a single
+ * Postgres RPC (`upsert_recurring_group`, Phase 4).
+ *
  * @param {string} groupId - Parent template ID
  * @param {Object} parentData - Updated parent fields
  * @param {Array<Object>} childrenData - Updated child fields (with optional `id` for existing)
  * @returns {Promise<Object>}
  */
 export async function updateRecurringGroup(groupId, parentData, childrenData) {
-  // Update the parent
-  await updateRecurringTemplate(groupId, {
-    ...parentData,
-    is_group_parent: true,
+  const parentPayload = { ...parentData, is_group_parent: true };
+  const { error } = await supabase.rpc("upsert_recurring_group", {
+    p_parent_id: groupId,
+    p_parent: parentPayload,
+    p_children: childrenData || [],
   });
+  if (error) throw error;
 
-  // Get existing children
-  const { data: existingChildren, error: fetchErr } = await supabase
-    .from("recurring_templates")
-    .select("id")
-    .eq("group_id", groupId)
-    .eq("is_active", true);
-  if (fetchErr) throw fetchErr;
-
-  const existingIds = new Set(existingChildren.map((c) => c.id));
-  const updatedIds = new Set();
-
-  // Upsert children
-  for (let i = 0; i < childrenData.length; i++) {
-    const child = childrenData[i];
-    const childPayload = {
-      ...child,
-      group_id: groupId,
-      group_order: i,
-      // Inherit parent schedule
-      frequency: parentData.frequency,
-      day_of_month: parentData.day_of_month,
-      day_of_month_2: parentData.day_of_month_2,
-      day_of_week: parentData.day_of_week,
-      start_date: parentData.start_date,
-      end_date: parentData.end_date,
-    };
-
-    if (child.id && existingIds.has(child.id)) {
-      // Update existing child
-      await updateRecurringTemplate(child.id, childPayload);
-      updatedIds.add(child.id);
-    } else {
-      // Create new child
-      await createRecurringTemplate(childPayload);
-    }
-  }
-
-  // Soft-delete removed children
-  for (const existingId of existingIds) {
-    if (!updatedIds.has(existingId)) {
-      await deleteRecurringTemplate(existingId);
-    }
-  }
-
-  // Reload the parent with children
   const templates = await getRecurringTemplates();
   return templates.find((t) => t.id === groupId);
 }

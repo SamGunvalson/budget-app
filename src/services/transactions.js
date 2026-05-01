@@ -1,21 +1,10 @@
 import { supabase, getCurrentUser } from "./supabase";
 
-/**
- * Guard: reject transaction creation if the target account is closed.
- * @param {string} accountId
- */
-async function assertAccountOpen(accountId) {
-  if (!accountId) return;
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("closed_at")
-    .eq("id", accountId)
-    .single();
-  if (error) throw error;
-  if (data?.closed_at) {
-    throw new Error("Cannot create transactions on a closed account.");
-  }
-}
+// Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
+// trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
+// client-side round-trip needed. The trigger raises with the same friendly
+// message the old JS guard used, so callers can surface error.message
+// unchanged.
 
 /**
  * Fetch active transactions for the current user, optionally filtered by month/year and status.
@@ -81,8 +70,6 @@ export async function createTransaction({
   status,
   recurring_template_id,
 }) {
-  await assertAccountOpen(account_id);
-
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
@@ -181,9 +168,6 @@ export async function createTransfer({
   transaction_date,
   category_id,
 }) {
-  await assertAccountOpen(from_account_id);
-  await assertAccountOpen(to_account_id);
-
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 
@@ -240,9 +224,6 @@ export async function createLinkedTransfer({
   transaction_date,
   is_income,
 }) {
-  await assertAccountOpen(account_id);
-  await assertAccountOpen(linked_account_id);
-
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 
@@ -626,15 +607,39 @@ export async function deleteTransaction(id) {
 
 /**
  * Bulk-update multiple transactions. Each item must have an `id` plus any update fields.
- * Returns updated rows with joined categories.
+ * Returns updated rows with joined categories and accounts.
+ *
+ * Phase 4: a single Postgres RPC (`bulk_update_transactions`) replaces the
+ * per-row UPDATE fan-out. The RPC honors the same field semantics as
+ * `updateTransaction` — fields absent from each input object are left
+ * untouched; explicit `null` clears the column where the schema allows it.
+ *
  * @param {Array<{id: string, [key: string]: any}>} updates
  * @returns {Promise<Array>}
  */
 export async function bulkUpdateTransactions(updates) {
-  const results = await Promise.all(
-    updates.map(({ id, ...fields }) => updateTransaction(id, fields)),
-  );
-  return results;
+  if (!Array.isArray(updates) || updates.length === 0) return [];
+
+  // Strip undefined fields so the RPC treats them as "leave alone".
+  const cleaned = updates.map(({ id, ...fields }) => {
+    const out = { id };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) continue;
+      // Match updateTransaction's trim/normalize behavior so the RPC sees the
+      // same shape the per-row path used to write.
+      if (k === "description" && typeof v === "string") out[k] = v.trim();
+      else if (k === "payee" && typeof v === "string")
+        out[k] = v.trim() || null;
+      else out[k] = v;
+    }
+    return out;
+  });
+
+  const { data, error } = await supabase.rpc("bulk_update_transactions", {
+    p_updates: cleaned,
+  });
+  if (error) throw error;
+  return data || [];
 }
 
 /**
