@@ -1,5 +1,15 @@
-import ExcelJS from "exceljs";
 import { supabase, getCurrentUser } from "./supabase";
+
+// Phase 5: code-split the exceljs bundle (~1 MB).  We only need it when the
+// user actually clicks an export button, so defer the import until first use
+// and cache the resolved module across subsequent exports.
+let _excelJsPromise = null;
+function loadExcelJs() {
+  if (!_excelJsPromise) {
+    _excelJsPromise = import("exceljs").then((m) => m.default || m);
+  }
+  return _excelJsPromise;
+}
 
 // ── Helpers ──
 
@@ -167,6 +177,7 @@ async function fetchAllUserPreferences() {
  * Columns: Date, Description, Payee, Category, CategoryType, Type, Account, Amount, Status
  */
 export async function exportTransactionsCSV() {
+  const ExcelJS = await loadExcelJs();
   const transactions = await fetchAllTransactions();
 
   const rows = transactions.map((t) => {
@@ -251,6 +262,7 @@ export async function exportTransactionsCSV() {
  * Columns: Month, Year, Category, Planned, Actual
  */
 export async function exportBudgetCSV() {
+  const ExcelJS = await loadExcelJs();
   const plans = await fetchAllBudgetPlans();
   const transactions = await fetchAllTransactions();
 

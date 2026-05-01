@@ -1,5 +1,8 @@
+import { lazy, Suspense } from 'react';
 import { formatCurrency } from '../../utils/helpers';
-import NetWorthChart from './NetWorthChart';
+// Phase 5: defer recharts-bound chart so the NetWorth summary card paints
+// without waiting for the chart bundle to download/parse.
+const NetWorthChart = lazy(() => import('./NetWorthChart'));
 
 /**
  * NetWorthSummary — top-level card showing net worth, assets, and liabilities.
@@ -95,7 +98,13 @@ export default function NetWorthSummary({ netWorth = 0, projectedNetWorth = 0, t
       )}
 
       {/* Net worth history chart */}
-      <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
+      <Suspense
+        fallback={
+          <div className="mt-6 h-48 animate-pulse rounded-xl bg-stone-100 dark:bg-stone-700/50" />
+        }
+      >
+        <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
+      </Suspense>
     </div>
   );
 }

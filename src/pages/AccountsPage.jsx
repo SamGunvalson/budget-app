@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AccountForm from '../components/accounts/AccountForm';
 import AccountList from '../components/accounts/AccountList';
 import NetWorthSummary from '../components/accounts/NetWorthSummary';
-import CashflowChart from '../components/accounts/CashflowChart';
+// Phase 5: defer recharts-bound chart until Cashflow tab is opened.
+const CashflowChart = lazy(() => import('../components/accounts/CashflowChart'));
 import AvailableToSpend from '../components/accounts/AvailableToSpend';
 import UpcomingTransactions from '../components/accounts/UpcomingTransactions';
 import TestTransactions from '../components/accounts/TestTransactions';
@@ -395,11 +396,17 @@ export default function AccountsPage() {
             </div>
 
             {/* Cashflow chart */}
-            <CashflowChart
-              accounts={accounts}
-              selectedAccountIds={cashflowAccountIds}
-              playgroundItems={playgroundItems}
-            />
+            <Suspense
+              fallback={
+                <div className="h-80 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
+              }
+            >
+              <CashflowChart
+                accounts={accounts}
+                selectedAccountIds={cashflowAccountIds}
+                playgroundItems={playgroundItems}
+              />
+            </Suspense>
 
             {/* Available to spend */}
             {!isLoading && (

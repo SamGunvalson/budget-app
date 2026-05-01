@@ -12,7 +12,7 @@ independently; later phases assume earlier ones are in place.
 | 2     | React Query adoption + multi-tab fanout                     | ✅ Shipped | [PHASE_2_REACT_QUERY.md](./PHASE_2_REACT_QUERY.md) |
 | 3     | Server-side aggregations (Postgres views/RPCs)              | ✅ Shipped | [PHASE_3_SERVER_AGGREGATIONS.md](./PHASE_3_SERVER_AGGREGATIONS.md) |
 | 4     | Mutation batching + write-path cleanup                      | ✅ Shipped | [PHASE_4_MUTATIONS.md](./PHASE_4_MUTATIONS.md)     |
-| 5     | Bundle splitting + lazy-load heavy deps (exceljs, recharts) | Planned    | _tbd_                                              |
+| 5     | Bundle splitting + lazy-load heavy deps (exceljs, recharts) | ✅ Shipped | [PHASE_5_RENDER_BUNDLE.md](./PHASE_5_RENDER_BUNDLE.md) |
 | 6     | Virtualization + render-cost audit                          | Planned    | _tbd_                                              |
 | 7     | Service worker / runtime cache strategy review              | Planned    | _tbd_                                              |
 | 8     | Observability: web-vitals, real-user metrics                | Planned    | _tbd_                                              |

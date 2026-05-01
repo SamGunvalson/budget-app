@@ -1,4 +1,13 @@
-import ExcelJS from "exceljs";
+// Phase 5: code-split the exceljs bundle.  parseSpreadsheetFile is only
+// called when the user picks a file in the import flow, so we lazy-load the
+// library on first use and cache the module for subsequent calls.
+let _excelJsPromise = null;
+function loadExcelJs() {
+  if (!_excelJsPromise) {
+    _excelJsPromise = import("exceljs").then((m) => m.default || m);
+  }
+  return _excelJsPromise;
+}
 
 /**
  * Parse a CSV or Excel file into an array of row objects.
@@ -21,6 +30,7 @@ export async function parseSpreadsheetFile(file) {
         error: "File is too large. Maximum allowed size is 10 MB.",
       };
     }
+    const ExcelJS = await loadExcelJs();
     const arrayBuffer = await file.arrayBuffer();
     const workbook = new ExcelJS.Workbook();
 

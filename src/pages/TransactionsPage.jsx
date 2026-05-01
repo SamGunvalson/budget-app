@@ -421,25 +421,30 @@ export default function TransactionsPage() {
   };
 
   // ---------- Group bulk handlers ----------
-  const handleConfirmAll = (children) => {
+  // handleConfirmWithSplit is a useCallback defined below. We capture it via
+  // a ref so handleConfirmAll itself doesn't change identity every render.
+  const handleConfirmWithSplitRef = useRef(null);
+  const handleConfirmAll = useCallback((children) => {
     children
       .filter((c) => c.status !== 'posted')
-      .forEach((c) => handleConfirmWithSplit(c.id));
-  };
+      .forEach((c) => handleConfirmWithSplitRef.current?.(c.id));
+  }, []);
 
-  const handleSkipAll = (children) => {
+  const handleSkipAll = useCallback((children) => {
     children
       .filter((c) => c.status !== 'posted')
       .forEach((c) => mgr.handleSkip(c.id));
-  };
+    // mgr identity changes each render but mgr.handleSkip is a stable useCallback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mgr.handleSkip]);
 
-  const handleEditAll = (children) => {
+  const handleEditAll = useCallback((children) => {
     setBulkEditGroup(children);
-  };
+  }, []);
 
-  const handleDeleteAll = (children) => {
+  const handleDeleteAll = useCallback((children) => {
     setDeletingGroup(children);
-  };
+  }, []);
 
   const handleBulkEditSubmit = async (fields) => {
     if (!bulkEditGroup) return;
@@ -474,7 +479,7 @@ export default function TransactionsPage() {
   };
 
   // ---------- Confirm with auto-split ----------
-  const handleConfirmWithSplit = async (txId) => {
+  const handleConfirmWithSplit = useCallback(async (txId) => {
     const tx = transactions.find((t) => t.id === txId);
     await mgr.handleConfirm(txId);
     if (tx?.recurring_template_id && partnership && currentUser) {
@@ -506,7 +511,19 @@ export default function TransactionsPage() {
         console.warn('handleConfirmWithSplit: failed to create split expense:', err?.message);
       }
     }
-  };
+    // mgr.handleConfirm is a stable useCallback; depending on it (not on the
+    // whole mgr object, whose identity changes each render) is intentional.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, mgr.handleConfirm, partnership, currentUser]);
+  // Keep ref in sync so handleConfirmAll always invokes the latest closure.
+  handleConfirmWithSplitRef.current = handleConfirmWithSplit;
+
+  // Stable wrapper for onSplit so memoized rows don't re-render when other
+  // page state changes.
+  const handleSplitRow = useCallback((tx) => {
+    setSplittingTransaction(tx);
+  }, []);
+  const onSplitProp = partnership ? handleSplitRow : undefined;
 
   const handleCreateGroup = async (parentData, childrenData) => {
 
@@ -711,7 +728,7 @@ export default function TransactionsPage() {
             accounts={accounts}
             onConfirm={handleConfirmWithSplit}
             onSkip={mgr.handleSkip}
-            onSplit={partnership ? (tx) => setSplittingTransaction(tx) : undefined}
+            onSplit={onSplitProp}
             splitTransactionIds={splitTransactionIds}
             onConfirmAll={handleConfirmAll}
             onSkipAll={handleSkipAll}

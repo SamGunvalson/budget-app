@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import TopBar from '../components/common/TopBar';
@@ -6,8 +6,11 @@ import MonthYearSelector from '../components/common/MonthYearSelector';
 import MonthlyStats from '../components/reports/MonthlyStats';
 import CategoryChart from '../components/reports/CategoryChart';
 import CategoryDrillDown from '../components/reports/CategoryDrillDown';
-import PlanVsActual from '../components/reports/PlanVsActual';
-import TrendChart from '../components/reports/TrendChart';
+// Phase 5: defer recharts-bound charts until the user opens those tabs.
+// Each lazy import becomes its own JS chunk; they pull in `recharts` only
+// when first rendered, keeping the Reports route's first-paint bundle small.
+const PlanVsActual = lazy(() => import('../components/reports/PlanVsActual'));
+const TrendChart = lazy(() => import('../components/reports/TrendChart'));
 import TrendSummary from '../components/reports/TrendSummary';
 import {
   useTransactionsYTD,
@@ -21,6 +24,13 @@ import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
+
+// Skeleton placeholder shown while a lazy chart chunk is downloading.
+function ChartFallback() {
+  return (
+    <div className="h-72 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
+  );
+}
 
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
@@ -387,7 +397,7 @@ export default function ReportsPage() {
             ) : activeView === 'annualActuals' ? (
               <AnnualActualsTable year={year} />
             ) : activeView === 'trends' ? (
-              <>
+              <Suspense fallback={<ChartFallback />}>
                 <TrendChart
                   range={trendRange}
                   setRange={setTrendRange}
@@ -396,15 +406,17 @@ export default function ReportsPage() {
                   error={trendError}
                 />
                 <TrendSummary {...trendSummary} />
-              </>
+              </Suspense>
             ) : activeView === 'planVsActual' ? (
-              <PlanVsActual
-                month={month}
-                year={year}
-                viewMode={viewMode}
-                onMonthChange={handleMonthChange}
-                showSelector={false}
-              />
+              <Suspense fallback={<ChartFallback />}>
+                <PlanVsActual
+                  month={month}
+                  year={year}
+                  viewMode={viewMode}
+                  onMonthChange={handleMonthChange}
+                  showSelector={false}
+                />
+              </Suspense>
             ) : (
               <>
                 {/* Stat cards + YTD */}

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from 'react';
+import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatCurrency, formatDate, toCents, toDollars, maskAccountName } from '../../utils/helpers';
 import { getAccountBadgeColor } from '../../services/accounts';
@@ -671,4 +671,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   );
 });
 
-export default TransactionItem;
+// Phase 5: memo so virtualizer rows skip re-render when their props haven't
+// changed. Parent (TransactionsPage) feeds stable useCallback handlers and
+// per-row `pendingEdits` slices so shallow compare is correct.
+export default memo(TransactionItem);

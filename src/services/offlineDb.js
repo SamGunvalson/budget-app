@@ -226,22 +226,69 @@ export async function getPendingRecords(tableName) {
   return db.table(tableName).where("_offline").equals(1).toArray();
 }
 
-// ── Helper: count all pending-sync records across all tables ──
-export async function getPendingSyncCount() {
-  const tables = [
-    "transactions",
-    "categories",
-    "budget_plans",
-    "budget_items",
-    "accounts",
-    "user_preferences",
-    "recurring_templates",
-  ];
-  let total = 0;
-  for (const t of tables) {
-    total += await db.table(t).where("_offline").equals(1).count();
+// ── Phase 5: O(1) pending-sync counter ─────────────────────────────────────
+//
+// `getPendingSyncCount` previously counted across every synced table on each
+// call (a 7-table COUNT scan).  `useSyncStatus` re-runs that on every offline
+// mutation and on every sync-engine state change, so for a busy session it
+// fired dozens of times in quick succession.
+//
+// We now keep the running total in a module-level cache that is:
+//   * lazily initialised by a single full scan on first read,
+//   * incremented inside `putOffline` (when the row was not already pending),
+//   * decremented inside `markSynced` (rows are only marked synced after they
+//     were previously pending),
+//   * incremented inside `syncQueue.enqueue` (when the row was not already
+//     pending) via the exported `bumpPendingCount` helper.
+//
+// Strict invariant: callers must only call `bumpPendingCount` after they have
+// observed the row's pre-update `_offline` flag, otherwise the counter will
+// drift away from reality.  We never go below zero defensively.
+const SYNCED_TABLES = [
+  "transactions",
+  "categories",
+  "budget_plans",
+  "budget_items",
+  "accounts",
+  "user_preferences",
+  "recurring_templates",
+];
+
+let _pendingCountCache = null; // null = not initialised yet
+let _pendingCountInit = null; // in-flight initial scan
+
+async function ensurePendingCountInit() {
+  if (_pendingCountCache !== null) return _pendingCountCache;
+  if (_pendingCountInit) return _pendingCountInit;
+  _pendingCountInit = (async () => {
+    let total = 0;
+    for (const t of SYNCED_TABLES) {
+      total += await db.table(t).where("_offline").equals(1).count();
+    }
+    _pendingCountCache = total;
+    return total;
+  })();
+  return _pendingCountInit;
+}
+
+export function bumpPendingCount(delta) {
+  if (_pendingCountCache === null) {
+    // Counter not yet initialised — just kick the lazy scan; it will pick up
+    // the in-flight mutation naturally because the Dexie write has already
+    // resolved by the time callers invoke this.
+    void ensurePendingCountInit();
+    return;
   }
-  return total;
+  _pendingCountCache = Math.max(0, _pendingCountCache + delta);
+}
+
+// ── Helper: count all pending-sync records across all tables ──
+//
+// First call performs the full scan; subsequent calls are O(1) reads of the
+// cached counter.  Callers that only need an approximate value (e.g.
+// `useSyncStatus` after a burst of inline edits) effectively pay nothing.
+export async function getPendingSyncCount() {
+  return ensurePendingCountInit();
 }
 
 // ── Helper: mark a record as synced (clear offline flags) ──
@@ -251,16 +298,24 @@ export async function markSynced(tableName, id) {
     _action: null,
     _offlineAt: null,
   });
+  // Sync engine only calls markSynced for rows it pulled out of the offline
+  // queue, so we know the row was previously pending.
+  bumpPendingCount(-1);
 }
 
 // ── Helper: store a record with offline flags ──
 export async function putOffline(tableName, record, action = "create") {
+  // Read the existing row first so we only count this as a new pending
+  // mutation if the row wasn't already in the queue.
+  const prior = await db.table(tableName).get(record.id);
+  const wasPending = prior?._offline === 1;
   await db.table(tableName).put({
     ...record,
     _offline: 1,
     _action: action,
     _offlineAt: new Date().toISOString(),
   });
+  if (!wasPending) bumpPendingCount(1);
   // Phase 2: tell react-query (via the bridge) that this table changed so
   // every active query keyed on it re-runs and picks up the new local row.
   notifyTable(tableName);

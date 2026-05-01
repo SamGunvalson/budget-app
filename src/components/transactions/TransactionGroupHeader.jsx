@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from 'react';
+import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 
@@ -396,4 +396,6 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   );
 });
 
-export default TransactionGroupHeader;
+// Phase 5: memo so virtualizer header rows skip re-render when their props
+// haven't changed.
+export default memo(TransactionGroupHeader);

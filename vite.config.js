@@ -58,6 +58,22 @@ export default defineConfig({
             handler: "NetworkOnly",
           },
           {
+            // Phase 5: rarely-mutated reference tables (accounts, categories,
+            // user_preferences) are served stale-while-revalidate so the UI
+            // gets an instant response and the cache is refreshed in the
+            // background. Listed BEFORE the catch-all so it wins.
+            urlPattern:
+              /^https:\/\/.*\.supabase\.co\/rest\/v1\/(accounts|categories|user_preferences)\b/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "supabase-reference-tables",
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24, // 1 day
+              },
+            },
+          },
+          {
             // Cache Supabase REST API calls (network-first so offline
             // falls through to our Dexie layer naturally)
             urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
@@ -68,7 +84,10 @@ export default defineConfig({
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60, // 1 hour
               },
-              networkTimeoutSeconds: 3,
+              // Phase 5: dropped from 3s -> 1s so flaky networks fall back to
+              // the cache (and our Dexie layer) without a long perceived
+              // hang on mobile.
+              networkTimeoutSeconds: 1,
             },
           },
           {
