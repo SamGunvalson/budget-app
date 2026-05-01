@@ -132,13 +132,12 @@ function GroupKebabMenu({ children, isNotPosted, onConfirmAll, onSkipAll, onEdit
 /**
  * TransactionGroupHeader — collapsible header row for a group of transactions.
  *
- * Shows: chevron, group label, child count badge, status badges, net amount, running balance, kebab menu.
+ * Shows: chevron, group label, child count badge, status badges, net amount, kebab menu.
  */
 const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   group,
   isExpanded,
   onToggleExpand,
-  runningBalance,
   isMobile = false,
   isSelected,
   isIndeterminate,
@@ -380,11 +379,6 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
       <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${amountColor}`}>
         <span className="text-xs font-bold">{isPositive ? '+' : '−'}</span>
         {formatCurrency(Math.abs(netAmount))}
-      </td>
-
-      {/* Balance */}
-      <td className="px-4 py-3 text-right text-sm tabular-nums text-stone-500 dark:text-stone-400 whitespace-nowrap">
-        {runningBalance != null ? formatCurrency(runningBalance) : ''}
       </td>
 
       {/* Actions — kebab menu */}

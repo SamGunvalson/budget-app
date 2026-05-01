@@ -83,11 +83,8 @@ export async function createTransaction({
 }) {
   await assertAccountOpen(account_id);
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError) throw userError;
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
 
   const row = {
     user_id: user.id,
@@ -707,25 +704,15 @@ export async function bulkSkipTransactions(ids) {
  * Fetch all distinct years that have at least one active transaction.
  * Returns an array of years in ascending order, including a one-year
  * look-ahead (current year + 1) so users can budget ahead.
+ *
+ * Backed by the `get_transaction_years` Postgres RPC (Phase 3).
+ *
  * @returns {Promise<number[]>} e.g. [2022, 2023, 2024, 2025, 2026, 2027]
  */
 export async function getTransactionYears() {
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("transaction_date")
-    .is("deleted_at", null)
-    .order("transaction_date", { ascending: true })
-    .limit(1);
-
+  const { data, error } = await supabase.rpc("get_transaction_years");
   if (error) throw error;
-
-  const currentYear = new Date().getFullYear();
-  const minYear = data?.length
-    ? new Date(data[0].transaction_date).getFullYear()
-    : currentYear;
-  const maxYear = currentYear + 1;
-
-  return Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
+  return (data || []).map((y) => Number(y));
 }
 
 /**

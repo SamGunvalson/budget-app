@@ -65,7 +65,6 @@ export default function TransactionList({
   onCellEdit,
   categories,
   accounts,
-  balanceMap,
   emptyMessage,
   onConfirm,
   onSkip,
@@ -138,7 +137,7 @@ export default function TransactionList({
   const allSelected = transactions.length > 0 && selectedIds.size === transactions.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
   const activeColumns = isMobile ? MOBILE_SORT_COLUMNS : SORT_COLUMNS;
-  const columnCount = isMobile ? 4 : 9;
+  const columnCount = isMobile ? 4 : 8;
 
   const handleSort = (column) => {
     onSort(column);
@@ -187,7 +186,6 @@ export default function TransactionList({
                 <col style={{ width: '160px' }} />
                 <col />
                 <col style={{ width: '110px' }} />
-                <col style={{ width: '110px' }} />
                 <col style={{ width: '48px' }} />
               </>
             )}
@@ -218,11 +216,6 @@ export default function TransactionList({
                   {sortColumn === col.key && <SortArrow direction={sortDirection} />}
                 </th>
               ))}
-              {!isMobile && (
-                <th className="px-4 py-3 text-right font-semibold text-stone-600 dark:text-stone-400">
-                  Balance
-                </th>
-              )}
               <th className={`${isMobile ? 'px-2 py-2.5' : 'px-4 py-3'} text-right font-semibold text-stone-600 dark:text-stone-400`}>
                 <span className="sr-only">Actions</span>
               </th>
@@ -239,9 +232,6 @@ export default function TransactionList({
               if (row.rowType === 'groupHeader') {
                 const { group } = row;
                 const isExpanded = expandedGroups?.has(group.groupKey);
-                // Compute running balance for the group: use last child's balance
-                const lastChild = group.children[group.children.length - 1];
-                const groupBalance = lastChild ? (balanceMap?.get(lastChild.id) ?? null) : null;
                 // Check group selection state
                 const allChildIds = group.children.map((c) => c.id);
                 const selectedCount = allChildIds.filter((id) => selectedIds.has(id)).length;
@@ -256,7 +246,6 @@ export default function TransactionList({
                     group={group}
                     isExpanded={isExpanded}
                     onToggleExpand={() => onToggleGroupExpand(group.groupKey)}
-                    runningBalance={groupBalance}
                     isMobile={isMobile}
                     isSelected={groupAllSelected}
                     isIndeterminate={groupSomeSelected}
@@ -295,7 +284,6 @@ export default function TransactionList({
                   onCellEdit={onCellEdit}
                   categories={categories}
                   accounts={accounts}
-                  runningBalance={isChild ? null : (balanceMap?.get(tx.id) ?? null)}
                   onConfirm={onConfirm}
                   onSkip={onSkip}
                   onSplit={onSplit}

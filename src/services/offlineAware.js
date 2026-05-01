@@ -8,7 +8,7 @@
  *
  * This keeps the original service modules untouched — all offline logic lives here.
  */
-import db, { putOffline } from "./offlineDb";
+import db, { putOffline, readRpcCache, writeRpcCache } from "./offlineDb";
 import { enqueue } from "../utils/syncQueue";
 import { swrRead, notifyTable } from "./cache";
 
@@ -428,7 +428,10 @@ async function cacheAccountsHelper(data) {
 export async function getAccountBalancesOffline({ projectedToDate } = {}) {
   return swrRead({
     key: `account_balances:${projectedToDate ?? "all"}`,
-    table: "accounts",
+    // No `table` — this is RPC-derived data.  Calling notifyTable here would
+    // invalidate the very query that triggered this read (via queryBridge),
+    // producing an infinite refetch loop.  Sync.js calls notifyTable on
+    // actual table pulls, which already cascades into invalidating this query.
     readCache: () => computeAccountBalancesFromCache({ projectedToDate }),
     fetchFresh: () => _getAccountBalances({ projectedToDate }),
     writeCache: (rows) => {
@@ -1424,4 +1427,363 @@ export async function upsertBudgetItemOffline(itemData) {
   await putOffline("budget_items", row, "create");
   await enqueue("budget_items", id, "create");
   return row;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 3 — server-side aggregations w/ Dexie offline fallbacks
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Each of these wraps a Postgres RPC (added in
+// sql_scripts/supabase_phase3_aggregations.sql).  The online path is a single
+// round-trip; the offline fallback runs the same accounting rules over the
+// rows we already cache in IndexedDB so report screens keep working without a
+// network connection.
+
+import {
+  isTrueIncome as _isTrueIncome,
+  isSpendingCredit as _isSpendingCredit,
+  isIncomeDebit as _isIncomeDebit,
+} from "../utils/helpers";
+
+import {
+  getPlanVsActual as _getPlanVsActual,
+  getPlanVsActualYTD as _getPlanVsActualYTD,
+} from "./budgets";
+
+import {
+  getMonthlySpendingTrend as _getMonthlySpendingTrend,
+  getYearlySpendingTrend as _getYearlySpendingTrend,
+} from "./analytics";
+
+import { getTransactionYears as _getTransactionYears } from "./transactions";
+
+const SHORT_MONTHS = [
+  "",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const CATEGORY_TYPE_ORDER = { income: 0, needs: 1, wants: 2, savings: 3 };
+
+function sortPlanVsActualCategories(a, b) {
+  const ta = CATEGORY_TYPE_ORDER[a.categoryType] ?? 4;
+  const tb = CATEGORY_TYPE_ORDER[b.categoryType] ?? 4;
+  if (ta !== tb) return ta - tb;
+  return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+}
+
+/**
+ * Compute plan-vs-actual from Dexie tables.  Mirrors the JS version that
+ * `services/budgets.js` used pre-Phase-3, but reads from IndexedDB instead
+ * of paginating Supabase.  Used as the offline fallback.
+ */
+async function computePlanVsActualFromCache({ month, year, ytd = false }) {
+  const startDate = `${year}-01-01`;
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endMonth = month === 12 ? 1 : month + 1;
+  const endYear = month === 12 ? year + 1 : year;
+  const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+  const lowerBound = ytd ? startDate : monthStart;
+
+  const allCats = await db.categories.toArray();
+  const catById = Object.fromEntries(allCats.map((c) => [c.id, c]));
+
+  // Plans
+  const allPlans = await db.budget_plans.toArray();
+  const relevantPlans = allPlans.filter((p) => {
+    if (p.year !== year) return false;
+    if (ytd) return p.month >= 1 && p.month <= month;
+    return p.month === month;
+  });
+  const plannedIncome = relevantPlans.reduce(
+    (sum, p) => sum + (p.total_income || 0),
+    0,
+  );
+  const planIds = new Set(relevantPlans.map((p) => p.id));
+
+  // Items
+  const allItems = await db.budget_items.toArray();
+  const items = allItems.filter((it) => planIds.has(it.budget_plan_id));
+
+  // Transactions in window
+  const allTx = await db.transactions.toArray();
+  const txs = allTx.filter(
+    (t) =>
+      !t.deleted_at &&
+      t.transaction_date >= lowerBound &&
+      t.transaction_date < endDate,
+  );
+
+  const map = {};
+  const upsertCategory = (catId, cat) => {
+    if (!map[catId]) {
+      map[catId] = {
+        categoryId: catId,
+        categoryName: cat?.name || "Unknown",
+        categoryColor: cat?.color || "#A8A29E",
+        categoryType: cat?.type || "expense",
+        sortOrder: cat?.sort_order ?? 999,
+        planned: 0,
+        actual: 0,
+      };
+    }
+    return map[catId];
+  };
+
+  for (const item of items) {
+    const cat = catById[item.category_id];
+    if (cat?.type === "transfer") continue;
+    upsertCategory(item.category_id, cat).planned += item.planned_amount || 0;
+  }
+
+  for (const tx of txs) {
+    const cat = catById[tx.category_id] || tx.categories;
+    if (cat?.type === "transfer") continue;
+    const catId = tx.category_id || "uncategorized";
+    const entry = upsertCategory(catId, cat);
+    const txWithCat = { ...tx, categories: cat };
+    if (_isTrueIncome(txWithCat)) {
+      entry.actual += Math.abs(tx.amount);
+    } else if (_isIncomeDebit(txWithCat)) {
+      entry.actual -= Math.abs(tx.amount);
+    } else if (_isSpendingCredit(txWithCat)) {
+      entry.actual -= Math.abs(tx.amount);
+    } else {
+      entry.actual += Math.abs(tx.amount);
+    }
+  }
+
+  const categories = Object.values(map).sort(sortPlanVsActualCategories);
+  const actualIncome = categories
+    .filter((c) => c.categoryType === "income")
+    .reduce((sum, c) => sum + c.actual, 0);
+
+  return { categories, plannedIncome, actualIncome };
+}
+
+/**
+ * Plan-vs-Actual for a single month — SWR over the `get_plan_vs_actual` RPC.
+ *
+ * Returns the previously-cached aggregate from Dexie immediately so the
+ * report renders instantly on cold reloads, then fetches a fresh aggregate
+ * in the background.  When the fresh result arrives we notify the
+ * `budget_items` table so the React Query bridge refetches subscribed hooks.
+ */
+export async function getPlanVsActualOffline({ month, year }) {
+  const cacheKey = `pva:m:${year}-${month}`;
+  return swrRead({
+    key: cacheKey,
+    // RPC-derived; no notifyTable to avoid the bridge → invalidate → refetch
+    // → bg-revalidate → notifyTable loop.
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getPlanVsActual({ month, year }));
+      if (!result.offline) return result.data;
+      return computePlanVsActualFromCache({ month, year, ytd: false });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+/**
+ * Plan-vs-Actual YTD — SWR over the `get_plan_vs_actual_ytd` RPC.
+ */
+export async function getPlanVsActualYTDOffline({ year, throughMonth }) {
+  const cacheKey = `pva:ytd:${year}-${throughMonth}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() =>
+        _getPlanVsActualYTD({ year, throughMonth }),
+      );
+      if (!result.offline) return result.data;
+      return computePlanVsActualFromCache({
+        month: throughMonth,
+        year,
+        ytd: true,
+      });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+// ── Spending trends ────────────────────────────────────────────────────────
+
+function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
+  const anchorEnd =
+    endMonth != null && endYear != null
+      ? new Date(endYear, endMonth, 0)
+      : new Date();
+  const startDate = new Date(
+    anchorEnd.getFullYear(),
+    anchorEnd.getMonth() - months + 1,
+    1,
+  );
+  const startStr = startDate.toISOString().slice(0, 10);
+  const endStr = anchorEnd.toISOString().slice(0, 10);
+
+  const map = {};
+  for (const t of rows) {
+    if (t.deleted_at) continue;
+    if (t.transaction_date < startStr || t.transaction_date > endStr) continue;
+    const cat = t.categories;
+    if (cat?.type === "transfer") continue;
+
+    const d = new Date(t.transaction_date);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    if (!map[key]) {
+      map[key] = { key, year: y, month: m, spent: 0, income: 0, count: 0 };
+    }
+    if (_isTrueIncome(t)) {
+      map[key].income += Math.abs(t.amount);
+    } else if (_isIncomeDebit(t)) {
+      map[key].income -= Math.abs(t.amount);
+    } else if (_isSpendingCredit(t)) {
+      map[key].spent -= Math.abs(t.amount);
+      map[key].count += 1;
+    } else {
+      map[key].spent += Math.abs(t.amount);
+      map[key].count += 1;
+    }
+  }
+  return Object.values(map)
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map((m) => ({ ...m, label: `${SHORT_MONTHS[m.month]} ${m.year}` }));
+}
+
+async function loadCacheTransactionsWithCategoryJoin() {
+  const allTx = await db.transactions.toArray();
+  const cats = Object.fromEntries(
+    (await db.categories.toArray()).map((c) => [
+      c.id,
+      { id: c.id, name: c.name, color: c.color, type: c.type },
+    ]),
+  );
+  return allTx.map((t) => ({
+    ...t,
+    categories: t.categories || cats[t.category_id] || null,
+  }));
+}
+
+export async function getMonthlySpendingTrendOffline(opts = {}) {
+  const m = opts.months ?? 6;
+  const em = opts.endMonth ?? "";
+  const ey = opts.endYear ?? "";
+  const cacheKey = `trend:m:${m}:${ey}-${em}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getMonthlySpendingTrend(opts));
+      if (!result.offline) return result.data;
+      const rows = await loadCacheTransactionsWithCategoryJoin();
+      return aggregateTrendFromCacheRows(rows, {
+        months: opts.months ?? 6,
+        endMonth: opts.endMonth,
+        endYear: opts.endYear,
+      });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+export async function getYearlySpendingTrendOffline(opts = {}) {
+  const yrs = opts.years ?? 2;
+  const em = opts.endMonth ?? "";
+  const ey = opts.endYear ?? "";
+  const cacheKey = `trend:y:${yrs}:${ey}-${em}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getYearlySpendingTrend(opts));
+      if (!result.offline) return result.data;
+
+      // Fold from cached transactions with the same accounting rules.
+      const rows = await loadCacheTransactionsWithCategoryJoin();
+      const years = opts.years ?? 2;
+      const anchorEnd =
+        opts.endMonth != null && opts.endYear != null
+          ? new Date(opts.endYear, opts.endMonth, 0)
+          : new Date();
+      const startYear = anchorEnd.getFullYear() - years + 1;
+      const startStr = `${startYear}-01-01`;
+      const endStr = anchorEnd.toISOString().slice(0, 10);
+
+      const map = {};
+      for (const t of rows) {
+        if (t.deleted_at) continue;
+        if (t.transaction_date < startStr || t.transaction_date > endStr)
+          continue;
+        const cat = t.categories;
+        if (cat?.type === "transfer") continue;
+        const y = new Date(t.transaction_date).getUTCFullYear();
+        if (!map[y]) map[y] = { year: y, spent: 0, income: 0, count: 0 };
+        if (_isTrueIncome(t)) {
+          map[y].income += Math.abs(t.amount);
+        } else if (_isIncomeDebit(t)) {
+          map[y].income -= Math.abs(t.amount);
+        } else if (_isSpendingCredit(t)) {
+          map[y].spent -= Math.abs(t.amount);
+          map[y].count += 1;
+        } else {
+          map[y].spent += Math.abs(t.amount);
+          map[y].count += 1;
+        }
+      }
+      return Object.values(map).sort((a, b) => a.year - b.year);
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+// ── Transaction years ──────────────────────────────────────────────────────
+
+/**
+ * `[earliestYear .. currentYear+1]` — SWR over the `get_transaction_years` RPC.
+ */
+export async function getTransactionYearsOffline() {
+  const cacheKey = "tx:years";
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getTransactionYears());
+      if (!result.offline) return result.data;
+
+      const allTx = await db.transactions.toArray();
+      const dates = allTx
+        .filter((t) => !t.deleted_at && t.transaction_date)
+        .map((t) => t.transaction_date)
+        .sort();
+      const currentYear = new Date().getFullYear();
+      const minYear = dates.length
+        ? new Date(dates[0]).getFullYear()
+        : currentYear;
+      const maxYear = currentYear + 1;
+      return Array.from(
+        { length: maxYear - minYear + 1 },
+        (_, i) => minYear + i,
+      );
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
 }

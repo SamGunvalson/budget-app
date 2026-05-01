@@ -6,113 +6,68 @@ import {
 } from "../utils/helpers";
 
 /**
- * Fetch spending transactions for the last N months, grouped by month.
- * Returns raw transaction rows so the caller can aggregate as needed.
+ * Fetch monthly spending trend rows for the last `months` months ending at
+ * `endMonth`/`endYear` (defaults to the current month).
+ *
+ * Backed by the `get_monthly_spending_trend` Postgres RPC (Phase 3) — the
+ * server applies the same accounting rules the JS aggregator used to
+ * (transfers excluded; spending-credits subtract from `spent`; income-debits
+ * subtract from `income`) and returns one row per month already aggregated.
  *
  * @param {{ months?: number, endMonth?: number, endYear?: number }} opts
- *   `endMonth` / `endYear` (1-indexed month) anchor the end of the window.
- *   When omitted the window ends at today.
- * @returns {Promise<Array>} transactions with joined category data
+ * @returns {Promise<Array<{ key: string, label: string, year: number, month: number, spent: number, income: number, count: number }>>}
+ *   `spent` and `income` are in cents.  Sorted oldest → newest.
  */
-export async function getTrendTransactions({
+export async function getMonthlySpendingTrend({
   months = 6,
   endMonth,
   endYear,
 } = {}) {
-  // Anchor: last day of endMonth/endYear, or today
-  const anchorEnd =
-    endMonth != null && endYear != null
-      ? new Date(endYear, endMonth, 0) // day-0 of next month = last day of endMonth
-      : new Date();
-
-  const startDate = new Date(
-    anchorEnd.getFullYear(),
-    anchorEnd.getMonth() - months + 1,
-    1,
-  );
-  const startStr = startDate.toISOString().slice(0, 10); // YYYY-MM-DD
-  const endStr = anchorEnd.toISOString().slice(0, 10);
-
-  const PAGE_SIZE = 1000;
-  let allData = [];
-  let from = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select(
-        "amount, transaction_date, is_income, categories(id, name, color, type)",
-      )
-      .is("deleted_at", null)
-      .gte("transaction_date", startStr)
-      .lte("transaction_date", endStr)
-      .order("transaction_date", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-
-    if (error) throw error;
-    allData = allData.concat(data);
-    if (data.length < PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      from += PAGE_SIZE;
-    }
-  }
-
-  return allData;
+  const { data, error } = await supabase.rpc("get_monthly_spending_trend", {
+    p_months: months,
+    p_end_month: endMonth ?? null,
+    p_end_year: endYear ?? null,
+  });
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    key: r.key,
+    // Server returns "Mon YYYY" (e.g. "Apr 2026"); existing UI used "Mon YYYY"
+    // shape (computed in JS via SHORT_MONTHS) — keep parity.
+    label: r.label,
+    year: Number(r.year),
+    month: Number(r.month),
+    spent: Number(r.spent) || 0,
+    income: Number(r.income) || 0,
+    count: Number(r.tx_count) || 0,
+  }));
 }
 
 /**
- * Fetch spending transactions for the last N full calendar years
- * (current year + previous years).
+ * Fetch yearly spending trend rows for the last `years` calendar years
+ * ending at `endMonth`/`endYear` (defaults to today).
+ *
+ * Backed by the `get_yearly_spending_trend` Postgres RPC (Phase 3).
  *
  * @param {{ years?: number, endMonth?: number, endYear?: number }} opts
- *   `endMonth` / `endYear` (1-indexed month) anchor the end of the window.
- *   When omitted the window ends at today.
- * @returns {Promise<Array>} transactions with joined category data
+ * @returns {Promise<Array<{ year: number, spent: number, income: number, count: number }>>}
  */
-export async function getYearlyTrendTransactions({
+export async function getYearlySpendingTrend({
   years = 2,
   endMonth,
   endYear,
 } = {}) {
-  // Anchor: last day of endMonth/endYear, or today
-  const anchorEnd =
-    endMonth != null && endYear != null
-      ? new Date(endYear, endMonth, 0) // day-0 of next month = last day of endMonth
-      : new Date();
-
-  const startYear = anchorEnd.getFullYear() - years + 1;
-  const startStr = `${startYear}-01-01`;
-  const endStr = anchorEnd.toISOString().slice(0, 10);
-
-  const PAGE_SIZE = 1000;
-  let allData = [];
-  let from = 0;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select(
-        "amount, transaction_date, is_income, categories(id, name, color, type)",
-      )
-      .is("deleted_at", null)
-      .gte("transaction_date", startStr)
-      .lte("transaction_date", endStr)
-      .order("transaction_date", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-
-    if (error) throw error;
-    allData = allData.concat(data);
-    if (data.length < PAGE_SIZE) {
-      hasMore = false;
-    } else {
-      from += PAGE_SIZE;
-    }
-  }
-
-  return allData;
+  const { data, error } = await supabase.rpc("get_yearly_spending_trend", {
+    p_years: years,
+    p_end_month: endMonth ?? null,
+    p_end_year: endYear ?? null,
+  });
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    year: Number(r.year),
+    spent: Number(r.spent) || 0,
+    income: Number(r.income) || 0,
+    count: Number(r.tx_count) || 0,
+  }));
 }
 
 /**

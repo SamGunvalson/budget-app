@@ -19,7 +19,6 @@ import {
   useTransactionsForYear,
   useCategories,
   useAccounts,
-  useAccountBalances,
 } from '../hooks/queries';
 import {
   createTransfer,
@@ -41,7 +40,7 @@ import {
 } from '../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
 import { toCents } from '../utils/helpers';
-import { isAssetAccount, getFavoriteAccountIds } from '../services/accounts';
+import { getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
@@ -67,12 +66,10 @@ export default function TransactionsPage() {
   const txQuery = viewMode === 'yearly' ? yearlyTxQuery : monthlyTxQuery;
   const categoriesQuery = useCategories();
   const accountsQuery = useAccounts();
-  const accountBalancesQuery = useAccountBalances();
 
   const transactions = useMemo(() => txQuery.data ?? [], [txQuery.data]);
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
-  const accountBalances = useMemo(() => accountBalancesQuery.data ?? [], [accountBalancesQuery.data]);
 
   // favoriteAccountIds — not yet served by react-query (single user pref). Loaded once.
   const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
@@ -88,14 +85,12 @@ export default function TransactionsPage() {
   const isLoading =
     txQuery.isLoading ||
     categoriesQuery.isLoading ||
-    accountsQuery.isLoading ||
-    accountBalancesQuery.isLoading;
+    accountsQuery.isLoading;
   const loadError =
     mutationError ||
     txQuery.error?.message ||
     categoriesQuery.error?.message ||
     accountsQuery.error?.message ||
-    accountBalancesQuery.error?.message ||
     '';
 
   // setTransactions — proxy that writes to the active transactions query cache so
@@ -324,73 +319,6 @@ export default function TransactionsPage() {
     const target = filteredSorted.find((t) => t.transaction_date <= todayStr);
     return target ? target.id : (filteredSorted.length > 0 ? filteredSorted[filteredSorted.length - 1].id : null);
   }, [filteredSorted]);
-
-  // ---------- Running balance per transaction (unfiltered, cumulative) ----------
-  const balanceMap = useMemo(() => {
-    if (!accountBalances.length || !transactions.length) return new Map();
-
-    // Today's date string — same cutoff used by getAccountBalances when computing info.balance.
-    // info.balance only includes posted transactions with transaction_date <= todayStr.
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    // Build lookup: account_id → { balance (current cumulative in cents), is_asset }
-    const balLookup = {};
-    for (const ab of accountBalances) {
-      balLookup[ab.id] = { balance: ab.balance, is_asset: isAssetAccount(ab.type) };
-    }
-
-    // Group all unfiltered transactions by account
-    const byAccount = {};
-    for (const tx of transactions) {
-      if (!byAccount[tx.account_id]) byAccount[tx.account_id] = [];
-      byAccount[tx.account_id].push(tx);
-    }
-
-    const map = new Map();
-
-    for (const [accountId, txs] of Object.entries(byAccount)) {
-      const info = balLookup[accountId];
-      if (!info) continue;
-
-      // Sort ascending by date, then by is_income (expenses first) for same-date stability
-      const sorted = [...txs].sort((a, b) => {
-        const d = a.transaction_date.localeCompare(b.transaction_date);
-        if (d !== 0) return d;
-        return (a.is_income ? 1 : 0) - (b.is_income ? 1 : 0);
-      });
-
-      // Back out only the transactions that are already included in info.balance:
-      // posted transactions on or before today. This matches the getAccountBalances cutoff
-      // exactly, so `running` starts at the correct opening balance before this period.
-      let periodNet = 0;
-      for (const tx of sorted) {
-        if (tx.status !== 'posted' || tx.transaction_date > todayStr) continue;
-        const amt = Math.abs(tx.amount);
-        const delta = info.is_asset
-          ? (tx.is_income ? amt : -amt)
-          : (tx.is_income ? -amt : amt);
-        periodNet += delta;
-      }
-
-      // Opening balance before the first transaction in this set
-      let running = info.balance - periodNet;
-
-      // Walk forward through ALL transactions (posted + pending + projected) to build a
-      // forecast balance. This lets users see what their account balance will look like
-      // assuming every upcoming transaction goes through as planned.
-      for (const tx of sorted) {
-        const amt = Math.abs(tx.amount);
-        const delta = info.is_asset
-          ? (tx.is_income ? amt : -amt)
-          : (tx.is_income ? -amt : amt);
-        running += delta;
-        map.set(tx.id, running);
-      }
-    }
-
-    return map;
-  }, [transactions, accountBalances]);
 
   // ---------- Sort handler ----------
   // (provided by mgr.handleSort)
@@ -781,7 +709,6 @@ export default function TransactionsPage() {
             onCellEdit={mgr.handleCellEdit}
             categories={categories}
             accounts={accounts}
-            balanceMap={balanceMap}
             onConfirm={handleConfirmWithSplit}
             onSkip={mgr.handleSkip}
             onSplit={partnership ? (tx) => setSplittingTransaction(tx) : undefined}

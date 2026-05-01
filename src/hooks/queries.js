@@ -29,6 +29,7 @@ import {
   getTransactionsYTDOffline,
   getTransactionsForYearOffline,
   getPendingReviewCountOffline,
+  getTransactionYearsOffline,
   // accounts
   getAccountsOffline,
   getAccountBalancesOffline,
@@ -43,8 +44,13 @@ import {
   // budgets
   getBudgetPlanOffline,
   getBudgetItemsOffline,
+  getPlanVsActualOffline,
+  getPlanVsActualYTDOffline,
   // recurring
   getTemplatesForAccountOffline,
+  // analytics
+  getMonthlySpendingTrendOffline,
+  getYearlySpendingTrendOffline,
 } from "../services/offlineAware";
 
 // ── Transactions ──────────────────────────────────────────────────────────
@@ -217,6 +223,35 @@ export function useBudgetItems(budgetPlanId, { enabled = true } = {}) {
   });
 }
 
+/**
+ * Plan-vs-Actual aggregated server-side via the `get_plan_vs_actual` RPC
+ * (Phase 3).  Returns `{ categories, plannedIncome, actualIncome }`.  The
+ * query key is keyed under `budget_items` so any budget mutation
+ * invalidates it automatically through the bridge.
+ */
+export function usePlanVsActual(month, year, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["budget_items", "planVsActual", { month, year }],
+    queryFn: () => getPlanVsActualOffline({ month, year }),
+    enabled: enabled && month != null && year != null,
+  });
+}
+
+/**
+ * Plan-vs-Actual YTD via the `get_plan_vs_actual_ytd` RPC (Phase 3).
+ */
+export function usePlanVsActualYTD(
+  year,
+  throughMonth,
+  { enabled = true } = {},
+) {
+  return useQuery({
+    queryKey: ["budget_items", "planVsActualYTD", { year, throughMonth }],
+    queryFn: () => getPlanVsActualYTDOffline({ year, throughMonth }),
+    enabled: enabled && year != null && throughMonth != null,
+  });
+}
+
 // ── Recurring templates ───────────────────────────────────────────────────
 
 export function useTemplatesForAccount(accountId, { enabled = true } = {}) {
@@ -224,5 +259,63 @@ export function useTemplatesForAccount(accountId, { enabled = true } = {}) {
     queryKey: ["recurring_templates", "forAccount", accountId],
     queryFn: () => getTemplatesForAccountOffline(accountId),
     enabled: enabled && !!accountId,
+  });
+}
+
+// ── Analytics: server-side spending trends (Phase 3) ──────────────────────
+
+/**
+ * Pre-aggregated monthly spending trend via the
+ * `get_monthly_spending_trend` Postgres RPC.  Returns rows shaped like the
+ * old client-side `aggregateByMonth` output so existing chart components
+ * keep working unchanged.
+ */
+export function useMonthlySpendingTrend(opts, { enabled = true } = {}) {
+  const { months, endMonth, endYear } = opts ?? {};
+  return useQuery({
+    queryKey: [
+      "transactions",
+      "monthlyTrend",
+      {
+        months: months ?? null,
+        endMonth: endMonth ?? null,
+        endYear: endYear ?? null,
+      },
+    ],
+    queryFn: () => getMonthlySpendingTrendOffline(opts),
+    enabled,
+  });
+}
+
+/**
+ * Pre-aggregated yearly spending trend via the `get_yearly_spending_trend`
+ * Postgres RPC.  Returns rows shaped like the old `aggregateByYear` output.
+ */
+export function useYearlySpendingTrend(opts, { enabled = true } = {}) {
+  const { years, endMonth, endYear } = opts ?? {};
+  return useQuery({
+    queryKey: [
+      "transactions",
+      "yearlyTrend",
+      {
+        years: years ?? null,
+        endMonth: endMonth ?? null,
+        endYear: endYear ?? null,
+      },
+    ],
+    queryFn: () => getYearlySpendingTrendOffline(opts),
+    enabled,
+  });
+}
+
+/**
+ * Distinct transaction years (earliest → currentYear+1) via the
+ * `get_transaction_years` RPC.  Used by year-scoped pickers.
+ */
+export function useTransactionYears({ enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["transactions", "years"],
+    queryFn: () => getTransactionYearsOffline(),
+    enabled,
   });
 }

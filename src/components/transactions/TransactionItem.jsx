@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatCurrency, formatDate, toCents, toDollars, maskAccountName } from '../../utils/helpers';
-import { isAssetAccount, getAccountBadgeColor } from '../../services/accounts';
+import { getAccountBadgeColor } from '../../services/accounts';
 
 function TransactionStatusBadges({
   isProjected,
@@ -344,7 +344,6 @@ const TransactionItem = forwardRef(function TransactionItem({
   onCellEdit,
   categories,
   accounts,
-  runningBalance,
   onConfirm,
   onSkip,
   onSplit,
@@ -652,17 +651,6 @@ const TransactionItem = forwardRef(function TransactionItem({
             }}
           />
         </div>
-      </td>
-
-      {/* Balance */}
-      <td className={`px-4 py-3 text-right text-sm font-medium tabular-nums whitespace-nowrap ${
-        runningBalance == null
-          ? 'text-stone-400 dark:text-stone-500'
-          : isAssetAccount(displayAccount?.type)
-            ? (runningBalance >= 0 ? 'text-stone-900 dark:text-stone-100' : 'text-red-600 dark:text-red-400')
-            : (runningBalance > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')
-      }`}>
-        {runningBalance != null ? formatCurrency(Math.abs(runningBalance)) : '—'}
       </td>
 
       {/* Actions — kebab (⋮) button opens a portal dropdown */}

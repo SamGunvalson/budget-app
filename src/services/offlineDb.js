@@ -108,6 +108,41 @@ db.version(2).stores({
   sync_meta: "table_name",
 });
 
+// Phase 3: persistent SWR cache for server-side aggregation RPCs.  Each row
+// is { key, value, updated_at }.  Adding a new store requires a Dexie
+// version bump; v3 leaves all existing stores untouched.
+db.version(3).stores({
+  rpc_cache: "key",
+});
+
+// ── Phase 3 RPC cache helpers ──
+//
+// Read: returns the cached `value` for `key` or `null` when missing.  Errors
+// are swallowed (cache miss is non-fatal — the SWR layer will fall through to
+// the network).
+export async function readRpcCache(key) {
+  try {
+    const row = await db.rpc_cache.get(key);
+    return row?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Write: best-effort upsert.  Quota / serialization errors are logged and
+// swallowed so a flaky write never breaks rendering.
+export async function writeRpcCache(key, value) {
+  try {
+    await db.rpc_cache.put({
+      key,
+      value,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`[offlineDb] writeRpcCache(${key}) failed:`, err);
+  }
+}
+
 // ── Helper: wipe all offline data (e.g. on sign-out) ──
 export async function clearAllOfflineData() {
   await Promise.all([
@@ -119,6 +154,7 @@ export async function clearAllOfflineData() {
     db.user_preferences.clear(),
     db.recurring_templates.clear(),
     db.sync_meta.clear(),
+    db.rpc_cache.clear(),
   ]);
 }
 

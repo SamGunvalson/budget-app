@@ -188,7 +188,30 @@ export async function swrRead({
       } catch (err) {
         console.warn(`[cache] writeCache for ${key} failed:`, err);
       }
-      if (table) notifyTable(table);
+      // Only notify subscribers when what consumers will read from the cache
+      // *after* the write actually differs from what they had *before*.
+      //
+      // We deliberately compare cache-before vs. cache-after (rather than
+      // cached vs. fresh) because the cache layer can legitimately diverge
+      // from the server response (offline-pending rows that aren't on the
+      // server yet, Dexie-only fields like `_offline`, joined shapes the
+      // server doesn't return for filtered queries, etc.).  Comparing the
+      // raw fresh response against the cached value would falsely flag those
+      // as "changed" on every revalidation, which (via the react-query
+      // bridge) would trigger another refetch → another notify → infinite
+      // loop of identical Supabase requests.
+      if (table) {
+        let postCache;
+        try {
+          postCache = await readCache();
+        } catch {
+          // If we can't re-read the cache, fall back to notifying so we
+          // don't silently drop a real update.
+          notifyTable(table);
+          return;
+        }
+        if (!shallowEqualData(cached, postCache)) notifyTable(table);
+      }
     })
     .catch((err) => {
       // Background failures are non-fatal — the user is looking at cached data.
@@ -203,6 +226,61 @@ function defaultIsEmpty(value) {
   if (value == null) return true;
   if (Array.isArray(value)) return value.length === 0;
   return false;
+}
+
+/**
+ * Equality check for SWR diffing. Used to decide whether a background
+ * revalidation actually changed anything before we notify subscribers
+ * (and trigger a react-query invalidation cascade).
+ *
+ * For arrays of objects with an `id` field (the common shape — transactions,
+ * accounts, categories, etc.) we sort by id before comparing so that
+ * non-deterministic ordering from the server (e.g. PostgreSQL ties on
+ * `transaction_date`) doesn't masquerade as a real change. Without this
+ * guard, every background revalidation falsely reports "data changed",
+ * notifies the bridge, invalidates the query, refetches → infinite loop
+ * of identical Supabase requests.
+ */
+function shallowEqualData(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  try {
+    return canonicalJson(a) === canonicalJson(b);
+  } catch {
+    return false;
+  }
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    // Sort arrays of {id,...} rows by id so order ties don't trigger false diffs.
+    if (
+      value.length > 0 &&
+      typeof value[0] === "object" &&
+      value[0] !== null &&
+      "id" in value[0]
+    ) {
+      const sorted = [...value].sort((x, y) => {
+        const xi = x?.id;
+        const yi = y?.id;
+        if (xi === yi) return 0;
+        return xi < yi ? -1 : 1;
+      });
+      return "[" + sorted.map(canonicalJson).join(",") + "]";
+    }
+    return "[" + value.map(canonicalJson).join(",") + "]";
+  }
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return (
+      "{" +
+      keys
+        .map((k) => JSON.stringify(k) + ":" + canonicalJson(value[k]))
+        .join(",") +
+      "}"
+    );
+  }
+  return JSON.stringify(value);
 }
 
 function dedupedFetch(key, fetchFresh) {

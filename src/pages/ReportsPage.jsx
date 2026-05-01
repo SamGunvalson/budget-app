@@ -13,13 +13,9 @@ import {
   useTransactionsYTD,
   usePendingReviewCount,
   useCategories,
+  useMonthlySpendingTrend,
 } from '../hooks/queries';
-import {
-  getTrendTransactions,
-  getYearlyTrendTransactions,
-  aggregateByMonth,
-  computeTrendSummary,
-} from '../services/analytics';
+import { computeTrendSummary } from '../services/analytics';
 import { getMonthName, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
@@ -36,9 +32,6 @@ export default function ReportsPage() {
 
   // Trend-specific state — owned here so TrendSummary stays in sync
   const [trendRange, setTrendRange] = useSessionState('reportsTrendRange', '6m'); // '6m' | '12m' | 'yoy'
-  const [trendMonthlyData, setTrendMonthlyData] = useState([]);
-  const [trendLoading, setTrendLoading] = useState(true);
-  const [trendError, setTrendError] = useState('');
 
   // Drill-down state: { name: string, type: 'income' | 'expense' } or null
   const [expandedChart, setExpandedChart] = useState(null);
@@ -74,10 +67,14 @@ export default function ReportsPage() {
 
   useEffect(() => { document.title = 'Budget App | Reports'; }, []);
 
-  // Reset drill-down when the selected period changes.
-  useEffect(() => {
-    setExpandedChart(null);
-  }, [month, year]);
+  // Reset drill-down when the selected period changes.  We use a render-time
+  // transient state comparison instead of an effect to avoid the cascading
+  // render that `setState` inside `useEffect` would cause.
+  const [periodKey, setPeriodKey] = useState(`${year}-${month}`);
+  if (periodKey !== `${year}-${month}`) {
+    setPeriodKey(`${year}-${month}`);
+    if (expandedChart !== null) setExpandedChart(null);
+  }
 
   // Derive all report data from raw transactions (so edits propagate)
   const reportData = useMemo(() => {
@@ -156,33 +153,18 @@ export default function ReportsPage() {
     };
   }, [allTransactions, month, year]);
 
-  // Trend data: separate effect keyed on month, year, and active range
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTrend() {
-      setTrendLoading(true);
-      setTrendError('');
-      try {
-        let raw;
-        if (trendRange === 'yoy') {
-          raw = await getYearlyTrendTransactions({ years: 2, endMonth: month, endYear: year });
-        } else {
-          const months = trendRange === '12m' ? 12 : 6;
-          raw = await getTrendTransactions({ months, endMonth: month, endYear: year });
-        }
-        if (cancelled) return;
-        setTrendMonthlyData(aggregateByMonth(raw));
-      } catch (err) {
-        if (!cancelled) setTrendError(err.message || 'Failed to load trend data');
-      } finally {
-        if (!cancelled) setTrendLoading(false);
-      }
-    }
-
-    loadTrend();
-    return () => { cancelled = true; };
-  }, [month, year, trendRange]);
+  // Trend data: backed by Phase 3 server-side aggregation RPCs via React
+  // Query.  All three ranges return monthly buckets (yoy = 24 months) so
+  // TrendChart and computeTrendSummary share a single shape.
+  const trendMonths = trendRange === 'yoy' ? 24 : trendRange === '12m' ? 12 : 6;
+  const trendQuery = useMonthlySpendingTrend({
+    months: trendMonths,
+    endMonth: month,
+    endYear: year,
+  });
+  const trendMonthlyData = useMemo(() => trendQuery.data ?? [], [trendQuery.data]);
+  const trendLoading = trendQuery.isLoading;
+  const trendError = trendQuery.error?.message || '';
 
   // Trend summary derived from the active range's monthly data
   const trendSummary = useMemo(

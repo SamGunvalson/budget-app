@@ -79,6 +79,17 @@ export function initQueryBridge() {
       queryKey: ["accounts", "maxProjectedDate"],
       refetchType: "active",
     });
+    // Phase 3: Plan-vs-Actual is keyed under `budget_items` (since the
+    // planned side comes from there), but the `actual` side reads from
+    // transactions — so changes to transactions must invalidate it too.
+    queryClient.invalidateQueries({
+      queryKey: ["budget_items", "planVsActual"],
+      refetchType: "active",
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["budget_items", "planVsActualYTD"],
+      refetchType: "active",
+    });
   });
 }
 
