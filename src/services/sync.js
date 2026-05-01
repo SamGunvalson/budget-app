@@ -33,6 +33,7 @@ import {
 } from "./offlineDb";
 import { drainAll } from "../utils/syncQueue";
 import { notifyTable } from "./cache";
+import { isDataSaver } from "../hooks/useDataSaver";
 
 // ── Sync state (observable) ──
 let _syncing = false;
@@ -73,9 +74,9 @@ export function getSyncState() {
  */
 let _syncPromise = null;
 
-export function requestSync() {
+export function requestSync({ skipPull = false } = {}) {
   if (_syncPromise) return _syncPromise;
-  _syncPromise = _doSync().finally(() => {
+  _syncPromise = _doSync({ skipPull }).finally(() => {
     _syncPromise = null;
   });
   return _syncPromise;
@@ -90,6 +91,17 @@ export function requestSync() {
  */
 export function startSyncListener() {
   window.addEventListener("online", () => {
+    // Phase 7: skip the automatic background pull on metered / data-saver
+    // connections. Pending offline *mutations* are still pushed (requestSync
+    // drains the queue first), but we avoid pulling all tables to conserve
+    // bandwidth. Users can still trigger a manual refresh.
+    if (isDataSaver()) {
+      console.log(
+        "[sync] Online (data-saver) — pushing pending mutations only",
+      );
+      requestSync({ skipPull: true });
+      return;
+    }
     console.log("[sync] Online — starting sync");
     requestSync();
   });
@@ -238,7 +250,7 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
 
 // ── Internals ──
 
-async function _doSync() {
+async function _doSync({ skipPull = false } = {}) {
   if (_syncing) return;
   if (!navigator.onLine) return;
 
@@ -260,7 +272,8 @@ async function _doSync() {
     if (total === 0) {
       // Even with no pushes, run an incremental pull so this tab catches
       // up on remote changes (e.g., another device).
-      await pullAll();
+      // Phase 7: honour skipPull on metered connections.
+      if (!skipPull) await pullAll();
       _syncing = false;
       notify();
       return;
@@ -283,8 +296,9 @@ async function _doSync() {
       }
     }
 
-    // After pushing, pull fresh data to reconcile server-side changes
-    await pullAll();
+    // After pushing, pull fresh data to reconcile server-side changes.
+    // Phase 7: skip the pull on metered connections when the caller asked.
+    if (!skipPull) await pullAll();
 
     console.log("[sync] Push complete");
   } catch (err) {

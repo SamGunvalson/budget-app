@@ -157,6 +157,19 @@ export async function swrRead({
   // Offline → return whatever the cache has (possibly empty). No network.
   if (!online) return cached;
 
+  // Phase 7: on metered / data-saver connections, skip the background
+  // revalidation when we already have cached data. Cold caches still
+  // fetch so the user gets *something* on first load.
+  if (haveCached) {
+    try {
+      const { isDataSaver: checkDataSaver } =
+        await import("../hooks/useDataSaver");
+      if (checkDataSaver()) return cached;
+    } catch {
+      /* non-fatal — proceed normally */
+    }
+  }
+
   // Cold cache → await the fresh fetch so the caller has data to render.
   if (!haveCached) {
     try {

@@ -43,7 +43,18 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2}"],
+        // Phase 7: restrict precache to boot-critical assets only.
+        // Heavy lazy chunks (charts, excel, dnd) are loaded on demand and
+        // cached at runtime via the runtimeCaching rules below.
+        globPatterns: [
+          "index.html",
+          "assets/index-*.{js,css}", // main entry bundle (includes skeletons)
+          "assets/vendor-*.js", // react, react-dom, react-router
+          "assets/supabase-*.js", // auth needs this early
+          "assets/utils-*.js", // date-fns, dexie (offline layer)
+          "assets/TopBar-*.js", // app shell nav
+          "**/*.{svg,png,ico,woff,woff2}",
+        ],
         // env-config.js holds runtime credentials (Supabase URL + anon key) and
         // is templated by docker-entrypoint.sh on container start. It must
         // never be precached or runtime-cached, otherwise an anon-key rotation
