@@ -1,42 +1,14 @@
-import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { supabase } from '../../services/supabase';
+import useAuth from '../../hooks/useAuth';
 
+/**
+ * Phase 6: ProtectedRoute now reads from the shared AuthProvider context
+ * instead of calling supabase.auth.getSession() on every mount.
+ * This eliminates a per-route JWT validation round-trip.
+ */
 function ProtectedRoute({ children }) {
   const location = useLocation();
-  const [session, setSession] = useState(null);
-  const [isChecking, setIsChecking] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (!isMounted) return;
-
-      if (error) {
-        console.error('Unable to check session:', error);
-      }
-
-      setSession(data?.session ?? null);
-      setIsChecking(false);
-    };
-
-    checkSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
-        if (!isMounted) return;
-        setSession(nextSession);
-        setIsChecking(false);
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      authListener?.subscription?.unsubscribe();
-    };
-  }, []);
+  const { session, isChecking } = useAuth();
 
   if (isChecking) {
     return (

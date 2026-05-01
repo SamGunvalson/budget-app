@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from 'react';
+import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 
@@ -132,13 +132,12 @@ function GroupKebabMenu({ children, isNotPosted, onConfirmAll, onSkipAll, onEdit
 /**
  * TransactionGroupHeader — collapsible header row for a group of transactions.
  *
- * Shows: chevron, group label, child count badge, status badges, net amount, running balance, kebab menu.
+ * Shows: chevron, group label, child count badge, status badges, net amount, kebab menu.
  */
 const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   group,
   isExpanded,
   onToggleExpand,
-  runningBalance,
   isMobile = false,
   isSelected,
   isIndeterminate,
@@ -382,11 +381,6 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
         {formatCurrency(Math.abs(netAmount))}
       </td>
 
-      {/* Balance */}
-      <td className="px-4 py-3 text-right text-sm tabular-nums text-stone-500 dark:text-stone-400 whitespace-nowrap">
-        {runningBalance != null ? formatCurrency(runningBalance) : ''}
-      </td>
-
       {/* Actions — kebab menu */}
       <td className="px-2 py-3 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
         <GroupKebabMenu
@@ -402,4 +396,6 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   );
 });
 
-export default TransactionGroupHeader;
+// Phase 5: memo so virtualizer header rows skip re-render when their props
+// haven't changed.
+export default memo(TransactionGroupHeader);

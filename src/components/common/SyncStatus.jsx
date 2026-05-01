@@ -1,20 +1,31 @@
+import { useIsFetching } from '@tanstack/react-query';
 import useOnlineStatus from '../../hooks/useOnlineStatus';
 import useSyncStatus from '../../hooks/useSyncStatus';
+import useRevalidating from '../../hooks/useRevalidating';
 import { requestSync } from '../../services/sync';
 
 /**
  * Compact status indicator for the TopBar.
  *
- * States:
+ * States (highest priority first):
  * - Offline (red dot + "Offline")
  * - Syncing (amber spinner + "Syncing…")
- * - Pending (amber dot + "X pending")
- * - Online (green dot, no text — hidden by default)
  * - Error (red dot + "Sync error")
+ * - Pending (amber dot + "X pending")
+ * - Refreshing (subtle slate spinner + "Refreshing…") — Phase 1 cache-first
+ *   SWR background revalidation in progress; cached data already on screen.
+ * - Online (green dot, no text — hidden by default)
  */
 export default function SyncStatus() {
   const online = useOnlineStatus();
   const { syncing, pending, error, progress } = useSyncStatus();
+  // Phase 2: combine the cache-layer SWR background flag (catches revalidations
+  // that happen *inside* an already-resolved swrRead) with react-query's
+  // global isFetching count (catches cold-cache and invalidation-driven
+  // fetches). Either signal flips the "Refreshing…" pill on.
+  const cacheRevalidating = useRevalidating();
+  const isFetching = useIsFetching() > 0;
+  const revalidating = cacheRevalidating || isFetching;
 
   // Offline state
   if (!online) {
@@ -80,7 +91,23 @@ export default function SyncStatus() {
     );
   }
 
-  // All clear — show a subtle green dot
+  // All clear — show a subtle green dot, or a slate "Refreshing…" pill
+  // when a background SWR revalidation is in flight.
+  if (revalidating) {
+    return (
+      <div
+        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+        title="Refreshing data from the server…"
+      >
+        <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        Refreshing…
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-1.5 rounded-lg px-1.5 py-1.5" title="All synced">
       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />

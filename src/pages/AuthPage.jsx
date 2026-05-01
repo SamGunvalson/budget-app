@@ -161,7 +161,7 @@ function AuthPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-stone-400 dark:text-stone-500">
-            Your account is secured with end-to-end encryption.
+            Connections are encrypted in transit (TLS) and protected at rest by your provider.
           </p>
         </div>
 

@@ -1,13 +1,17 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import MonthYearSelector from '../common/MonthYearSelector';
 import BudgetAlert from '../common/BudgetAlert';
 import PlanVsActualChart from './PlanVsActualChart';
 import CategoryComparison from './CategoryComparison';
 import CategoryDrillDown from './CategoryDrillDown';
-import { getPlanVsActual, getPlanVsActualYTD } from '../../services/budgets';
-import { getTransactionsOffline as getTransactions } from '../../services/offlineAware';
-import { getTransactionsYTD } from '../../services/transactions';
-import { getCategoriesOffline as getCategories } from '../../services/offlineAware';
+import {
+  useTransactions,
+  useTransactionsYTD,
+  useCategories,
+  usePlanVsActual,
+  usePlanVsActualYTD,
+} from '../../hooks/queries';
 import { formatCurrency, getMonthName } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
@@ -42,14 +46,58 @@ export default function PlanVsActual({
   const month = externalMonth ?? ctxMonth;
   const year = externalYear ?? ctxYear;
 
-  const [data, setData] = useState({ categories: [], plannedIncome: 0, actualIncome: 0 });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  // Raw transactions + categories for drill-down
-  const [rawTransactions, setRawTransactions] = useState([]);
-  const [allCategories, setAllCategories] = useState([]);
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);
+
+  // Plan-vs-actual aggregated server-side (Phase 3 RPC), exactly one of the
+  // two hooks runs based on viewMode.  React Query handles loading state and
+  // background invalidation when transactions or budget items mutate.
+  const monthlyPvaQuery = usePlanVsActual(month, year, { enabled: !isYTD });
+  const ytdPvaQuery = usePlanVsActualYTD(year, month, { enabled: isYTD });
+  const data = (isYTD ? ytdPvaQuery.data : monthlyPvaQuery.data)
+    ?? { categories: [], plannedIncome: 0, actualIncome: 0 };
+  const isPlanLoading = isYTD ? ytdPvaQuery.isLoading : monthlyPvaQuery.isLoading;
+  const planError = (isYTD ? ytdPvaQuery.error : monthlyPvaQuery.error)?.message || '';
+
+  // Collapse drill-down whenever the period or view mode changes.  The
+  // expanded state stops being meaningful for the new dataset, so we drop
+  // it during render rather than in an effect (avoids a cascading render).
+  const periodKey = `${year}-${month}-${isYTD ? 'ytd' : 'm'}`;
+  const [drillKey, setDrillKey] = useState(periodKey);
+  if (drillKey !== periodKey) {
+    setDrillKey(periodKey);
+    if (expandedCategoryId !== null) setExpandedCategoryId(null);
+  }
+
+  // Raw transactions + categories for drill-down (cached via react-query).
+  const monthlyTxQuery = useTransactions({ month, year }, { enabled: !isYTD });
+  const ytdTxQuery = useTransactionsYTD(year, month, { enabled: isYTD });
+  const categoriesQuery = useCategories();
+  const rawTransactions = useMemo(
+    () => (isYTD ? ytdTxQuery.data : monthlyTxQuery.data) ?? [],
+    [isYTD, ytdTxQuery.data, monthlyTxQuery.data],
+  );
+  const allCategories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const queryClient = useQueryClient();
+  // Setter that mutates the active transactions query cache so optimistic
+  // edits from useTransactionManager (inside CategoryDrillDown) survive
+  // until the bridge invalidation re-runs the query.
+  const setRawTransactions = useCallback((updater) => {
+    const key = isYTD
+      ? ["transactions", "ytd", year, month]
+      : ["transactions", "list", { month, year, status: null }];
+    queryClient.setQueryData(key, (prev) =>
+      typeof updater === 'function' ? updater(prev ?? []) : updater,
+    );
+  }, [queryClient, isYTD, month, year]);
+  const isLoading =
+    isPlanLoading ||
+    (isYTD ? ytdTxQuery.isLoading : monthlyTxQuery.isLoading) ||
+    categoriesQuery.isLoading;
+  const error =
+    planError ||
+    (isYTD ? ytdTxQuery.error?.message : monthlyTxQuery.error?.message) ||
+    categoriesQuery.error?.message ||
+    '';
 
   // User-configurable budget thresholds
   const { thresholds } = useThresholds();
@@ -58,44 +106,6 @@ export default function PlanVsActual({
     setMonthYear(m, y);
     onMonthChange?.(m, y);
   };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
-      setError('');
-      setExpandedCategoryId(null);
-      try {
-        const planPromise = isYTD
-          ? getPlanVsActualYTD({ year, throughMonth: month })
-          : getPlanVsActual({ month, year });
-        const txPromise = isYTD
-          ? getTransactionsYTD({ year, throughMonth: month })
-          : getTransactions({ month, year });
-
-        const [result, txData, cats] = await Promise.all([
-          planPromise,
-          txPromise,
-          getCategories(),
-        ]);
-        if (!cancelled) {
-          setData(result);
-          setRawTransactions(txData);
-          setAllCategories(cats);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load plan vs actual data');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [month, year, isYTD]);
 
   // Derived summary stats — split income vs expense categories, hiding empty rows
   const categories = useMemo(
@@ -144,17 +154,21 @@ export default function PlanVsActual({
           categoryColor={catData?.categoryColor || '#A8A29E'}
           onClose={() => setExpandedCategoryId(null)}
           onDataChanged={() => {
-            // Re-fetch plan data to refresh comparison after edits
-            const planPromise = isYTD
-              ? getPlanVsActualYTD({ year, throughMonth: month })
-              : getPlanVsActual({ month, year });
-            planPromise.then(setData).catch(() => {});
+            // Invalidate the PvA query so the panel rebuilds after edits.
+            // The bridge usually does this when transactions mutate, but
+            // calling it explicitly ensures the user sees fresh numbers
+            // immediately even when an offline-only edit batched its
+            // notifyTable.
+            queryClient.invalidateQueries({
+              queryKey: ['budget_items', isYTD ? 'planVsActualYTD' : 'planVsActual'],
+              refetchType: 'active',
+            });
           }}
           setAllTransactions={setRawTransactions}
         />
       );
     },
-    [rawTransactions, categories, allCategories, isYTD, month, year],
+    [rawTransactions, categories, allCategories, isYTD, queryClient, setRawTransactions],
   );
 
   return (

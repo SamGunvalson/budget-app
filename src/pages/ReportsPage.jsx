@@ -1,34 +1,40 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import TopBar from '../components/common/TopBar';
 import MonthYearSelector from '../components/common/MonthYearSelector';
 import MonthlyStats from '../components/reports/MonthlyStats';
 import CategoryChart from '../components/reports/CategoryChart';
 import CategoryDrillDown from '../components/reports/CategoryDrillDown';
-import PlanVsActual from '../components/reports/PlanVsActual';
-import TrendChart from '../components/reports/TrendChart';
+// Phase 5: defer recharts-bound charts until the user opens those tabs.
+// Each lazy import becomes its own JS chunk; they pull in `recharts` only
+// when first rendered, keeping the Reports route's first-paint bundle small.
+const PlanVsActual = lazy(() => import('../components/reports/PlanVsActual'));
+const TrendChart = lazy(() => import('../components/reports/TrendChart'));
 import TrendSummary from '../components/reports/TrendSummary';
 import {
-  getTransactionsYTDOffline as getTransactionsYTD,
-  getPendingReviewCountOffline as getPendingReviewCount,
-  getCategoriesOffline as getCategories,
-} from '../services/offlineAware';
-import {
-  getTrendTransactions,
-  getYearlyTrendTransactions,
-  aggregateByMonth,
-  computeTrendSummary,
-} from '../services/analytics';
+  useTransactionsYTD,
+  usePendingReviewCount,
+  useCategories,
+  useMonthlySpendingTrend,
+} from '../hooks/queries';
+import { computeTrendSummary } from '../services/analytics';
 import { getMonthName, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
 
+// Skeleton placeholder shown while a lazy chart chunk is downloading.
+function ChartFallback() {
+  return (
+    <div className="h-72 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
+  );
+}
+
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useSessionState('reportsViewMode', 'monthly'); // 'monthly' | 'ytd'
   // 'summary' | 'planVsActual' | 'trends' | 'annualActuals'
   // 'summary' | 'planVsActual' | 'trends' | 'annualActuals' | 'calendar'
@@ -36,19 +42,34 @@ export default function ReportsPage() {
 
   // Trend-specific state — owned here so TrendSummary stays in sync
   const [trendRange, setTrendRange] = useSessionState('reportsTrendRange', '6m'); // '6m' | '12m' | 'yoy'
-  const [trendMonthlyData, setTrendMonthlyData] = useState([]);
-  const [trendLoading, setTrendLoading] = useState(true);
-  const [trendError, setTrendError] = useState('');
-
-  // Raw transaction & category data for drill-down
-  const [allTransactions, setAllTransactions] = useState([]);
-  const [categories, setCategories] = useState([]);
 
   // Drill-down state: { name: string, type: 'income' | 'expense' } or null
   const [expandedChart, setExpandedChart] = useState(null);
 
-  // Pending review count
-  const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  // Raw transaction & category data for drill-down + pending count.
+  // react-query (Phase 2) handles loading + auto-refresh on table changes.
+  const ytdQuery = useTransactionsYTD(year, month);
+  const categoriesQuery = useCategories();
+  const pendingQuery = usePendingReviewCount();
+  const allTransactions = useMemo(() => ytdQuery.data ?? [], [ytdQuery.data]);
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const pendingReviewCount = pendingQuery.data ?? 0;
+  const isLoading =
+    ytdQuery.isLoading || categoriesQuery.isLoading || pendingQuery.isLoading;
+  const error =
+    ytdQuery.error?.message ||
+    categoriesQuery.error?.message ||
+    pendingQuery.error?.message ||
+    '';
+
+  // Setter that applies optimistic updates to the YTD transactions query cache.
+  // Accepts either a new array or an updater function (matching React setState).
+  const setAllTransactions = useCallback((updater) => {
+    queryClient.setQueryData(
+      ["transactions", "ytd", year, month],
+      (prev) => (typeof updater === 'function' ? updater(prev ?? []) : updater),
+    );
+  }, [queryClient, year, month]);
 
   const handleMonthChange = (m, y) => {
     setMonthYear(m, y);
@@ -56,36 +77,14 @@ export default function ReportsPage() {
 
   useEffect(() => { document.title = 'Budget App | Reports'; }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
-      setError('');
-      setExpandedChart(null);
-      try {
-        // Single fetch from Jan 1 → end of selected month; split client-side
-        const [allYTD, cats, reviewCount] = await Promise.all([
-          getTransactionsYTD({ year, throughMonth: month }),
-          getCategories(),
-          getPendingReviewCount(),
-        ]);
-        if (cancelled) return;
-        setAllTransactions(allYTD);
-        setCategories(cats);
-        setPendingReviewCount(reviewCount);
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load data');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [month, year]);
+  // Reset drill-down when the selected period changes.  We use a render-time
+  // transient state comparison instead of an effect to avoid the cascading
+  // render that `setState` inside `useEffect` would cause.
+  const [periodKey, setPeriodKey] = useState(`${year}-${month}`);
+  if (periodKey !== `${year}-${month}`) {
+    setPeriodKey(`${year}-${month}`);
+    if (expandedChart !== null) setExpandedChart(null);
+  }
 
   // Derive all report data from raw transactions (so edits propagate)
   const reportData = useMemo(() => {
@@ -164,33 +163,18 @@ export default function ReportsPage() {
     };
   }, [allTransactions, month, year]);
 
-  // Trend data: separate effect keyed on month, year, and active range
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadTrend() {
-      setTrendLoading(true);
-      setTrendError('');
-      try {
-        let raw;
-        if (trendRange === 'yoy') {
-          raw = await getYearlyTrendTransactions({ years: 2, endMonth: month, endYear: year });
-        } else {
-          const months = trendRange === '12m' ? 12 : 6;
-          raw = await getTrendTransactions({ months, endMonth: month, endYear: year });
-        }
-        if (cancelled) return;
-        setTrendMonthlyData(aggregateByMonth(raw));
-      } catch (err) {
-        if (!cancelled) setTrendError(err.message || 'Failed to load trend data');
-      } finally {
-        if (!cancelled) setTrendLoading(false);
-      }
-    }
-
-    loadTrend();
-    return () => { cancelled = true; };
-  }, [month, year, trendRange]);
+  // Trend data: backed by Phase 3 server-side aggregation RPCs via React
+  // Query.  All three ranges return monthly buckets (yoy = 24 months) so
+  // TrendChart and computeTrendSummary share a single shape.
+  const trendMonths = trendRange === 'yoy' ? 24 : trendRange === '12m' ? 12 : 6;
+  const trendQuery = useMonthlySpendingTrend({
+    months: trendMonths,
+    endMonth: month,
+    endYear: year,
+  });
+  const trendMonthlyData = useMemo(() => trendQuery.data ?? [], [trendQuery.data]);
+  const trendLoading = trendQuery.isLoading;
+  const trendError = trendQuery.error?.message || '';
 
   // Trend summary derived from the active range's monthly data
   const trendSummary = useMemo(
@@ -268,7 +252,7 @@ export default function ReportsPage() {
         />
       );
     },
-    [getDrillDownTransactions, categories, viewMode, reportData],
+    [getDrillDownTransactions, categories, viewMode, reportData, setAllTransactions],
   );
 
   return (
@@ -413,7 +397,7 @@ export default function ReportsPage() {
             ) : activeView === 'annualActuals' ? (
               <AnnualActualsTable year={year} />
             ) : activeView === 'trends' ? (
-              <>
+              <Suspense fallback={<ChartFallback />}>
                 <TrendChart
                   range={trendRange}
                   setRange={setTrendRange}
@@ -422,15 +406,17 @@ export default function ReportsPage() {
                   error={trendError}
                 />
                 <TrendSummary {...trendSummary} />
-              </>
+              </Suspense>
             ) : activeView === 'planVsActual' ? (
-              <PlanVsActual
-                month={month}
-                year={year}
-                viewMode={viewMode}
-                onMonthChange={handleMonthChange}
-                showSelector={false}
-              />
+              <Suspense fallback={<ChartFallback />}>
+                <PlanVsActual
+                  month={month}
+                  year={year}
+                  viewMode={viewMode}
+                  onMonthChange={handleMonthChange}
+                  showSelector={false}
+                />
+              </Suspense>
             ) : (
               <>
                 {/* Stat cards + YTD */}

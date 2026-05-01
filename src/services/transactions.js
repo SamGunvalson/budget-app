@@ -1,21 +1,10 @@
 import { supabase, getCurrentUser } from "./supabase";
 
-/**
- * Guard: reject transaction creation if the target account is closed.
- * @param {string} accountId
- */
-async function assertAccountOpen(accountId) {
-  if (!accountId) return;
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("closed_at")
-    .eq("id", accountId)
-    .single();
-  if (error) throw error;
-  if (data?.closed_at) {
-    throw new Error("Cannot create transactions on a closed account.");
-  }
-}
+// Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
+// trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
+// client-side round-trip needed. The trigger raises with the same friendly
+// message the old JS guard used, so callers can surface error.message
+// unchanged.
 
 /**
  * Fetch active transactions for the current user, optionally filtered by month/year and status.
@@ -81,13 +70,8 @@ export async function createTransaction({
   status,
   recurring_template_id,
 }) {
-  await assertAccountOpen(account_id);
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError) throw userError;
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
 
   const row = {
     user_id: user.id,
@@ -184,9 +168,6 @@ export async function createTransfer({
   transaction_date,
   category_id,
 }) {
-  await assertAccountOpen(from_account_id);
-  await assertAccountOpen(to_account_id);
-
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 
@@ -243,9 +224,6 @@ export async function createLinkedTransfer({
   transaction_date,
   is_income,
 }) {
-  await assertAccountOpen(account_id);
-  await assertAccountOpen(linked_account_id);
-
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
 
@@ -342,6 +320,7 @@ export async function updateLinkedTransfer(
   if (!mainLeg || !companionLeg)
     throw new Error("Linked transfer legs are malformed.");
 
+  const user = await getCurrentUser();
   const now = new Date().toISOString();
   const shared = {
     amount,
@@ -356,6 +335,7 @@ export async function updateLinkedTransfer(
     .from("transactions")
     .update({ ...shared, account_id, category_id, is_income })
     .eq("id", mainLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
@@ -365,6 +345,7 @@ export async function updateLinkedTransfer(
     .from("transactions")
     .update({ ...shared, account_id: linked_account_id, is_income: !is_income })
     .eq("id", companionLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (compErr) throw compErr;
@@ -529,6 +510,7 @@ export async function updateTransfer(
   if (!outgoingLeg || !incomingLeg)
     throw new Error("Transfer legs are malformed.");
 
+  const user = await getCurrentUser();
   const now = new Date().toISOString();
   const shared = {
     category_id,
@@ -544,6 +526,7 @@ export async function updateTransfer(
     .from("transactions")
     .update({ ...shared, account_id: from_account_id })
     .eq("id", outgoingLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (outErr) throw outErr;
@@ -553,6 +536,7 @@ export async function updateTransfer(
     .from("transactions")
     .update({ ...shared, account_id: to_account_id })
     .eq("id", incomingLeg.id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (inErr) throw inErr;
@@ -623,15 +607,39 @@ export async function deleteTransaction(id) {
 
 /**
  * Bulk-update multiple transactions. Each item must have an `id` plus any update fields.
- * Returns updated rows with joined categories.
+ * Returns updated rows with joined categories and accounts.
+ *
+ * Phase 4: a single Postgres RPC (`bulk_update_transactions`) replaces the
+ * per-row UPDATE fan-out. The RPC honors the same field semantics as
+ * `updateTransaction` — fields absent from each input object are left
+ * untouched; explicit `null` clears the column where the schema allows it.
+ *
  * @param {Array<{id: string, [key: string]: any}>} updates
  * @returns {Promise<Array>}
  */
 export async function bulkUpdateTransactions(updates) {
-  const results = await Promise.all(
-    updates.map(({ id, ...fields }) => updateTransaction(id, fields)),
-  );
-  return results;
+  if (!Array.isArray(updates) || updates.length === 0) return [];
+
+  // Strip undefined fields so the RPC treats them as "leave alone".
+  const cleaned = updates.map(({ id, ...fields }) => {
+    const out = { id };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) continue;
+      // Match updateTransaction's trim/normalize behavior so the RPC sees the
+      // same shape the per-row path used to write.
+      if (k === "description" && typeof v === "string") out[k] = v.trim();
+      else if (k === "payee" && typeof v === "string")
+        out[k] = v.trim() || null;
+      else out[k] = v;
+    }
+    return out;
+  });
+
+  const { data, error } = await supabase.rpc("bulk_update_transactions", {
+    p_updates: cleaned,
+  });
+  if (error) throw error;
+  return data || [];
 }
 
 /**
@@ -651,10 +659,12 @@ export async function bulkDeleteTransactions(ids) {
  * @returns {Promise<Object>} Updated transaction
  */
 export async function confirmTransaction(id) {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from("transactions")
     .update({ status: "posted", updated_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
 
@@ -699,25 +709,15 @@ export async function bulkSkipTransactions(ids) {
  * Fetch all distinct years that have at least one active transaction.
  * Returns an array of years in ascending order, including a one-year
  * look-ahead (current year + 1) so users can budget ahead.
+ *
+ * Backed by the `get_transaction_years` Postgres RPC (Phase 3).
+ *
  * @returns {Promise<number[]>} e.g. [2022, 2023, 2024, 2025, 2026, 2027]
  */
 export async function getTransactionYears() {
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("transaction_date")
-    .is("deleted_at", null)
-    .order("transaction_date", { ascending: true })
-    .limit(1);
-
+  const { data, error } = await supabase.rpc("get_transaction_years");
   if (error) throw error;
-
-  const currentYear = new Date().getFullYear();
-  const minYear = data?.length
-    ? new Date(data[0].transaction_date).getFullYear()
-    : currentYear;
-  const maxYear = currentYear + 1;
-
-  return Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
+  return (data || []).map((y) => Number(y));
 }
 
 /**

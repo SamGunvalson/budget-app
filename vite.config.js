@@ -43,10 +43,47 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2}"],
+        // Phase 7: restrict precache to boot-critical assets only.
+        // Heavy lazy chunks (charts, excel, dnd) are loaded on demand and
+        // cached at runtime via the runtimeCaching rules below.
+        globPatterns: [
+          "index.html",
+          "assets/index-*.{js,css}", // main entry bundle (includes skeletons)
+          "assets/vendor-*.js", // react, react-dom, react-router
+          "assets/supabase-*.js", // auth needs this early
+          "assets/utils-*.js", // date-fns, dexie (offline layer)
+          "assets/TopBar-*.js", // app shell nav
+          "**/*.{svg,png,ico,woff,woff2}",
+        ],
+        // env-config.js holds runtime credentials (Supabase URL + anon key) and
+        // is templated by docker-entrypoint.sh on container start. It must
+        // never be precached or runtime-cached, otherwise an anon-key rotation
+        // would not propagate to clients with an active service worker.
+        globIgnores: ["**/env-config.js"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api/],
+        navigateFallbackDenylist: [/^\/api/, /^\/env-config\.js$/],
         runtimeCaching: [
+          {
+            // Always go to network for env-config.js; never cache it.
+            urlPattern: /\/env-config\.js$/i,
+            handler: "NetworkOnly",
+          },
+          {
+            // Phase 5: rarely-mutated reference tables (accounts, categories,
+            // user_preferences) are served stale-while-revalidate so the UI
+            // gets an instant response and the cache is refreshed in the
+            // background. Listed BEFORE the catch-all so it wins.
+            urlPattern:
+              /^https:\/\/.*\.supabase\.co\/rest\/v1\/(accounts|categories|user_preferences)\b/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "supabase-reference-tables",
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24, // 1 day
+              },
+            },
+          },
           {
             // Cache Supabase REST API calls (network-first so offline
             // falls through to our Dexie layer naturally)
@@ -58,8 +95,17 @@ export default defineConfig({
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60, // 1 hour
               },
-              networkTimeoutSeconds: 3,
+              // Phase 5: dropped from 3s -> 1s so flaky networks fall back to
+              // the cache (and our Dexie layer) without a long perceived
+              // hang on mobile.
+              networkTimeoutSeconds: 1,
             },
+          },
+          {
+            // Never cache Supabase auth endpoints — tokens must always come
+            // from the live server to avoid stale-session foot-guns.
+            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/v1\/.*/i,
+            handler: "NetworkOnly",
           },
           {
             // Cache Google Fonts (if ever used)

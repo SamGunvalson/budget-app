@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import BudgetItemInput from './BudgetItemInput';
 import MonthYearSelector from '../common/MonthYearSelector';
-import { getCategoriesOffline as getCategories } from '../../services/offlineAware';
+import { useCategories } from '../../hooks/queries';
 import {
   getBudgetPlan,
   createBudgetPlan,
@@ -44,7 +44,7 @@ const TYPE_HEADER_STYLES = {
 export default function BudgetForm() {
   const { month, year, setMonthYear } = useMonthYear();
 
-  const [categories, setCategories] = useState([]);
+  const { data: categories = [] } = useCategories();
   const [plan, setPlan] = useState(null);           // budget_plans row (or null)
   const [allocations, setAllocations] = useState({}); // { [categoryId]: cents }
 
@@ -75,14 +75,11 @@ export default function BudgetForm() {
       setError('');
       setSuccess('');
       try {
-        // Fetch categories + existing plan in parallel
-        const [cats, existingPlan] = await Promise.all([
-          getCategories(),
-          getBudgetPlan(month, year),
-        ]);
+        // Categories now flow in via useCategories(); we only need to fetch
+        // the per-month plan and its items here.
+        const existingPlan = await getBudgetPlan(month, year);
 
         if (cancelled) return;
-        setCategories(cats);
 
         if (existingPlan) {
           setPlan(existingPlan);
@@ -98,7 +95,7 @@ export default function BudgetForm() {
           // new month – zeros
           setPlan(null);
           const alloc = {};
-          cats.forEach((c) => {
+          categories.forEach((c) => {
             alloc[c.id] = 0;
           });
           setAllocations(alloc);
@@ -114,6 +111,10 @@ export default function BudgetForm() {
     return () => {
       cancelled = true;
     };
+    // `categories` is only read in the "new month, zero-fill" branch; we
+    // intentionally don't add it to the dep array because reload-on-cats-change
+    // would clobber unsaved allocations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year]);
 
   // ---------- handlers ----------

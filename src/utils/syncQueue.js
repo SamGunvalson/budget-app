@@ -9,7 +9,10 @@
  * Operations are ordered by timestamp so that they replay in causal order
  * (e.g., an account must be created before a transaction referencing it).
  */
-import db from "../services/offlineDb";
+import db, {
+  bumpPendingCount,
+  getPendingSyncCount,
+} from "../services/offlineDb";
 
 // ── Event emitter for sync-status listeners ──
 const listeners = new Set();
@@ -37,11 +40,17 @@ function notifyListeners() {
  * @param {'create'|'update'|'delete'} action
  */
 export async function enqueue(tableName, recordId, action) {
+  // Inspect the row first so we only bump the pending counter when this
+  // mutation transitions a row from "clean" -> "pending".  Updating an
+  // already-pending row should not double-count it.
+  const prior = await db.table(tableName).get(recordId);
+  const wasPending = prior?._offline === 1;
   await db.table(tableName).update(recordId, {
     _offline: 1,
     _action: action,
     _offlineAt: new Date().toISOString(),
   });
+  if (!wasPending) bumpPendingCount(1);
   notifyListeners();
 }
 
@@ -79,19 +88,11 @@ export async function drainAll() {
 }
 
 // ── Get total pending count (for badge) ──
+//
+// Phase 5: backed by a cached counter in `offlineDb` so this is O(1) after
+// the initial scan.  Previously this re-scanned all 7 synced tables on every
+// call and `useSyncStatus` invoked it on every keystroke that produced an
+// offline mutation.
 export async function pendingCount() {
-  const TABLES = [
-    "transactions",
-    "categories",
-    "budget_plans",
-    "budget_items",
-    "accounts",
-    "user_preferences",
-    "recurring_templates",
-  ];
-  let total = 0;
-  for (const t of TABLES) {
-    total += await db.table(t).where("_offline").equals(1).count();
-  }
-  return total;
+  return getPendingSyncCount();
 }

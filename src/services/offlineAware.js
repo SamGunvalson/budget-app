@@ -8,8 +8,17 @@
  *
  * This keeps the original service modules untouched — all offline logic lives here.
  */
-import db, { putOffline } from "./offlineDb";
+import db, { putOffline, readRpcCache, writeRpcCache } from "./offlineDb";
 import { enqueue } from "../utils/syncQueue";
+import { swrRead, notifyTable } from "./cache";
+
+// ── SWR helpers ──
+//
+// Phase 1 cache-first reads: priority "hot" read functions delegate to
+// `swrRead` which serves Dexie immediately and revalidates from Supabase
+// in the background. Helpers in this file build the (readCache, fetchFresh,
+// writeCache) triple for each function while preserving the original
+// signatures and return shapes so callers don't need to change.
 
 // ── Helpers ──
 
@@ -56,18 +65,24 @@ import {
 } from "./transactions";
 
 /**
- * Fetch transactions — Supabase first, fall back to IndexedDB.
+ * Fetch transactions — cache-first SWR.
+ *
+ * Returns cached rows from IndexedDB immediately. If we're online, kicks a
+ * background Supabase fetch that updates the cache and notifies
+ * subscribers (`subscribeTable('transactions', …)`). On a cold cache the
+ * Supabase fetch is awaited so the first paint has data.
  */
 export async function getTransactionsOffline(filters = {}) {
-  const result = await tryOnline(() => _getTransactions(filters));
+  return swrRead({
+    key: `transactions:${filters.month ?? ""}-${filters.year ?? ""}-${filters.status ?? ""}`,
+    table: "transactions",
+    readCache: () => readTransactionsFromCache(filters),
+    fetchFresh: () => _getTransactions(filters),
+    writeCache: (rows) => cacheTransactions(rows),
+  });
+}
 
-  if (!result.offline) {
-    // Cache result locally (non-blocking)
-    cacheTransactions(result.data).catch(() => {});
-    return result.data;
-  }
-
-  // Offline fallback — read from IndexedDB
+async function readTransactionsFromCache(filters = {}) {
   let rows = await db.transactions.toArray();
   rows = rows.filter((r) => !r.deleted_at);
 
@@ -83,6 +98,27 @@ export async function getTransactionsOffline(filters = {}) {
   if (filters.status && filters.status !== "all") {
     rows = rows.filter((r) => r.status === filters.status);
   }
+
+  // Attach cached category/account joins so the shape matches Supabase output.
+  // (Without this, components that read tx.categories.color crash on the
+  // first paint when the row was written by a non-joining mutation path.)
+  const cats = Object.fromEntries(
+    (await db.categories.toArray()).map((c) => [
+      c.id,
+      { id: c.id, name: c.name, color: c.color, type: c.type },
+    ]),
+  );
+  const accts = Object.fromEntries(
+    (await db.accounts.toArray()).map((a) => [
+      a.id,
+      { id: a.id, name: a.name, type: a.type },
+    ]),
+  );
+  rows = rows.map((r) => ({
+    ...r,
+    categories: r.categories || cats[r.category_id] || null,
+    accounts: r.accounts || accts[r.account_id] || null,
+  }));
 
   // Sort newest first
   rows.sort((a, b) =>
@@ -111,6 +147,7 @@ export async function createTransactionOffline(txData) {
   if (!result.offline) {
     // Also store in IndexedDB (no offline flags)
     await db.transactions.put(result.data);
+    notifyTable("transactions");
     return result.data;
   }
 
@@ -167,6 +204,7 @@ export async function updateTransactionOffline(id, updates) {
 
   if (!result.offline) {
     await db.transactions.put(result.data);
+    notifyTable("transactions");
     return result.data;
   }
 
@@ -201,6 +239,7 @@ export async function deleteTransactionOffline(id) {
   if (!result.offline) {
     // Mark deleted locally too
     await db.transactions.update(id, { deleted_at: new Date().toISOString() });
+    notifyTable("transactions");
     return result.data;
   }
 
@@ -219,19 +258,19 @@ export async function deleteTransactionOffline(id) {
 }
 
 /**
- * Fetch YTD transactions — Supabase first, fall back to IndexedDB.
+ * Fetch YTD transactions — cache-first SWR.
  */
 export async function getTransactionsYTDOffline({ year, throughMonth }) {
-  const result = await tryOnline(() =>
-    _getTransactionsYTD({ year, throughMonth }),
-  );
+  return swrRead({
+    key: `transactions:ytd:${year}:${throughMonth}`,
+    table: "transactions",
+    readCache: () => readTransactionsYTDFromCache({ year, throughMonth }),
+    fetchFresh: () => _getTransactionsYTD({ year, throughMonth }),
+    writeCache: (rows) => cacheTransactions(rows),
+  });
+}
 
-  if (!result.offline) {
-    cacheTransactions(result.data).catch(() => {});
-    return result.data;
-  }
-
-  // Offline fallback — filter from local cache
+async function readTransactionsYTDFromCache({ year, throughMonth }) {
   const startDate = `${year}-01-01`;
   const endMonth = throughMonth === 12 ? 1 : throughMonth + 1;
   const endYear = throughMonth === 12 ? year + 1 : year;
@@ -245,7 +284,6 @@ export async function getTransactionsYTDOffline({ year, throughMonth }) {
       r.transaction_date < endDate,
   );
 
-  // Attach cached category/account data for display
   const cats = Object.fromEntries(
     (await db.categories.toArray()).map((c) => [
       c.id,
@@ -271,16 +309,19 @@ export async function getTransactionsYTDOffline({ year, throughMonth }) {
 }
 
 /**
- * Fetch all transactions for a full year — Supabase first, fall back to IndexedDB.
+ * Fetch all transactions for a full year — cache-first SWR.
  */
 export async function getTransactionsForYearOffline({ year }) {
-  const result = await tryOnline(() => _getTransactionsForYear({ year }));
+  return swrRead({
+    key: `transactions:year:${year}`,
+    table: "transactions",
+    readCache: () => readTransactionsForYearFromCache({ year }),
+    fetchFresh: () => _getTransactionsForYear({ year }),
+    writeCache: (rows) => cacheTransactions(rows),
+  });
+}
 
-  if (!result.offline) {
-    cacheTransactions(result.data).catch(() => {});
-    return result.data;
-  }
-
+async function readTransactionsForYearFromCache({ year }) {
   const startDate = `${year}-01-01`;
   const endDate = `${year + 1}-01-01`;
 
@@ -348,11 +389,16 @@ import {
 } from "./accounts";
 
 export async function getAccountsOffline() {
-  const result = await tryOnline(() => _getAccounts());
-  if (!result.offline) {
-    cacheAccountsHelper(result.data).catch(() => {});
-    return result.data;
-  }
+  return swrRead({
+    key: "accounts:all",
+    table: "accounts",
+    readCache: () => readAccountsFromCache(),
+    fetchFresh: () => _getAccounts(),
+    writeCache: (rows) => cacheAccountsHelper(rows),
+  });
+}
+
+async function readAccountsFromCache() {
   let rows = await db.accounts.toArray();
   rows = rows.filter((r) => r.is_active !== false);
   rows.sort(
@@ -371,32 +417,43 @@ async function cacheAccountsHelper(data) {
 }
 
 /**
- * Fetch account balances — Supabase first, fall back to IndexedDB.
+ * Fetch account balances — cache-first SWR.
+ *
+ * Both online (Supabase RPC) and offline (local compute) paths return the
+ * same shape: account rows enriched with `balance`, `pending_net`,
+ * `projected_balance`, `transaction_net`, `is_asset`. The fresh fetch's
+ * cache write only persists raw account rows (computed fields are stripped)
+ * because balances are derived on each render from cached transactions.
  */
 export async function getAccountBalancesOffline({ projectedToDate } = {}) {
-  const result = await tryOnline(() =>
-    _getAccountBalances({ projectedToDate }),
-  );
-  if (!result.offline) {
-    // Cache the underlying accounts (strip computed fields)
-    const COMPUTED = [
-      "transaction_net",
-      "balance",
-      "pending_net",
-      "projected_balance",
-      "is_asset",
-    ];
-    cacheAccountsHelper(
-      result.data.map((row) => {
-        const clean = { ...row };
-        for (const k of COMPUTED) delete clean[k];
-        return clean;
-      }),
-    ).catch(() => {});
-    return result.data;
-  }
+  return swrRead({
+    key: `account_balances:${projectedToDate ?? "all"}`,
+    // No `table` — this is RPC-derived data.  Calling notifyTable here would
+    // invalidate the very query that triggered this read (via queryBridge),
+    // producing an infinite refetch loop.  Sync.js calls notifyTable on
+    // actual table pulls, which already cascades into invalidating this query.
+    readCache: () => computeAccountBalancesFromCache({ projectedToDate }),
+    fetchFresh: () => _getAccountBalances({ projectedToDate }),
+    writeCache: (rows) => {
+      const COMPUTED = [
+        "transaction_net",
+        "balance",
+        "pending_net",
+        "projected_balance",
+        "is_asset",
+      ];
+      return cacheAccountsHelper(
+        rows.map((row) => {
+          const clean = { ...row };
+          for (const k of COMPUTED) delete clean[k];
+          return clean;
+        }),
+      );
+    },
+  });
+}
 
-  // Offline: compute from local cache
+async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
   let accounts = await db.accounts.toArray();
   accounts = accounts.filter((a) => a.is_active !== false);
   if (!accounts.length) return [];
@@ -684,6 +741,7 @@ export async function createAccountOffline(acctData) {
   const result = await tryOnline(() => _createAccount(acctData));
   if (!result.offline) {
     await db.accounts.put(result.data);
+    notifyTable("accounts");
     return result.data;
   }
   const id = crypto.randomUUID();
@@ -707,6 +765,7 @@ export async function updateAccountOffline(id, updates) {
   const result = await tryOnline(() => _updateAccount(id, updates));
   if (!result.offline) {
     await db.accounts.put(result.data);
+    notifyTable("accounts");
     return result.data;
   }
   const existing = await db.accounts.get(id);
@@ -733,6 +792,7 @@ export async function deleteAccountOffline(id) {
   const result = await tryOnline(() => _deleteAccount(id));
   if (!result.offline) {
     await db.accounts.update(id, { is_active: false });
+    notifyTable("accounts");
     return;
   }
   const existing = await db.accounts.get(id);
@@ -746,6 +806,7 @@ export async function closeAccountOffline(id, closedAt) {
   const result = await tryOnline(() => _closeAccount(id, closedAt));
   if (!result.offline) {
     await db.accounts.update(id, { closed_at: closedAt });
+    notifyTable("accounts");
     return result.data;
   }
   const existing = await db.accounts.get(id);
@@ -772,6 +833,7 @@ export async function reopenAccountOffline(id) {
   const result = await tryOnline(() => _reopenAccount(id));
   if (!result.offline) {
     await db.accounts.update(id, { closed_at: null });
+    notifyTable("accounts");
     return result.data;
   }
   const existing = await db.accounts.get(id);
@@ -945,6 +1007,7 @@ export async function pauseRecurringTemplateOffline(id) {
   const result = await tryOnline(() => _pauseRecurringTemplate(id));
   if (!result.offline) {
     await db.recurring_templates.update(id, { is_paused: true });
+    notifyTable("recurring_templates");
     return result.data;
   }
   const existing = await db.recurring_templates.get(id);
@@ -967,6 +1030,7 @@ export async function resumeRecurringTemplateOffline(id) {
   const result = await tryOnline(() => _resumeRecurringTemplate(id));
   if (!result.offline) {
     await db.recurring_templates.update(id, { is_paused: false });
+    notifyTable("recurring_templates");
     return result.data;
   }
   const existing = await db.recurring_templates.get(id);
@@ -1012,11 +1076,16 @@ import {
 } from "./categories";
 
 export async function getCategoriesOffline() {
-  const result = await tryOnline(() => _getCategories());
-  if (!result.offline) {
-    cacheCategoriesHelper(result.data).catch(() => {});
-    return result.data;
-  }
+  return swrRead({
+    key: "categories:all",
+    table: "categories",
+    readCache: () => readCategoriesFromCache(),
+    fetchFresh: () => _getCategories(),
+    writeCache: (rows) => cacheCategoriesHelper(rows),
+  });
+}
+
+async function readCategoriesFromCache() {
   let rows = await db.categories.toArray();
   rows = rows.filter((r) => r.is_active !== false);
   rows.sort(
@@ -1039,6 +1108,7 @@ export async function createCategoryOffline(catData) {
   const result = await tryOnline(() => _createCategory(catData));
   if (!result.offline) {
     await db.categories.put(result.data);
+    notifyTable("categories");
     return result.data;
   }
   const id = crypto.randomUUID();
@@ -1062,6 +1132,7 @@ export async function updateCategoryOffline(id, updates) {
   const result = await tryOnline(() => _updateCategory(id, updates));
   if (!result.offline) {
     await db.categories.put(result.data);
+    notifyTable("categories");
     return result.data;
   }
   const existing = await db.categories.get(id);
@@ -1087,6 +1158,7 @@ export async function deleteCategoryOffline(id) {
   const result = await tryOnline(() => _deleteCategory(id));
   if (!result.offline) {
     await db.categories.update(id, { is_active: false });
+    notifyTable("categories");
     return;
   }
   const existing = await db.categories.get(id);
@@ -1101,27 +1173,43 @@ export async function deleteCategoryOffline(id) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export async function getUserPreferenceOffline(key) {
-  const result = await tryOnline(() => _getUserPreference(key));
-  if (!result.offline) {
-    // Cache locally
-    if (result.data != null) {
+  return swrRead({
+    key: `user_preferences:${key}`,
+    table: "user_preferences",
+    // user_preferences entries can legitimately be falsy (null, false, 0).
+    // Treat "row not present in cache" as the empty signal instead, so a
+    // value of `false` doesn't trigger a synchronous network round-trip.
+    isEmpty: (v) => v === undefined,
+    readCache: async () => {
       const row = await db.user_preferences
         .where("preference_key")
         .equals(key)
         .first();
-      if (row) {
-        await db.user_preferences.update(row.id, {
-          preference_value: result.data,
+      return row ? (row.preference_value ?? null) : undefined;
+    },
+    fetchFresh: () => _getUserPreference(key),
+    writeCache: async (value) => {
+      const existing = await db.user_preferences
+        .where("preference_key")
+        .equals(key)
+        .first();
+      if (existing) {
+        await db.user_preferences.update(existing.id, {
+          preference_value: value,
+          updated_at: new Date().toISOString(),
+        });
+      } else if (value != null) {
+        await db.user_preferences.put({
+          id: crypto.randomUUID(),
+          user_id: null,
+          preference_key: key,
+          preference_value: value,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         });
       }
-    }
-    return result.data;
-  }
-  const row = await db.user_preferences
-    .where("preference_key")
-    .equals(key)
-    .first();
-  return row?.preference_value ?? null;
+    },
+  });
 }
 
 export async function setUserPreferenceOffline(key, value) {
@@ -1147,6 +1235,7 @@ export async function setUserPreferenceOffline(key, value) {
         updated_at: new Date().toISOString(),
       });
     }
+    notifyTable("user_preferences");
     return;
   }
   // Offline
@@ -1197,18 +1286,34 @@ import {
 } from "./budgets";
 
 export async function getBudgetPlanOffline(month, year) {
-  const result = await tryOnline(() => _getBudgetPlan(month, year));
-  if (!result.offline) {
-    if (result.data) await db.budget_plans.put(result.data);
-    return result.data;
-  }
-  return db.budget_plans.where({ month, year }).first() || null;
+  return swrRead({
+    key: `budget_plans:${year}-${month}`,
+    table: "budget_plans",
+    // A user can legitimately have no plan for a given month — `null` is a
+    // valid cached answer. Treat only `undefined` as "cache miss".
+    isEmpty: (v) => v === undefined,
+    readCache: async () => {
+      const row = await db.budget_plans.where({ month, year }).first();
+      // Disambiguate "never fetched" from "fetched, none exists".
+      // We can't easily tell those apart from Dexie alone, so use the
+      // table's row count as a proxy: if there are no plans cached at all,
+      // treat it as cold so we await the network the first time.
+      if (row) return row;
+      const anyPlans = await db.budget_plans.count();
+      return anyPlans > 0 ? null : undefined;
+    },
+    fetchFresh: () => _getBudgetPlan(month, year),
+    writeCache: async (plan) => {
+      if (plan) await db.budget_plans.put(plan);
+    },
+  });
 }
 
 export async function createBudgetPlanOffline(planData) {
   const result = await tryOnline(() => _createBudgetPlan(planData));
   if (!result.offline) {
     await db.budget_plans.put(result.data);
+    notifyTable("budget_plans");
     return result.data;
   }
   const id = crypto.randomUUID();
@@ -1231,6 +1336,7 @@ export async function updateBudgetPlanOffline(planId, updates) {
   const result = await tryOnline(() => _updateBudgetPlan(planId, updates));
   if (!result.offline) {
     await db.budget_plans.put(result.data);
+    notifyTable("budget_plans");
     return result.data;
   }
   const existing = await db.budget_plans.get(planId);
@@ -1254,21 +1360,46 @@ export async function updateBudgetPlanOffline(planId, updates) {
 }
 
 export async function getBudgetItemsOffline(budgetPlanId) {
-  const result = await tryOnline(() => _getBudgetItems(budgetPlanId));
-  if (!result.offline) {
-    // Cache items
-    for (const item of result.data) {
-      await db.budget_items.put(item);
-    }
-    return result.data;
-  }
-  return db.budget_items.where("budget_plan_id").equals(budgetPlanId).toArray();
+  return swrRead({
+    key: `budget_items:${budgetPlanId}`,
+    table: "budget_items",
+    readCache: async () => {
+      const items = await db.budget_items
+        .where("budget_plan_id")
+        .equals(budgetPlanId)
+        .toArray();
+      // Re-attach the cached category join so consumers see the same shape
+      // they get from Supabase (`item.categories.name`, `.color`, `.type`).
+      const cats = Object.fromEntries(
+        (await db.categories.toArray()).map((c) => [
+          c.id,
+          { id: c.id, name: c.name, color: c.color, type: c.type },
+        ]),
+      );
+      return items.map((item) => ({
+        ...item,
+        categories: item.categories || cats[item.category_id] || null,
+      }));
+    },
+    fetchFresh: () => _getBudgetItems(budgetPlanId),
+    writeCache: async (items) => {
+      // Don't trample offline-pending items (e.g. user edited a row offline).
+      const pending = await db.budget_items
+        .where("_offline")
+        .equals(1)
+        .primaryKeys();
+      const pendingSet = new Set(pending);
+      const toCache = items.filter((r) => !pendingSet.has(r.id));
+      if (toCache.length) await db.budget_items.bulkPut(toCache);
+    },
+  });
 }
 
 export async function upsertBudgetItemOffline(itemData) {
   const result = await tryOnline(() => _upsertBudgetItem(itemData));
   if (!result.offline) {
     await db.budget_items.put(result.data);
+    notifyTable("budget_items");
     return result.data;
   }
   // Check if an item with this budget_plan_id+category_id already exists locally
@@ -1296,4 +1427,363 @@ export async function upsertBudgetItemOffline(itemData) {
   await putOffline("budget_items", row, "create");
   await enqueue("budget_items", id, "create");
   return row;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 3 — server-side aggregations w/ Dexie offline fallbacks
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Each of these wraps a Postgres RPC (added in
+// sql_scripts/supabase_phase3_aggregations.sql).  The online path is a single
+// round-trip; the offline fallback runs the same accounting rules over the
+// rows we already cache in IndexedDB so report screens keep working without a
+// network connection.
+
+import {
+  isTrueIncome as _isTrueIncome,
+  isSpendingCredit as _isSpendingCredit,
+  isIncomeDebit as _isIncomeDebit,
+} from "../utils/helpers";
+
+import {
+  getPlanVsActual as _getPlanVsActual,
+  getPlanVsActualYTD as _getPlanVsActualYTD,
+} from "./budgets";
+
+import {
+  getMonthlySpendingTrend as _getMonthlySpendingTrend,
+  getYearlySpendingTrend as _getYearlySpendingTrend,
+} from "./analytics";
+
+import { getTransactionYears as _getTransactionYears } from "./transactions";
+
+const SHORT_MONTHS = [
+  "",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const CATEGORY_TYPE_ORDER = { income: 0, needs: 1, wants: 2, savings: 3 };
+
+function sortPlanVsActualCategories(a, b) {
+  const ta = CATEGORY_TYPE_ORDER[a.categoryType] ?? 4;
+  const tb = CATEGORY_TYPE_ORDER[b.categoryType] ?? 4;
+  if (ta !== tb) return ta - tb;
+  return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+}
+
+/**
+ * Compute plan-vs-actual from Dexie tables.  Mirrors the JS version that
+ * `services/budgets.js` used pre-Phase-3, but reads from IndexedDB instead
+ * of paginating Supabase.  Used as the offline fallback.
+ */
+async function computePlanVsActualFromCache({ month, year, ytd = false }) {
+  const startDate = `${year}-01-01`;
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endMonth = month === 12 ? 1 : month + 1;
+  const endYear = month === 12 ? year + 1 : year;
+  const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+  const lowerBound = ytd ? startDate : monthStart;
+
+  const allCats = await db.categories.toArray();
+  const catById = Object.fromEntries(allCats.map((c) => [c.id, c]));
+
+  // Plans
+  const allPlans = await db.budget_plans.toArray();
+  const relevantPlans = allPlans.filter((p) => {
+    if (p.year !== year) return false;
+    if (ytd) return p.month >= 1 && p.month <= month;
+    return p.month === month;
+  });
+  const plannedIncome = relevantPlans.reduce(
+    (sum, p) => sum + (p.total_income || 0),
+    0,
+  );
+  const planIds = new Set(relevantPlans.map((p) => p.id));
+
+  // Items
+  const allItems = await db.budget_items.toArray();
+  const items = allItems.filter((it) => planIds.has(it.budget_plan_id));
+
+  // Transactions in window
+  const allTx = await db.transactions.toArray();
+  const txs = allTx.filter(
+    (t) =>
+      !t.deleted_at &&
+      t.transaction_date >= lowerBound &&
+      t.transaction_date < endDate,
+  );
+
+  const map = {};
+  const upsertCategory = (catId, cat) => {
+    if (!map[catId]) {
+      map[catId] = {
+        categoryId: catId,
+        categoryName: cat?.name || "Unknown",
+        categoryColor: cat?.color || "#A8A29E",
+        categoryType: cat?.type || "expense",
+        sortOrder: cat?.sort_order ?? 999,
+        planned: 0,
+        actual: 0,
+      };
+    }
+    return map[catId];
+  };
+
+  for (const item of items) {
+    const cat = catById[item.category_id];
+    if (cat?.type === "transfer") continue;
+    upsertCategory(item.category_id, cat).planned += item.planned_amount || 0;
+  }
+
+  for (const tx of txs) {
+    const cat = catById[tx.category_id] || tx.categories;
+    if (cat?.type === "transfer") continue;
+    const catId = tx.category_id || "uncategorized";
+    const entry = upsertCategory(catId, cat);
+    const txWithCat = { ...tx, categories: cat };
+    if (_isTrueIncome(txWithCat)) {
+      entry.actual += Math.abs(tx.amount);
+    } else if (_isIncomeDebit(txWithCat)) {
+      entry.actual -= Math.abs(tx.amount);
+    } else if (_isSpendingCredit(txWithCat)) {
+      entry.actual -= Math.abs(tx.amount);
+    } else {
+      entry.actual += Math.abs(tx.amount);
+    }
+  }
+
+  const categories = Object.values(map).sort(sortPlanVsActualCategories);
+  const actualIncome = categories
+    .filter((c) => c.categoryType === "income")
+    .reduce((sum, c) => sum + c.actual, 0);
+
+  return { categories, plannedIncome, actualIncome };
+}
+
+/**
+ * Plan-vs-Actual for a single month — SWR over the `get_plan_vs_actual` RPC.
+ *
+ * Returns the previously-cached aggregate from Dexie immediately so the
+ * report renders instantly on cold reloads, then fetches a fresh aggregate
+ * in the background.  When the fresh result arrives we notify the
+ * `budget_items` table so the React Query bridge refetches subscribed hooks.
+ */
+export async function getPlanVsActualOffline({ month, year }) {
+  const cacheKey = `pva:m:${year}-${month}`;
+  return swrRead({
+    key: cacheKey,
+    // RPC-derived; no notifyTable to avoid the bridge → invalidate → refetch
+    // → bg-revalidate → notifyTable loop.
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getPlanVsActual({ month, year }));
+      if (!result.offline) return result.data;
+      return computePlanVsActualFromCache({ month, year, ytd: false });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+/**
+ * Plan-vs-Actual YTD — SWR over the `get_plan_vs_actual_ytd` RPC.
+ */
+export async function getPlanVsActualYTDOffline({ year, throughMonth }) {
+  const cacheKey = `pva:ytd:${year}-${throughMonth}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() =>
+        _getPlanVsActualYTD({ year, throughMonth }),
+      );
+      if (!result.offline) return result.data;
+      return computePlanVsActualFromCache({
+        month: throughMonth,
+        year,
+        ytd: true,
+      });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+// ── Spending trends ────────────────────────────────────────────────────────
+
+function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
+  const anchorEnd =
+    endMonth != null && endYear != null
+      ? new Date(endYear, endMonth, 0)
+      : new Date();
+  const startDate = new Date(
+    anchorEnd.getFullYear(),
+    anchorEnd.getMonth() - months + 1,
+    1,
+  );
+  const startStr = startDate.toISOString().slice(0, 10);
+  const endStr = anchorEnd.toISOString().slice(0, 10);
+
+  const map = {};
+  for (const t of rows) {
+    if (t.deleted_at) continue;
+    if (t.transaction_date < startStr || t.transaction_date > endStr) continue;
+    const cat = t.categories;
+    if (cat?.type === "transfer") continue;
+
+    const d = new Date(t.transaction_date);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    if (!map[key]) {
+      map[key] = { key, year: y, month: m, spent: 0, income: 0, count: 0 };
+    }
+    if (_isTrueIncome(t)) {
+      map[key].income += Math.abs(t.amount);
+    } else if (_isIncomeDebit(t)) {
+      map[key].income -= Math.abs(t.amount);
+    } else if (_isSpendingCredit(t)) {
+      map[key].spent -= Math.abs(t.amount);
+      map[key].count += 1;
+    } else {
+      map[key].spent += Math.abs(t.amount);
+      map[key].count += 1;
+    }
+  }
+  return Object.values(map)
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map((m) => ({ ...m, label: `${SHORT_MONTHS[m.month]} ${m.year}` }));
+}
+
+async function loadCacheTransactionsWithCategoryJoin() {
+  const allTx = await db.transactions.toArray();
+  const cats = Object.fromEntries(
+    (await db.categories.toArray()).map((c) => [
+      c.id,
+      { id: c.id, name: c.name, color: c.color, type: c.type },
+    ]),
+  );
+  return allTx.map((t) => ({
+    ...t,
+    categories: t.categories || cats[t.category_id] || null,
+  }));
+}
+
+export async function getMonthlySpendingTrendOffline(opts = {}) {
+  const m = opts.months ?? 6;
+  const em = opts.endMonth ?? "";
+  const ey = opts.endYear ?? "";
+  const cacheKey = `trend:m:${m}:${ey}-${em}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getMonthlySpendingTrend(opts));
+      if (!result.offline) return result.data;
+      const rows = await loadCacheTransactionsWithCategoryJoin();
+      return aggregateTrendFromCacheRows(rows, {
+        months: opts.months ?? 6,
+        endMonth: opts.endMonth,
+        endYear: opts.endYear,
+      });
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+export async function getYearlySpendingTrendOffline(opts = {}) {
+  const yrs = opts.years ?? 2;
+  const em = opts.endMonth ?? "";
+  const ey = opts.endYear ?? "";
+  const cacheKey = `trend:y:${yrs}:${ey}-${em}`;
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getYearlySpendingTrend(opts));
+      if (!result.offline) return result.data;
+
+      // Fold from cached transactions with the same accounting rules.
+      const rows = await loadCacheTransactionsWithCategoryJoin();
+      const years = opts.years ?? 2;
+      const anchorEnd =
+        opts.endMonth != null && opts.endYear != null
+          ? new Date(opts.endYear, opts.endMonth, 0)
+          : new Date();
+      const startYear = anchorEnd.getFullYear() - years + 1;
+      const startStr = `${startYear}-01-01`;
+      const endStr = anchorEnd.toISOString().slice(0, 10);
+
+      const map = {};
+      for (const t of rows) {
+        if (t.deleted_at) continue;
+        if (t.transaction_date < startStr || t.transaction_date > endStr)
+          continue;
+        const cat = t.categories;
+        if (cat?.type === "transfer") continue;
+        const y = new Date(t.transaction_date).getUTCFullYear();
+        if (!map[y]) map[y] = { year: y, spent: 0, income: 0, count: 0 };
+        if (_isTrueIncome(t)) {
+          map[y].income += Math.abs(t.amount);
+        } else if (_isIncomeDebit(t)) {
+          map[y].income -= Math.abs(t.amount);
+        } else if (_isSpendingCredit(t)) {
+          map[y].spent -= Math.abs(t.amount);
+          map[y].count += 1;
+        } else {
+          map[y].spent += Math.abs(t.amount);
+          map[y].count += 1;
+        }
+      }
+      return Object.values(map).sort((a, b) => a.year - b.year);
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
+}
+
+// ── Transaction years ──────────────────────────────────────────────────────
+
+/**
+ * `[earliestYear .. currentYear+1]` — SWR over the `get_transaction_years` RPC.
+ */
+export async function getTransactionYearsOffline() {
+  const cacheKey = "tx:years";
+  return swrRead({
+    key: cacheKey,
+    readCache: () => readRpcCache(cacheKey),
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getTransactionYears());
+      if (!result.offline) return result.data;
+
+      const allTx = await db.transactions.toArray();
+      const dates = allTx
+        .filter((t) => !t.deleted_at && t.transaction_date)
+        .map((t) => t.transaction_date)
+        .sort();
+      const currentYear = new Date().getFullYear();
+      const minYear = dates.length
+        ? new Date(dates[0]).getFullYear()
+        : currentYear;
+      const maxYear = currentYear + 1;
+      return Array.from(
+        { length: maxYear - minYear + 1 },
+        (_, i) => minYear + i,
+      );
+    },
+    writeCache: (value) => writeRpcCache(cacheKey, value),
+    isEmpty: (v) => v == null,
+  });
 }

@@ -9,7 +9,7 @@ import {
   isSameMonth,
   isToday,
 } from 'date-fns';
-import { getTransactionsOffline } from '../../services/offlineAware';
+import { useTransactions } from '../../hooks/queries';
 import { formatCurrency, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../../utils/helpers';
 import { getRecurringTemplates } from '../../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../../utils/transactionGrouping';
@@ -25,13 +25,17 @@ const CHIP_LIMIT = 3;
  *  - year: number
  */
 export default function CalendarView({ month, year }) {
-  const [transactions, setTransactions] = useState([]);
   const [recurringTemplates, setRecurringTemplates] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [recurringError, setRecurringError] = useState('');
   const [expandedDays, setExpandedDays] = useState(new Set());
   const [selectedDay, setSelectedDay] = useState(null);
   const [expandedModalGroups, setExpandedModalGroups] = useState(new Set());
+
+  // Transactions for the selected month — cache-first via Phase 2 react-query.
+  const txQuery = useTransactions({ month, year, status: 'all' });
+  const transactions = useMemo(() => txQuery.data ?? [], [txQuery.data]);
+  const isLoading = txQuery.isLoading;
+  const error = txQuery.error?.message || recurringError;
 
   const toggleModalGroupExpand = (groupKey) => {
     setExpandedModalGroups((prev) => {
@@ -52,33 +56,24 @@ export default function CalendarView({ month, year }) {
     });
   };
 
-  // Fetch transactions and recurring templates for the selected month
+  // Reset transient UI selection state when the period changes. Using the
+  // "store previous value" render pattern avoids a setState-in-effect cascade.
+  const monthKey = `${year}-${month}`;
+  const [lastMonthKey, setLastMonthKey] = useState(monthKey);
+  if (lastMonthKey !== monthKey) {
+    setLastMonthKey(monthKey);
+    setExpandedDays(new Set());
+    setSelectedDay(null);
+    setExpandedModalGroups(new Set());
+  }
+
+  // Load recurring templates when the month changes.
+  // (Recurring templates aren't yet served by react-query — raw service call.)
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
-      setError('');
-      setExpandedDays(new Set());
-      setSelectedDay(null);
-      setExpandedModalGroups(new Set());
-      try {
-        const [data, templates] = await Promise.all([
-          getTransactionsOffline({ month, year, status: 'all' }),
-          getRecurringTemplates().catch(() => []),
-        ]);
-        if (!cancelled) {
-          setTransactions(data);
-          setRecurringTemplates(templates);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load transactions');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    load();
+    getRecurringTemplates()
+      .then((templates) => { if (!cancelled) setRecurringTemplates(templates); })
+      .catch((err) => { if (!cancelled) setRecurringError(err?.message || ''); });
     return () => { cancelled = true; };
   }, [month, year]);
 
