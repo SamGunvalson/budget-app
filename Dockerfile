@@ -1,5 +1,7 @@
 # ----- Stage 1: Build the SPA -----
-FROM node:22-alpine AS build
+# Always build on the host platform so npm ci and the Vite compile run natively.
+# The output (dist/) is pure HTML/CSS/JS and is architecture-agnostic.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 # Fix CVE-2026-25646, CVE-2026-33636, CVE-2026-33416 (libpng); CVE-2026-22184, CVE-2026-27171 (zlib); CVE-2026-32767, CVE-2026-32776, CVE-2026-32777, CVE-2026-32778 (expat)
 RUN apk upgrade --no-cache libpng zlib expat
@@ -8,7 +10,9 @@ WORKDIR /app
 
 # Install dependencies first (cached layer unless package files change)
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Mount the npm cache so repeated builds skip re-downloading packages
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Copy source code
 COPY . .

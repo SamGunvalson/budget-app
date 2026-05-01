@@ -97,11 +97,14 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # PRs only need amd64 for a smoke test; full multi-arch only on real pushes.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           # Credentials are NOT baked in — injected at runtime by docker-entrypoint.sh
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Provenance attestations add ~30-60s overhead with no benefit for this image.
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
