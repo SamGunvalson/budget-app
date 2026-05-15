@@ -7,7 +7,7 @@ import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import SettleUpModal from '../components/splits/SettleUpModal';
 import Modal from '../components/common/Modal';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
-import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, markSplitsSeen } from '../services/splitExpenses';
+import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeen } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 
 export default function SplitExpensesPage() {
@@ -29,6 +29,7 @@ export default function SplitExpensesPage() {
   // Modal state
   const [showAddForm, setShowAddForm] = useState(false);
   const [showSettleUp, setShowSettleUp] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => { document.title = 'Budget App | Split Expenses'; }, []);
@@ -131,10 +132,33 @@ export default function SplitExpensesPage() {
   async function handleDeleteExpense(id) {
     setError('');
     try {
-      await deleteSplitExpense(id);
+      await deleteSplitExpense(id, partnership.id);
       await loadExpenses();
     } catch (err) {
       setError(err?.message || 'Failed to delete expense.');
+    }
+  }
+
+  async function handleEditExpense(formData) {
+    setActionLoading(true);
+    setError('');
+    try {
+      await updateSplitExpense({
+        id: editingExpense.id,
+        partnershipId: partnership.id,
+        description: formData.description,
+        totalAmount: formData.totalAmount,
+        payerShare: formData.payerShare,
+        partnerShare: formData.partnerShare,
+        paidByUserId: formData.paidByUserId,
+        expenseDate: formData.expenseDate,
+      });
+      setEditingExpense(null);
+      await loadExpenses();
+    } catch (err) {
+      setError(err?.message || 'Failed to update expense.');
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -224,9 +248,25 @@ export default function SplitExpensesPage() {
             currentUserId={currentUser?.id}
             partnerEmail={partnerEmail}
             onDelete={handleDeleteExpense}
+            onEdit={(exp) => setEditingExpense(exp)}
             loading={dataLoading}
           />
         </div>
+
+        {/* Edit expense modal */}
+        {editingExpense && (
+          <Modal title="Edit Expense" onClose={() => setEditingExpense(null)}>
+            <SplitExpenseForm
+              currentUserId={currentUser?.id}
+              partnerId={partnerId}
+              partnerEmail={partnerEmail}
+              onSubmit={handleEditExpense}
+              onCancel={() => setEditingExpense(null)}
+              loading={actionLoading}
+              editingExpense={editingExpense}
+            />
+          </Modal>
+        )}
 
         {/* Add expense modal */}
         {showAddForm && (

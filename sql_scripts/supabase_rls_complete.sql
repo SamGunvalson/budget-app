@@ -247,31 +247,30 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'split_expenses'
-      AND policyname = 'Members can update split expenses'
-  ) THEN
-    CREATE POLICY "Members can update split expenses"
-      ON split_expenses FOR UPDATE
-      USING (
-        partnership_id IN (
-          SELECT id FROM partnerships
-          WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-            AND status = 'active'
-        )
-        AND deleted_at IS NULL
-      )
-      WITH CHECK (
-        partnership_id IN (
-          SELECT id FROM partnerships
-          WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-            AND status = 'active'
-        )
-      );
-  END IF;
-END $$;
+-- DROP + CREATE (not IF NOT EXISTS) so that re-running this script also fixes
+-- an incorrect policy that already exists on the database.
+-- Key invariant: USING requires deleted_at IS NULL (can only update live rows);
+-- WITH CHECK only verifies partnership membership — it must NOT require
+-- deleted_at IS NULL, because soft-delete writes intentionally set that column.
+DROP POLICY IF EXISTS "Members can update split expenses" ON split_expenses;
+
+CREATE POLICY "Members can update split expenses"
+  ON split_expenses FOR UPDATE
+  USING (
+    deleted_at IS NULL
+    AND partnership_id IN (
+      SELECT id FROM partnerships
+      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+        AND status = 'active'
+    )
+  )
+  WITH CHECK (
+    partnership_id IN (
+      SELECT id FROM partnerships
+      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+        AND status = 'active'
+    )
+  );
 
 DO $$ BEGIN
   IF NOT EXISTS (

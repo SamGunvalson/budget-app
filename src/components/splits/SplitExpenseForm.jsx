@@ -1,13 +1,40 @@
 import { useState } from 'react';
 
-export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmail, onSubmit, onCancel, loading, initialDescription, initialAmount, initialDate }) {
-  const [description, setDescription] = useState(initialDescription || '');
-  const [amount, setAmount] = useState(initialAmount || '');
-  const [expenseDate, setExpenseDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
-  const [paidBy, setPaidBy] = useState('me');
-  const [splitMethod, setSplitMethod] = useState('equal');
-  const [customMyShare, setCustomMyShare] = useState('');
-  const [customPartnerShare, setCustomPartnerShare] = useState('');
+/**
+ * Infer the split method from stored share values.
+ * Returns 'equal', 'full', or 'custom'.
+ */
+function inferSplitMethod(payerShare, partnerShare, totalAmount) {
+  if (payerShare === 0) return 'full';
+  if (partnerShare === Math.floor(totalAmount / 2)) return 'equal';
+  return 'custom';
+}
+
+export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmail, onSubmit, onCancel, loading, initialDescription, initialAmount, initialDate, editingExpense }) {
+  const isEditing = !!editingExpense;
+
+  // Derive initial paidBy and split fields from the expense being edited
+  const initialPaidBy = isEditing
+    ? (editingExpense.paid_by_user_id === currentUserId ? 'me' : 'partner')
+    : 'me';
+  const initialSplitMethod = isEditing
+    ? inferSplitMethod(editingExpense.payer_share, editingExpense.partner_share, editingExpense.total_amount)
+    : 'equal';
+  // Custom share amounts from the current user's perspective
+  const initialCustomMyShare = isEditing
+    ? ((initialPaidBy === 'me' ? editingExpense.payer_share : editingExpense.partner_share) / 100).toFixed(2)
+    : '';
+  const initialCustomPartnerShare = isEditing
+    ? ((initialPaidBy === 'me' ? editingExpense.partner_share : editingExpense.payer_share) / 100).toFixed(2)
+    : '';
+
+  const [description, setDescription] = useState(initialDescription || (isEditing ? editingExpense.description : ''));
+  const [amount, setAmount] = useState(initialAmount || (isEditing ? (editingExpense.total_amount / 100).toFixed(2) : ''));
+  const [expenseDate, setExpenseDate] = useState(initialDate || (isEditing ? editingExpense.expense_date : new Date().toISOString().split('T')[0]));
+  const [paidBy, setPaidBy] = useState(initialPaidBy);
+  const [splitMethod, setSplitMethod] = useState(initialSplitMethod);
+  const [customMyShare, setCustomMyShare] = useState(initialSplitMethod === 'custom' ? initialCustomMyShare : '');
+  const [customPartnerShare, setCustomPartnerShare] = useState(initialSplitMethod === 'custom' ? initialCustomPartnerShare : '');
 
   const totalCents = Math.round((parseFloat(amount) || 0) * 100);
 
@@ -69,8 +96,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
   );
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Description */}
+    <form onSubmit={handleSubmit} className="space-y-4">      {/* Description */}
       <div>
         <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">
           Description
@@ -285,7 +311,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
           disabled={!isValid || loading}
           className="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-500/20 transition-all hover:from-amber-600 hover:to-amber-700 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? 'Adding…' : 'Add Expense'}
+          {loading ? (isEditing ? 'Saving…' : 'Adding…') : (isEditing ? 'Save Changes' : 'Add Expense')}
         </button>
       </div>
     </form>
