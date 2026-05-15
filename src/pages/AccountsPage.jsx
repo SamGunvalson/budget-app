@@ -69,7 +69,7 @@ export default function AccountsPage() {
   const nwQuery = useNetWorthHistory({ projectedToDate: debouncedProjectedToDate });
   const maxDateQuery = useMaxProjectedDate();
   const upcomingQuery = useUpcomingTransactions(
-    { accountIds: cashflowAccountIds },
+    { accountIds: cashflowAccountIds, endDate: debouncedProjectedToDate },
     { enabled: activeSection === 'cashflow' && cashflowAccountIds.length > 0 },
   );
 
@@ -405,6 +405,7 @@ export default function AccountsPage() {
                 accounts={accounts}
                 selectedAccountIds={cashflowAccountIds}
                 playgroundItems={playgroundItems}
+                projectedToDate={debouncedProjectedToDate}
               />
             </Suspense>
 

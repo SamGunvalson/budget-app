@@ -369,10 +369,10 @@ export async function getAccountBalanceHistory({
  * Fetch upcoming (pending + projected) transactions for the given accounts.
  * Returns transactions sorted by date ascending with joined category/account data.
  *
- * @param {{ accountIds: string[] }} opts
+ * @param {{ accountIds: string[], endDate?: string }} opts
  * @returns {Promise<Array>}
  */
-export async function getUpcomingTransactions({ accountIds }) {
+export async function getUpcomingTransactions({ accountIds, endDate }) {
   if (!accountIds?.length) return [];
 
   const now = new Date();
@@ -383,7 +383,7 @@ export async function getUpcomingTransactions({ accountIds }) {
   let from = 0;
   let hasMore = true;
   while (hasMore) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("transactions")
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .in("account_id", accountIds)
@@ -392,6 +392,8 @@ export async function getUpcomingTransactions({ accountIds }) {
       .gte("transaction_date", todayStr)
       .order("transaction_date", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
+    if (endDate) query = query.lte("transaction_date", endDate);
+    const { data, error } = await query;
     if (error) throw error;
     allData = allData.concat(data);
     if (data.length < PAGE_SIZE) hasMore = false;

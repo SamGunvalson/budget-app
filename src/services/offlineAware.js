@@ -955,7 +955,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   const result = await tryOnline(() => _getUpcomingTransactions(opts));
   if (!result.offline) return result.data;
 
-  const { accountIds } = opts;
+  const { accountIds, endDate } = opts;
   if (!accountIds?.length) return [];
 
   const now = new Date();
@@ -967,7 +967,8 @@ export async function getUpcomingTransactionsOffline(opts) {
       !r.deleted_at &&
       accountIds.includes(r.account_id) &&
       (r.status === "pending" || r.status === "projected") &&
-      r.transaction_date >= todayStr,
+      r.transaction_date >= todayStr &&
+      (!endDate || r.transaction_date <= endDate),
   );
 
   // Attach cached category/account data

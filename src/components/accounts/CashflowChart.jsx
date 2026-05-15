@@ -87,8 +87,9 @@ function CashflowTooltip({ active, payload, label, accountMap }) {
  *  - accounts: Array<{ id, name, type }> — all available accounts
  *  - selectedAccountIds: string[] — which accounts to chart
  *  - playgroundItems: Array<{ type, accountId, toAccountId, amount, date }> — hypothetical transactions
+ *  - projectedToDate: string | null — YYYY-MM-DD upper bound for the future window (from the page-level "Project to" date picker)
  */
-export default function CashflowChart({ accounts = [], selectedAccountIds = [], playgroundItems = [] }) {
+export default function CashflowChart({ accounts = [], selectedAccountIds = [], playgroundItems = [], projectedToDate = null }) {
   const [range, setRange] = useState('3m');
 
   // Account id → name map for tooltip
@@ -112,12 +113,16 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
 
   const { startDate, endDate } = useMemo(() => {
     const preset = RANGE_OPTIONS.find((o) => o.key === range) || RANGE_OPTIONS[1];
-    const e = new Date(now);
-    e.setMonth(e.getMonth() + preset.futureMonths);
+    // Future end: prefer the page-level projectedToDate; fall back to range's futureMonths.
+    let e;
+    if (projectedToDate) {
+      e = new Date(projectedToDate + 'T00:00:00');
+    } else {
+      e = new Date(now);
+      e.setMonth(e.getMonth() + preset.futureMonths);
+    }
     let s;
     if (preset.pastMonths === null) {
-      // "All" — go back 10 years as a practical maximum; the service
-      // will only return data from the earliest transaction anyway.
       s = new Date(now);
       s.setFullYear(s.getFullYear() - 10);
     } else {
@@ -128,7 +133,7 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
       startDate: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`,
       endDate: `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`,
     };
-  }, [range, now]);
+  }, [range, now, projectedToDate]);
 
   // Per-account daily balance series — cache-first via Phase 2 react-query.
   const balanceQuery = useAccountBalanceHistory({
