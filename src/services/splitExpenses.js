@@ -144,14 +144,60 @@ export async function createSettlement({
 /**
  * Soft-delete a split expense.
  * @param {string} id - Split expense ID
+ * @param {string} partnershipId - Partnership the expense belongs to (used for defense-in-depth RLS filter)
  */
-export async function deleteSplitExpense(id) {
+export async function deleteSplitExpense(id, partnershipId) {
   const { error } = await supabase
     .from("split_expenses")
     .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("partnership_id", partnershipId);
 
   if (error) throw error;
+}
+
+/**
+ * Update an existing split expense.
+ * @param {{
+ *   id: string,
+ *   partnershipId: string,
+ *   description: string,
+ *   totalAmount: number,
+ *   payerShare: number,
+ *   partnerShare: number,
+ *   paidByUserId: string,
+ *   expenseDate: string
+ * }} params
+ * @returns {Promise<Object>} Updated split expense
+ */
+export async function updateSplitExpense({
+  id,
+  partnershipId,
+  description,
+  totalAmount,
+  payerShare,
+  partnerShare,
+  paidByUserId,
+  expenseDate,
+}) {
+  const { data, error } = await supabase
+    .from("split_expenses")
+    .update({
+      description: description.trim(),
+      total_amount: totalAmount,
+      payer_share: payerShare,
+      partner_share: partnerShare,
+      paid_by_user_id: paidByUserId,
+      expense_date: expenseDate,
+    })
+    .eq("id", id)
+    .eq("partnership_id", partnershipId)
+    .is("deleted_at", null)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 /**

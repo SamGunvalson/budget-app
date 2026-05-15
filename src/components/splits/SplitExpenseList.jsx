@@ -11,7 +11,7 @@ function getMonthLabel(dateStr) {
   return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
-export default function SplitExpenseList({ expenses, currentUserId, partnerEmail, onDelete, loading }) {
+export default function SplitExpenseList({ expenses, currentUserId, partnerEmail, onDelete, onEdit, loading }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [filter, setFilter] = useState('all');
 
@@ -145,7 +145,7 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
                       </div>
                     </div>
 
-                    {/* Total + delete */}
+                    {/* Total + edit + delete */}
                     <div className="flex items-center gap-2">
                       <p className={`text-sm font-semibold tabular-nums ${
                         exp.is_settlement
@@ -154,6 +154,15 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
                       }`}>
                         ${dollars}
                       </p>
+                      <button
+                        onClick={() => onEdit(exp)}
+                        className="rounded-lg p-1 text-stone-300 opacity-0 transition-all hover:bg-amber-50 hover:text-amber-600 group-hover:opacity-100 dark:text-stone-600 dark:hover:bg-amber-950/30 dark:hover:text-amber-400"
+                        title="Edit"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                      </button>
                       <button
                         onClick={() => setConfirmDelete(exp.id)}
                         className="rounded-lg p-1 text-stone-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-stone-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
