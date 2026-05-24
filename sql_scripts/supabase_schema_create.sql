@@ -253,6 +253,8 @@ CREATE TABLE recurring_templates (
   split_method     TEXT        CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
   split_payer      TEXT        CHECK (split_payer  IS NULL OR split_payer  IN ('me', 'partner')),
   split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
+  -- Asymmetric transfer: when set, the incoming leg uses to_amount instead of amount
+  to_amount        BIGINT      DEFAULT NULL CHECK (to_amount IS NULL OR (is_transfer = TRUE AND to_amount > 0)),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
 );
 

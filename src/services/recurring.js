@@ -95,6 +95,7 @@ export async function createRecurringTemplate({
   split_method,
   split_payer,
   split_partner_share_pct,
+  to_amount,
 }) {
   const user = await getCurrentUser();
 
@@ -127,6 +128,7 @@ export async function createRecurringTemplate({
       split_partner_share_pct: is_transfer
         ? null
         : (split_partner_share_pct ?? null),
+      to_amount: is_transfer ? (to_amount || null) : null,
     })
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type)",
@@ -223,6 +225,8 @@ export async function updateRecurringTemplate(id, updates) {
     payload.split_partner_share_pct = updates.is_transfer
       ? null
       : (updates.split_partner_share_pct ?? null);
+  if (updates.to_amount !== undefined)
+    payload.to_amount = updates.is_transfer ? (updates.to_amount || null) : null;
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -398,10 +402,11 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
     .single();
   if (outErr) throw outErr;
 
-  // Incoming (to destination account)
+  // Incoming (to destination account) — use to_amount if set (asymmetric transfer)
+  const incomingAmount = template.to_amount != null ? Math.abs(template.to_amount) : Math.abs(template.amount);
   const { data: incoming, error: inErr } = await supabase
     .from("transactions")
-    .insert({ ...baseTx, account_id: template.to_account_id, is_income: true })
+    .insert({ ...baseTx, account_id: template.to_account_id, amount: incomingAmount, is_income: true })
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (inErr) throw inErr;

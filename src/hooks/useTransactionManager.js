@@ -5,6 +5,7 @@ import {
 } from "../services/offlineAware";
 import {
   updateTransfer,
+  updateAsymmetricTransfer,
   updateLinkedTransfer,
   updateAdjustment,
   bulkUpdateTransactions,
@@ -209,6 +210,22 @@ export default function useTransactionManager({
     onDataChanged?.();
   };
 
+  const handleUpdateAsymmetricTransfer = async (values) => {
+    const [updatedOut, updatedIn] = await updateAsymmetricTransfer(
+      editingTransaction.id,
+      values,
+    );
+    setTransactions((prev) =>
+      prev.map((t) => {
+        if (t.id === updatedOut.id) return updatedOut;
+        if (t.id === updatedIn.id) return updatedIn;
+        return t;
+      }),
+    );
+    setEditingTransaction(null);
+    onDataChanged?.();
+  };
+
   const handleUpdateLinkedTransfer = async (values) => {
     const [updatedMain, updatedCompanion] = await updateLinkedTransfer(
       editingTransaction.id,
@@ -347,6 +364,7 @@ export default function useTransactionManager({
     isDeletingId,
     handleUpdate,
     handleUpdateTransfer,
+    handleUpdateAsymmetricTransfer,
     handleUpdateLinkedTransfer,
     handleUpdateAdjustment,
     handleDeleteConfirm,

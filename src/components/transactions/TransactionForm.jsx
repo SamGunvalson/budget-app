@@ -18,7 +18,7 @@ import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
  *  - defaultAccountId: optional pre-selected account
  *  - linkedAccountId: pre-resolved linked account ID when editing a linked transfer
  */
-export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
+export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onSubmitAsymmetricTransfer, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, transferCompanionAmount, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
   const [accountId, setAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [amount, setAmount] = useState('');
@@ -33,6 +33,8 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   // Transfer fields
   const [toAccountId, setToAccountId] = useState('');
   const [gainOrLoss, setGainOrLoss] = useState('gain'); // 'gain' | 'loss' — used for single-account adjustments
+  // Optional "amount applied to account" for asymmetric transfers (leave blank for symmetric)
+  const [toAmountForAccount, setToAmountForAccount] = useState('');
 
   // Linked account — optional companion for expense/income transactions
   const [linkedAccountId, setLinkedAccountId] = useState('');
@@ -47,6 +49,11 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   const isTransfer = transactionType === 'transfer';
   const isIncome = transactionType === 'income';
   const isAdjustment = isTransfer && !toAccountId; // single-account balance adjustment
+
+  // Whether the user has entered a different "to" amount (asymmetric transfer)
+  const toAmountNum = parseFloat(toAmountForAccount);
+  const fromAmountNum = parseFloat(amount);
+  const isAsymmetric = isTransfer && !isAdjustment && toAmountForAccount !== '' && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
 
   // Filter categories based on transaction type
   const filteredCategories = isTransfer
@@ -66,7 +73,6 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   useEffect(() => {
     if (initialValues) {
       setCategoryId(initialValues.category_id || '');
-      setAmount(String(toDollars(Math.abs(initialValues.amount))));
       setDescription(initialValues.description || '');
       setPayee(initialValues.payee || '');
       setTransactionDate(initialValues.transaction_date || '');
@@ -84,20 +90,37 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         if (transferCompanionAccountId) {
           if (initialValues.is_income) {
             // User clicked the "to" leg — companion is the "from" account
+            // amount state = from amount (companion), toAmountForAccount = this leg's amount
             setAccountId(transferCompanionAccountId);
             setToAccountId(initialValues.account_id || '');
+            if (transferCompanionAmount != null) {
+              setAmount(String(toDollars(Math.abs(transferCompanionAmount))));
+              const toAmt = Math.abs(initialValues.amount);
+              if (toAmt !== Math.abs(transferCompanionAmount)) {
+                setToAmountForAccount(String(toDollars(toAmt)));
+              }
+            } else {
+              setAmount(String(toDollars(Math.abs(initialValues.amount))));
+            }
           } else {
             // User clicked the "from" leg
+            // amount state = this leg's amount (from), toAmountForAccount = companion amount (to)
             setAccountId(initialValues.account_id || '');
             setToAccountId(transferCompanionAccountId);
+            setAmount(String(toDollars(Math.abs(initialValues.amount))));
+            if (transferCompanionAmount != null && Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)) {
+              setToAmountForAccount(String(toDollars(Math.abs(transferCompanionAmount))));
+            }
           }
         } else {
           setAccountId(initialValues.account_id || '');
+          setAmount(String(toDollars(Math.abs(initialValues.amount))));
           // No companion — this is a single-account adjustment; restore gain/loss direction
           setGainOrLoss(initialValues.is_income ? 'gain' : 'loss');
         }
       } else {
         setAccountId(initialValues.account_id || '');
+        setAmount(String(toDollars(Math.abs(initialValues.amount))));
         setTransactionType(initialValues.is_income ? 'income' : 'expense');
         // Populate linked account if editing a linked transfer
         if (initialLinkedAccountId) {
@@ -106,7 +129,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         setIsSplit(hasSplit ?? false);
       }
     }
-  }, [initialValues, transferCompanionAccountId, initialLinkedAccountId, hasSplit]);
+  }, [initialValues, transferCompanionAccountId, transferCompanionAmount, initialLinkedAccountId, hasSplit]);
 
   // Set default account
   useEffect(() => {
@@ -168,6 +191,12 @@ export default function TransactionForm({ categories = [], accounts = [], initia
     if (isTransfer && !isAdjustment && !toAccountId) errs.toAccountId = 'Please select a destination account.';
     if (isTransfer && !isAdjustment && toAccountId === accountId) errs.toAccountId = 'Destination must be different from source.';
     if (!isTransfer && linkedAccountId && linkedAccountId === accountId) errs.linkedAccountId = 'Linked account must be different from the main account.';
+    // Asymmetric transfer validation
+    if (toAmountForAccount !== '') {
+      const toAmt = parseFloat(toAmountForAccount);
+      if (isNaN(toAmt) || toAmt <= 0) errs.toAmountForAccount = 'Amount must be greater than 0.';
+      else if (!isNaN(numAmount) && toAmt > numAmount) errs.toAmountForAccount = 'Cannot exceed the total payment amount.';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -190,6 +219,18 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           payee,
           transaction_date: transactionDate,
           is_income: gainOrLoss === 'gain',
+          ...(statusValue && { status: statusValue }),
+        });
+      } else if (isTransfer && isAsymmetric && onSubmitAsymmetricTransfer) {
+        await onSubmitAsymmetricTransfer({
+          from_account_id: accountId,
+          to_account_id: toAccountId,
+          from_amount: toCents(parseFloat(amount)),
+          to_amount: toCents(parseFloat(toAmountForAccount)),
+          description,
+          payee,
+          transaction_date: transactionDate,
+          category_id: categoryId,
           ...(statusValue && { status: statusValue }),
         });
       } else if (isTransfer && onSubmitTransfer) {
@@ -521,7 +562,9 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           {errors.categoryId && <p className="text-xs text-red-500">{errors.categoryId}</p>}
         </div>
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">Amount ($)</label>
+          <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
+            {isTransfer && !isAdjustment ? 'Total payment ($)' : 'Amount ($)'}
+          </label>
           <input
             type="number"
             step="0.01"
@@ -534,6 +577,31 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           {errors.amount && <p className="text-xs text-red-500">{errors.amount}</p>}
         </div>
       </div>
+
+      {/* Asymmetric transfer: "Amount applied to account" field */}
+      {isTransfer && !isAdjustment && toAccountId && (
+        <div className="space-y-1.5">
+          <label className="flex items-center text-sm font-medium text-stone-700 dark:text-stone-300">
+            Amount applied to account ($)
+            <InfoTip text="Leave blank to apply the full amount. Enter a lower value if part of the payment is interest or fees that don't reduce the account balance (e.g. student loan interest)." />
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={toAmountForAccount}
+            onChange={(e) => setToAmountForAccount(e.target.value)}
+            className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
+            placeholder="Leave blank for full amount"
+          />
+          {errors.toAmountForAccount && <p className="text-xs text-red-500">{errors.toAmountForAccount}</p>}
+          {isAsymmetric && !errors.toAmountForAccount && (
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              ${(fromAmountNum - toAmountNum).toFixed(2)} will not be credited to any account
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Payee */}
       <div className="space-y-1.5">

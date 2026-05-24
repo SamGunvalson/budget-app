@@ -22,6 +22,7 @@ import {
 } from '../hooks/queries';
 import {
   createTransfer,
+  createAsymmetricTransfer,
   createLinkedTransfer,
   createAdjustment,
   bulkUpdateTransactions,
@@ -336,6 +337,12 @@ export default function TransactionsPage() {
 
   const handleCreateTransfer = async (values) => {
     const [outgoing, incoming] = await createTransfer(values);
+    setTransactions((prev) => [outgoing, incoming, ...prev]);
+    setShowCreateModal(false);
+  };
+
+  const handleCreateAsymmetricTransfer = async (values) => {
+    const [outgoing, incoming] = await createAsymmetricTransfer(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
   };
@@ -798,6 +805,7 @@ export default function TransactionsPage() {
             accounts={accounts}
             onSubmit={handleCreate}
             onSubmitTransfer={handleCreateTransfer}
+            onSubmitAsymmetricTransfer={handleCreateAsymmetricTransfer}
             onSubmitLinkedTransfer={handleCreateLinkedTransfer}
             onSubmitAdjustment={handleCreateAdjustment}
             onCancel={() => setShowCreateModal(false)}
@@ -816,6 +824,7 @@ export default function TransactionsPage() {
             initialValues={mgr.editingTransaction}
             onSubmit={handleUpdateWithSplit}
             onSubmitTransfer={mgr.handleUpdateTransfer}
+            onSubmitAsymmetricTransfer={mgr.handleUpdateAsymmetricTransfer}
             onSubmitLinkedTransfer={handleUpdateLinkedTransferWithSplit}
             onSubmitAdjustment={mgr.handleUpdateAdjustment}
             onCancel={() => mgr.setEditingTransaction(null)}
@@ -830,6 +839,16 @@ export default function TransactionsPage() {
                       t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
                       t.id !== mgr.editingTransaction.id
                   )?.account_id
+                : undefined
+            }
+            transferCompanionAmount={
+              mgr.editingTransaction.transfer_group_id &&
+              mgr.editingTransaction.categories?.type === 'transfer'
+                ? transactions.find(
+                    (t) =>
+                      t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
+                      t.id !== mgr.editingTransaction.id
+                  )?.amount
                 : undefined
             }
             linkedAccountId={

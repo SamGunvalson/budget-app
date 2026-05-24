@@ -268,6 +268,7 @@ const defaultCategories = [
 | `split_method`            | TEXT        | NULL                                        | How the expense is divided: `'equal'` (50/50), `'full'` (non-payer owes 100%), `'custom'` (partner owes `split_partner_share_pct`% of total)               |
 | `split_payer`             | TEXT        | NULL                                        | Who pays: `'me'` (current user) or `'partner'`                                                                                                             |
 | `split_partner_share_pct` | INT         | NULL                                        | Partner's share percentage (0–100); only meaningful when `split_method = 'custom'`                                                                         |
+| `to_amount`               | BIGINT      | NULL                                        | Asymmetric transfer override: when set on a transfer template (`is_transfer = TRUE`), the incoming leg credits `to_amount` instead of `amount`. The difference (`amount - to_amount`) represents interest, fees, or other costs that do not credit any tracked account. |
 
 **Constraints**:
 
@@ -322,6 +323,8 @@ interface RecurringTemplate {
   split_method?: "equal" | "full" | "custom";
   split_payer?: "me" | "partner";
   split_partner_share_pct?: number;
+  // Asymmetric transfer: incoming leg amount override (null = symmetric)
+  to_amount?: number;
   // Joined relations
   children?: RecurringTemplate[];
   categories?: { id: string; name: string; color: string; type: string };

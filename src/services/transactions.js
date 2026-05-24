@@ -466,6 +466,134 @@ export async function getTransactionsForYear({ year }) {
 }
 
 /**
+ * Create an asymmetric transfer between two accounts.
+ * The outgoing leg debits `from_amount` from the source account; the incoming
+ * leg credits `to_amount` to the destination account. The difference (if any)
+ * is not recorded — it represents interest, fees, or other costs that "poof".
+ *
+ * Both legs share a transfer_group_id so they display and delete together.
+ *
+ * @param {{ from_account_id: string, to_account_id: string, from_amount: number, to_amount: number, description: string, payee?: string, transaction_date: string, category_id: string, status?: string }} params
+ * @returns {Promise<Object[]>} [outgoing, incoming]
+ */
+export async function createAsymmetricTransfer({
+  from_account_id,
+  to_account_id,
+  from_amount,
+  to_amount,
+  description,
+  payee,
+  transaction_date,
+  category_id,
+  status,
+}) {
+  const user = await getCurrentUser();
+  const transfer_group_id = crypto.randomUUID();
+
+  const base = {
+    user_id: user.id,
+    category_id,
+    description: description.trim(),
+    payee: payee?.trim() || null,
+    transaction_date,
+    transfer_group_id,
+  };
+  if (status) base.status = status;
+
+  const { data: outgoing, error: outErr } = await supabase
+    .from("transactions")
+    .insert({ ...base, account_id: from_account_id, amount: from_amount, is_income: false })
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (outErr) throw outErr;
+
+  const { data: incoming, error: inErr } = await supabase
+    .from("transactions")
+    .insert({ ...base, account_id: to_account_id, amount: to_amount, is_income: true })
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (inErr) throw inErr;
+
+  return [outgoing, incoming];
+}
+
+/**
+ * Update both legs of an existing asymmetric transfer.
+ * Each leg can have a different amount (from_amount for the outgoing leg,
+ * to_amount for the incoming leg).
+ *
+ * @param {string} id - ID of either leg of the transfer
+ * @param {{ from_account_id: string, to_account_id: string, from_amount: number, to_amount: number, description: string, payee?: string, transaction_date: string, category_id: string }} updates
+ * @returns {Promise<Object[]>} [updatedOutgoing, updatedIncoming]
+ */
+export async function updateAsymmetricTransfer(
+  id,
+  {
+    from_account_id,
+    to_account_id,
+    from_amount,
+    to_amount,
+    description,
+    payee,
+    transaction_date,
+    category_id,
+  },
+) {
+  const { data: tx, error: txErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (txErr) throw txErr;
+  if (!tx.transfer_group_id)
+    throw new Error("Transaction is not part of a transfer.");
+
+  const { data: legs, error: legsErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("transfer_group_id", tx.transfer_group_id)
+    .is("deleted_at", null);
+  if (legsErr) throw legsErr;
+  if (!legs || legs.length < 2)
+    throw new Error("Transfer companion not found.");
+
+  const outgoingLeg = legs.find((l) => !l.is_income);
+  const incomingLeg = legs.find((l) => l.is_income);
+  if (!outgoingLeg || !incomingLeg)
+    throw new Error("Transfer legs are malformed.");
+
+  const user = await getCurrentUser();
+  const now = new Date().toISOString();
+  const shared = {
+    category_id,
+    description: description?.trim() || "",
+    payee: payee?.trim() || null,
+    transaction_date,
+    updated_at: now,
+  };
+
+  const { data: updatedOut, error: outErr } = await supabase
+    .from("transactions")
+    .update({ ...shared, account_id: from_account_id, amount: from_amount })
+    .eq("id", outgoingLeg.id)
+    .eq("user_id", user.id)
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (outErr) throw outErr;
+
+  const { data: updatedIn, error: inErr } = await supabase
+    .from("transactions")
+    .update({ ...shared, account_id: to_account_id, amount: to_amount })
+    .eq("id", incomingLeg.id)
+    .eq("user_id", user.id)
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (inErr) throw inErr;
+
+  return [updatedOut, updatedIn];
+}
+
+/**
  * Update both legs of an existing transfer transaction.
  * Finds the companion transaction via transfer_group_id and updates both.
  *

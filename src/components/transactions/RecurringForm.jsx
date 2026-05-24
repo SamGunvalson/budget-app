@@ -48,6 +48,8 @@ export default function RecurringForm({
   const [splitMethod, setSplitMethod] = useState('equal');
   const [splitPayer, setSplitPayer] = useState('me');
   const [splitPartnerSharePct, setSplitPartnerSharePct] = useState(50);
+  // Asymmetric transfer: amount credited to destination account (null/blank = symmetric)
+  const [toAmountForAccount, setToAmountForAccount] = useState('');
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -122,6 +124,11 @@ export default function RecurringForm({
       setSplitMethod(initialValues.split_method || 'equal');
       setSplitPayer(initialValues.split_payer || 'me');
       setSplitPartnerSharePct(initialValues.split_partner_share_pct ?? 50);
+      if (initialValues.to_amount != null) {
+        setToAmountForAccount(String(toDollars(Math.abs(initialValues.to_amount))));
+      } else {
+        setToAmountForAccount('');
+      }
     }
   }, [initialValues]);
 
@@ -155,6 +162,12 @@ export default function RecurringForm({
     if (!description.trim()) errs.description = 'Description is required';
     const amtNum = parseFloat(amount);
     if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
+    // Asymmetric transfer validation
+    if (isTransfer && toAmountForAccount !== '') {
+      const toAmt = parseFloat(toAmountForAccount);
+      if (isNaN(toAmt) || toAmt <= 0) errs.toAmountForAccount = 'Enter a positive amount';
+      else if (!isNaN(amtNum) && toAmt > amtNum) errs.toAmountForAccount = 'Cannot exceed the total payment amount';
+    }
     if (!startDate) errs.startDate = 'Start date is required';
     if (endDate && endDate < startDate) errs.endDate = 'End date must be after start date';
     if (!isTransfer && isSplit && splitMethod === 'custom') {
@@ -217,6 +230,9 @@ export default function RecurringForm({
           !isTransfer && isSplit && splitMethod === 'custom'
             ? parseInt(splitPartnerSharePct, 10)
             : null,
+        to_amount: isTransfer && toAmountForAccount !== ''
+          ? Math.abs(toCents(parseFloat(toAmountForAccount)))
+          : null,
       });
     } catch (err) {
       setSubmitError(err?.message || 'Failed to save recurring template');
@@ -306,7 +322,7 @@ export default function RecurringForm({
       {/* Amount + Category */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={labelClass}>Amount ($) *</label>
+          <label className={labelClass}>{isTransfer ? 'Total payment ($) *' : 'Amount ($) *'}</label>
           <input
             type="number"
             step="0.01"
@@ -333,6 +349,33 @@ export default function RecurringForm({
           {errors.categoryId && <p className={errorClass}>{errors.categoryId}</p>}
         </div>
       </div>
+
+      {/* Asymmetric transfer amount (e.g. only principal credited to loan account) */}
+      {isTransfer && toAccountId && (
+        <div>
+          <label className={labelClass}>
+            Amount applied to account ($)
+            <span className="ml-1 text-xs font-normal text-stone-400 dark:text-stone-500">optional</span>
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            value={toAmountForAccount}
+            onChange={(e) => setToAmountForAccount(e.target.value)}
+            placeholder="Leave blank for full amount"
+            className={inputClass}
+          />
+          {errors.toAmountForAccount
+            ? <p className={errorClass}>{errors.toAmountForAccount}</p>
+            : toAmountForAccount !== '' && !isNaN(parseFloat(toAmountForAccount)) && parseFloat(toAmountForAccount) < parseFloat(amount) && (
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                ${(parseFloat(amount) - parseFloat(toAmountForAccount)).toFixed(2)} will not be credited to any account (e.g. interest)
+              </p>
+            )
+          }
+        </div>
+      )}
 
       {/* Account(s) */}
       <div className="grid grid-cols-2 gap-3">
