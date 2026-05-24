@@ -205,16 +205,17 @@ const defaultCategories = [
 | `is_income`             | BOOLEAN     | DEFAULT FALSE                               | True if income, false if expense                                                                                                                      |
 | `transfer_group_id`     | UUID        | NULL                                        | Shared UUID linking both sides of a transfer. `NULL` on a transfer-type transaction indicates a single-account balance adjustment (no companion leg). |
 | `status`                | TEXT        | NOT NULL, DEFAULT 'posted'                  | Transaction lifecycle: 'projected', 'pending', 'posted'                                                                                               |
-| `recurring_template_id` | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Back-link to the recurring template that generated this transaction                                                                                   |
-| `created_at`            | TIMESTAMPTZ | DEFAULT NOW()                               | Record creation timestamp                                                                                                                             |
-| `updated_at`            | TIMESTAMPTZ | DEFAULT NOW()                               | Last update timestamp                                                                                                                                 |
-| `deleted_at`            | TIMESTAMPTZ | NULL                                        | Soft delete timestamp                                                                                                                                 |
+| `recurring_template_id`   | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Back-link to the recurring template that generated this transaction                                                                                   |
+| `recurring_occurrence_date` | DATE      | NULL                                        | The originally-scheduled occurrence date from the recurring template. Set once on generation and **never changed** when the user edits `transaction_date`. Used by the dedup logic so a user-rescheduled transaction doesn't spawn a duplicate for the original scheduled date. |
+| `created_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Record creation timestamp                                                                                                                             |
+| `updated_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Last update timestamp                                                                                                                                 |
+| `deleted_at`              | TIMESTAMPTZ | NULL                                        | Soft delete timestamp                                                                                                                                 |
 
 **Constraints**:
 
 - CHECK: `amount != 0` (no zero-amount transactions)
 - CHECK: `status IN ('projected', 'pending', 'posted')`
-- UNIQUE partial: `(recurring_template_id, transaction_date, account_id) WHERE recurring_template_id IS NOT NULL AND deleted_at IS NULL` — at most one active transaction per recurring template per date per account (allows dual-leg entries for transfers)
+- UNIQUE partial: `(recurring_template_id, recurring_occurrence_date, account_id) WHERE recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL` — at most one active transaction per recurring template per scheduled occurrence per account (allows dual-leg entries for transfers)
 
 **Indexes**:
 
@@ -224,7 +225,7 @@ const defaultCategories = [
 - Index on `deleted_at IS NULL` for active transactions
 - Index on `(user_id, status, transaction_date)` for status-based queries
 - Index on `(recurring_template_id, transaction_date)` where `recurring_template_id IS NOT NULL`
-- **Unique** index on `(recurring_template_id, transaction_date, account_id)` where `recurring_template_id IS NOT NULL AND deleted_at IS NULL` — prevents duplicate projected/pending/posted transactions for the same template+date+account while allowing transfer dual-leg entries
+- **Unique** index on `(recurring_template_id, recurring_occurrence_date, account_id)` where `recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL` — prevents duplicate projected/pending/posted transactions for the same template+occurrence+account while allowing transfer dual-leg entries
 
 **RLS**: Users can only access their own transactions
 
@@ -741,12 +742,16 @@ CREATE INDEX idx_transactions_transfer_group ON transactions(transfer_group_id) 
 CREATE INDEX idx_transactions_user_month ON transactions(user_id, EXTRACT(YEAR FROM transaction_date), EXTRACT(MONTH FROM transaction_date)) WHERE deleted_at IS NULL;
 CREATE INDEX idx_transactions_status ON transactions(user_id, status, transaction_date);
 
--- Unique partial index: prevent duplicate recurring transactions per template per date per account.
--- account_id is included because transfers/linked-transfers create two legs (source + destination)
--- that share the same recurring_template_id and transaction_date but use different accounts.
+-- Unique partial index: prevent duplicate recurring transactions per template per occurrence per account.
+-- recurring_occurrence_date is the originally-scheduled date; it never changes when the user edits
+-- transaction_date. account_id is included because transfers/linked-transfers create two legs
+-- (source + destination) that share the same recurring_template_id and occurrence date but use
+-- different accounts.
 CREATE UNIQUE INDEX idx_transactions_no_dup_recurring
-  ON transactions(recurring_template_id, transaction_date, account_id)
-  WHERE recurring_template_id IS NOT NULL AND deleted_at IS NULL;
+  ON transactions(recurring_template_id, recurring_occurrence_date, account_id)
+  WHERE recurring_template_id IS NOT NULL
+    AND recurring_occurrence_date IS NOT NULL
+    AND deleted_at IS NULL;
 ```
 
 ### Step 8: Create recurring_templates table
@@ -1024,15 +1029,17 @@ Balance adjustments are used for events like market gains/losses on investment a
 
 ### 8. **Recurring transaction deduplication**
 
-Duplicate projected/pending transactions for the same recurring template + date are prevented by a three-layer strategy:
+Duplicate projected/pending transactions for the same recurring template + scheduled occurrence are prevented by a three-layer strategy:
 
 1. **Application-level concurrency lock** (`recurring.js`): A module-scoped promise (`_generatingPromise`) ensures that concurrent calls to `generateProjectedTransactions()` — caused by React StrictMode double-firing `useEffect`, or multiple browser tabs — coalesce into a single database pass.
-2. **Pre-insert dedup query** (`applyTemplateWithStatus()`): Before each insert, queries the DB for an existing active transaction with the same `(recurring_template_id, transaction_date)`. Skips the insert if found.
-3. **Database-level unique partial index**: `idx_transactions_no_dup_recurring` on `(recurring_template_id, transaction_date, account_id) WHERE recurring_template_id IS NOT NULL AND deleted_at IS NULL`. This is the hard guarantee — if both application guards fail due to a timing race, the DB rejects the duplicate and the app catches error code `23505` gracefully. The index includes `account_id` because transfer and linked-transfer templates (e.g., 401k contributions) legitimately create two transactions per occurrence date — one on the source account and one on the destination — both sharing the same `recurring_template_id` and `transaction_date`.
+2. **Pre-insert dedup query** (`applyTemplateWithStatus()`): Before each insert, queries the DB for an existing active transaction with the same `(recurring_template_id, recurring_occurrence_date)`. Skips the insert if found.
+3. **Database-level unique partial index**: `idx_transactions_no_dup_recurring` on `(recurring_template_id, recurring_occurrence_date, account_id) WHERE recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL`. This is the hard guarantee — if both application guards fail due to a timing race, the DB rejects the duplicate and the app catches error code `23505` gracefully. The index includes `account_id` because transfer and linked-transfer templates (e.g., 401k contributions) legitimately create two transactions per occurrence date — one on the source account and one on the destination.
 
-The partial filter preserves soft-delete semantics: once a duplicate is soft-deleted (`deleted_at` set), a new transaction can be generated for the same template + date + account.
+The partial filter preserves soft-delete semantics: once a duplicate is soft-deleted (`deleted_at` set), a new transaction can be generated for the same template + occurrence + account.
 
 The dedup check in `generateProjectedTransactions()` also includes `posted` status (not just `projected`/`pending`) so that auto-confirmed transactions from earlier runs are not regenerated.
+
+**Why `recurring_occurrence_date` instead of `transaction_date`**: When a user edits a projected transaction and changes its date to reflect when it actually occurred (e.g., moves the 25th → 22nd), `transaction_date` changes but `recurring_occurrence_date` stays fixed at the originally-scheduled occurrence. Without this distinction, the next generation run would not find the 25th in its dedup set and would create a new projection — causing an infinite duplicate loop.
 
 ---
 

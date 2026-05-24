@@ -370,7 +370,7 @@ export async function getTemplatesForAccount(accountId) {
  * @param {Object} user
  * @param {Object} template
  * @param {string} dateStr
- * @param {{ status?: string, recurring_template_id?: string }} [opts]
+ * @param {{ status?: string, recurring_template_id?: string, recurring_occurrence_date?: string }} [opts]
  */
 async function applyAsTransfer(user, template, dateStr, opts = {}) {
   const transfer_group_id = crypto.randomUUID();
@@ -387,6 +387,8 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
   if (opts.status) baseTx.status = opts.status;
   if (opts.recurring_template_id)
     baseTx.recurring_template_id = opts.recurring_template_id;
+  if (opts.recurring_occurrence_date)
+    baseTx.recurring_occurrence_date = opts.recurring_occurrence_date;
 
   // Outgoing (from source account)
   const { data: outgoing, error: outErr } = await supabase
@@ -412,7 +414,7 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
  * @param {Object} user
  * @param {Object} template
  * @param {string} dateStr
- * @param {{ status?: string, recurring_template_id?: string }} [opts]
+ * @param {{ status?: string, recurring_template_id?: string, recurring_occurrence_date?: string }} [opts]
  */
 async function applyAsTransaction(user, template, dateStr, opts = {}) {
   const row = {
@@ -428,6 +430,8 @@ async function applyAsTransaction(user, template, dateStr, opts = {}) {
   if (opts.status) row.status = opts.status;
   if (opts.recurring_template_id)
     row.recurring_template_id = opts.recurring_template_id;
+  if (opts.recurring_occurrence_date)
+    row.recurring_occurrence_date = opts.recurring_occurrence_date;
 
   const { data, error } = await supabase
     .from("transactions")
@@ -446,7 +450,7 @@ async function applyAsTransaction(user, template, dateStr, opts = {}) {
  * @param {Object} user
  * @param {Object} template
  * @param {string} dateStr
- * @param {{ status?: string, recurring_template_id?: string }} [opts]
+ * @param {{ status?: string, recurring_template_id?: string, recurring_occurrence_date?: string }} [opts]
  */
 async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
   const transfer_group_id = crypto.randomUUID();
@@ -475,6 +479,8 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
   if (opts.status) sharedFields.status = opts.status;
   if (opts.recurring_template_id)
     sharedFields.recurring_template_id = opts.recurring_template_id;
+  if (opts.recurring_occurrence_date)
+    sharedFields.recurring_occurrence_date = opts.recurring_occurrence_date;
 
   // Main leg — budget-impacting (user's real category)
   const { data: mainLeg, error: mainErr } = await supabase
@@ -658,7 +664,7 @@ function statusForDate(occurrenceDate, today) {
  * Re-uses the existing apply helpers but passes status and template back-link.
  * @param {Object} user
  * @param {Object} template - The template (or child)
- * @param {string} dateStr
+ * @param {string} dateStr - The originally-scheduled occurrence date (YYYY-MM-DD)
  * @param {string} status - 'projected' or 'pending'
  * @param {string} templateId - The recurring_template_id to back-link
  * @returns {Promise<Array<Object>>} created transactions
@@ -670,17 +676,24 @@ async function applyTemplateWithStatus(
   status,
   templateId,
 ) {
-  const opts = { status, recurring_template_id: templateId };
+  // recurring_occurrence_date records the originally-scheduled date and never
+  // changes when the user later edits the transaction's actual date.
+  const opts = {
+    status,
+    recurring_template_id: templateId,
+    recurring_occurrence_date: dateStr,
+  };
   const results = [];
 
   // Belt-and-suspenders dedup: check if a transaction already exists for this
-  // template + date before inserting. This catches races that slip past the
-  // in-memory Set in generateProjectedTransactions.
+  // template + scheduled occurrence before inserting. Using recurring_occurrence_date
+  // (not transaction_date) correctly handles the case where a user moved the
+  // transaction to a different actual date — the occurrence is still "taken".
   const { data: existing, error: dupErr } = await supabase
     .from("transactions")
     .select("id")
     .eq("recurring_template_id", templateId)
-    .eq("transaction_date", dateStr)
+    .eq("recurring_occurrence_date", dateStr)
     .is("deleted_at", null)
     .limit(1);
   if (dupErr) {
@@ -758,18 +771,25 @@ export async function generateProjectedTransactions({
     // Fetch all existing projected/pending/posted transactions for duplicate checking.
     // Include 'posted' because auto_confirm can promote pending→posted before the
     // next generation run, and we must not re-create transactions for those dates.
+    // We fetch recurring_occurrence_date (the originally-scheduled date) rather than
+    // transaction_date so that user-rescheduled transactions still block re-generation
+    // for the original occurrence. Fall back to transaction_date for legacy rows that
+    // were created before recurring_occurrence_date existed (null → use transaction_date).
     const { data: existingTx, error: existErr } = await supabase
       .from("transactions")
-      .select("recurring_template_id, transaction_date")
+      .select("recurring_template_id, transaction_date, recurring_occurrence_date")
       .is("deleted_at", null)
       .in("status", ["projected", "pending", "posted"])
       .not("recurring_template_id", "is", null);
     if (existErr) throw existErr;
 
-    // Build a Set of "templateId|date" for fast lookup
+    // Build a Set of "templateId|occurrenceDate" for fast lookup.
+    // recurring_occurrence_date is the authoritative key; fall back to
+    // transaction_date for rows that predate this column.
     const existingKeys = new Set(
       (existingTx || []).map(
-        (tx) => `${tx.recurring_template_id}|${tx.transaction_date}`,
+        (tx) =>
+          `${tx.recurring_template_id}|${tx.recurring_occurrence_date ?? tx.transaction_date}`,
       ),
     );
 
