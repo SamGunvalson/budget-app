@@ -53,8 +53,8 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   // Whether the user has entered a different "to" amount (asymmetric transfer)
   const toAmountNum = parseFloat(toAmountForAccount);
   const fromAmountNum = parseFloat(amount);
-  const isAsymmetric = isTransfer && !isAdjustment && toAmountForAccount !== '' && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
-  const isAsymmetricLinked = !isTransfer && !!linkedAccountId && toAmountForAccount !== '' && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
+  const isAsymmetric = isTransfer && !isAdjustment && toAmountForAccount !== '' && !isNaN(fromAmountNum) && fromAmountNum > 0 && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
+  const isAsymmetricLinked = !isTransfer && !!linkedAccountId && toAmountForAccount !== '' && !isNaN(fromAmountNum) && fromAmountNum > 0 && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
 
   // Filter categories based on transaction type
   const filteredCategories = isTransfer
@@ -605,7 +605,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           {errors.toAmountForAccount && <p className="text-xs text-red-500">{errors.toAmountForAccount}</p>}
           {(isAsymmetric || isAsymmetricLinked) && !errors.toAmountForAccount && (
             <p className="text-xs text-stone-500 dark:text-stone-400">
-              ${(fromAmountNum - toAmountNum).toFixed(2)} will not be credited to any account
+              ${((toCents(fromAmountNum) - toCents(toAmountNum)) / 100).toFixed(2)} will not be credited to any account
             </p>
           )}
         </div>
