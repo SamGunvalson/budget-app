@@ -2,10 +2,10 @@ import { useState, useCallback } from "react";
 import {
   updateTransactionOffline as updateTransaction,
   deleteTransactionOffline as deleteTransaction,
+  updateAsymmetricTransferOffline as updateAsymmetricTransfer,
 } from "../services/offlineAware";
 import {
   updateTransfer,
-  updateAsymmetricTransfer,
   updateLinkedTransfer,
   updateAdjustment,
   bulkUpdateTransactions,

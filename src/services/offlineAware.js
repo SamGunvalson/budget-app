@@ -59,6 +59,7 @@ import {
   createTransaction as _createTransaction,
   updateTransaction as _updateTransaction,
   deleteTransaction as _deleteTransaction,
+  updateAsymmetricTransfer as _updateAsymmetricTransfer,
   getTransactionsYTD as _getTransactionsYTD,
   getTransactionsForYear as _getTransactionsForYear,
   getPendingReviewCount as _getPendingReviewCount,
@@ -255,6 +256,90 @@ export async function deleteTransactionOffline(id) {
     await enqueue("transactions", id, "delete");
   }
   return [id];
+}
+
+/**
+ * Update both legs of an asymmetric transfer — dual-write when online,
+ * IndexedDB-only when offline.
+ *
+ * @param {string} id - ID of either leg of the transfer
+ * @param {Object} updates - same shape accepted by updateAsymmetricTransfer
+ * @returns {Promise<Object[]>} [updatedOutgoing, updatedIncoming]
+ */
+export async function updateAsymmetricTransferOffline(id, updates) {
+  const result = await tryOnline(() => _updateAsymmetricTransfer(id, updates));
+
+  if (!result.offline) {
+    const [updatedOut, updatedIn] = result.data;
+    await db.transactions.put(updatedOut);
+    await db.transactions.put(updatedIn);
+    notifyTable("transactions");
+    return result.data;
+  }
+
+  // Offline: resolve both legs from Dexie via transfer_group_id
+  const existing = await db.transactions.get(id);
+  if (!existing) throw new Error(`Transaction ${id} not found locally`);
+  if (!existing.transfer_group_id)
+    throw new Error("Transaction is not part of a transfer.");
+
+  const legs = await db.transactions
+    .where("transfer_group_id")
+    .equals(existing.transfer_group_id)
+    .filter((t) => !t.deleted_at)
+    .toArray();
+  if (legs.length < 2) throw new Error("Transfer companion not found locally.");
+
+  const outgoingLeg = legs.find((l) => !l.is_income);
+  const incomingLeg = legs.find((l) => l.is_income);
+  if (!outgoingLeg || !incomingLeg)
+    throw new Error("Transfer legs are malformed.");
+
+  const now = new Date().toISOString();
+  const shared = {
+    category_id: updates.category_id,
+    description: updates.description?.trim() ?? "",
+    payee: updates.payee?.trim() || null,
+    transaction_date: updates.transaction_date,
+    updated_at: now,
+  };
+
+  const updatedOut = {
+    ...outgoingLeg,
+    ...shared,
+    account_id: updates.from_account_id,
+    amount: updates.from_amount,
+  };
+  const updatedIn = {
+    ...incomingLeg,
+    ...shared,
+    account_id: updates.to_account_id,
+    amount: updates.to_amount,
+  };
+
+  await putOffline(
+    "transactions",
+    updatedOut,
+    outgoingLeg._offline ? outgoingLeg._action : "update",
+  );
+  await enqueue(
+    "transactions",
+    outgoingLeg.id,
+    outgoingLeg._offline ? outgoingLeg._action : "update",
+  );
+  await putOffline(
+    "transactions",
+    updatedIn,
+    incomingLeg._offline ? incomingLeg._action : "update",
+  );
+  await enqueue(
+    "transactions",
+    incomingLeg.id,
+    incomingLeg._offline ? incomingLeg._action : "update",
+  );
+
+  notifyTable("transactions");
+  return [updatedOut, updatedIn];
 }
 
 /**
