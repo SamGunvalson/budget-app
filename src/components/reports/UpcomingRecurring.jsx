@@ -90,10 +90,11 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
         if (t.is_group_parent) {
           // Group: show as a single entry with children info
           const children = t.children || [];
-          // Compute net from children: income minus expenses, transfers excluded
+          // Compute net from children: income minus expenses; outflow transfers
+          // are subtracted so the preview shows the leftover in the base account.
           const netAmount = children.length > 0
             ? children.reduce((sum, c) => {
-                if (c.is_transfer) return sum;
+                if (c.is_transfer) return c.is_income ? sum : sum - c.amount;
                 return sum + (c.is_income ? c.amount : -c.amount);
               }, 0)
             : t.amount;

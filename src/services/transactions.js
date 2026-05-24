@@ -223,6 +223,7 @@ export async function createLinkedTransfer({
   payee,
   transaction_date,
   is_income,
+  companion_amount,
 }) {
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
@@ -242,7 +243,6 @@ export async function createLinkedTransfer({
 
   const sharedFields = {
     user_id: user.id,
-    amount,
     description: description.trim(),
     payee: payee?.trim() || null,
     transaction_date,
@@ -252,16 +252,23 @@ export async function createLinkedTransfer({
   // Main leg — budget-impacting (user's real category)
   const { data: mainLeg, error: mainErr } = await supabase
     .from("transactions")
-    .insert({ ...sharedFields, account_id, category_id, is_income })
+    .insert({ ...sharedFields, account_id, category_id, is_income, amount })
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
 
-  // Companion leg — neutral (transfer category), opposite is_income
+  // Companion leg — neutral (transfer category), opposite is_income.
+  // If companion_amount is provided and differs from amount, the companion leg
+  // uses that amount instead (asymmetric linked transfer).
+  const companionAmt =
+    companion_amount != null && companion_amount !== amount
+      ? companion_amount
+      : amount;
   const { data: companionLeg, error: compErr } = await supabase
     .from("transactions")
     .insert({
       ...sharedFields,
+      amount: companionAmt,
       account_id: linked_account_id,
       category_id: companionCategoryId,
       is_income: !is_income,
@@ -292,6 +299,7 @@ export async function updateLinkedTransfer(
     payee,
     transaction_date,
     is_income,
+    companion_amount,
   },
 ) {
   // Find the transaction to get its transfer_group_id
@@ -322,8 +330,7 @@ export async function updateLinkedTransfer(
 
   const user = await getCurrentUser();
   const now = new Date().toISOString();
-  const shared = {
-    amount,
+  const sharedBase = {
     description: description?.trim() || "",
     payee: payee?.trim() || null,
     transaction_date,
@@ -333,17 +340,23 @@ export async function updateLinkedTransfer(
   // Update main leg
   const { data: updatedMain, error: mainErr } = await supabase
     .from("transactions")
-    .update({ ...shared, account_id, category_id, is_income })
+    .update({ ...sharedBase, amount, account_id, category_id, is_income })
     .eq("id", mainLeg.id)
     .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
 
-  // Update companion leg (keep its transfer category, flip is_income)
+  // Update companion leg (keep its transfer category, flip is_income).
+  // If companion_amount is provided, the companion uses that instead of amount
+  // (asymmetric linked transfer — e.g. principal portion < total payment).
+  const companionAmt =
+    companion_amount != null && companion_amount !== amount
+      ? companion_amount
+      : amount;
   const { data: updatedCompanion, error: compErr } = await supabase
     .from("transactions")
-    .update({ ...shared, account_id: linked_account_id, is_income: !is_income })
+    .update({ ...sharedBase, amount: companionAmt, account_id: linked_account_id, is_income: !is_income })
     .eq("id", companionLeg.id)
     .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
@@ -463,6 +476,134 @@ export async function getTransactionsForYear({ year }) {
   }
 
   return allData;
+}
+
+/**
+ * Create an asymmetric transfer between two accounts.
+ * The outgoing leg debits `from_amount` from the source account; the incoming
+ * leg credits `to_amount` to the destination account. The difference (if any)
+ * is not recorded — it represents interest, fees, or other costs that "poof".
+ *
+ * Both legs share a transfer_group_id so they display and delete together.
+ *
+ * @param {{ from_account_id: string, to_account_id: string, from_amount: number, to_amount: number, description: string, payee?: string, transaction_date: string, category_id: string, status?: string }} params
+ * @returns {Promise<Object[]>} [outgoing, incoming]
+ */
+export async function createAsymmetricTransfer({
+  from_account_id,
+  to_account_id,
+  from_amount,
+  to_amount,
+  description,
+  payee,
+  transaction_date,
+  category_id,
+  status,
+}) {
+  const user = await getCurrentUser();
+  const transfer_group_id = crypto.randomUUID();
+
+  const base = {
+    user_id: user.id,
+    category_id,
+    description: description.trim(),
+    payee: payee?.trim() || null,
+    transaction_date,
+    transfer_group_id,
+  };
+  if (status) base.status = status;
+
+  const { data: outgoing, error: outErr } = await supabase
+    .from("transactions")
+    .insert({ ...base, account_id: from_account_id, amount: from_amount, is_income: false })
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (outErr) throw outErr;
+
+  const { data: incoming, error: inErr } = await supabase
+    .from("transactions")
+    .insert({ ...base, account_id: to_account_id, amount: to_amount, is_income: true })
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (inErr) throw inErr;
+
+  return [outgoing, incoming];
+}
+
+/**
+ * Update both legs of an existing asymmetric transfer.
+ * Each leg can have a different amount (from_amount for the outgoing leg,
+ * to_amount for the incoming leg).
+ *
+ * @param {string} id - ID of either leg of the transfer
+ * @param {{ from_account_id: string, to_account_id: string, from_amount: number, to_amount: number, description: string, payee?: string, transaction_date: string, category_id: string }} updates
+ * @returns {Promise<Object[]>} [updatedOutgoing, updatedIncoming]
+ */
+export async function updateAsymmetricTransfer(
+  id,
+  {
+    from_account_id,
+    to_account_id,
+    from_amount,
+    to_amount,
+    description,
+    payee,
+    transaction_date,
+    category_id,
+  },
+) {
+  const { data: tx, error: txErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (txErr) throw txErr;
+  if (!tx.transfer_group_id)
+    throw new Error("Transaction is not part of a transfer.");
+
+  const { data: legs, error: legsErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("transfer_group_id", tx.transfer_group_id)
+    .is("deleted_at", null);
+  if (legsErr) throw legsErr;
+  if (!legs || legs.length < 2)
+    throw new Error("Transfer companion not found.");
+
+  const outgoingLeg = legs.find((l) => !l.is_income);
+  const incomingLeg = legs.find((l) => l.is_income);
+  if (!outgoingLeg || !incomingLeg)
+    throw new Error("Transfer legs are malformed.");
+
+  const user = await getCurrentUser();
+  const now = new Date().toISOString();
+  const shared = {
+    category_id,
+    description: description?.trim() || "",
+    payee: payee?.trim() || null,
+    transaction_date,
+    updated_at: now,
+  };
+
+  const { data: updatedOut, error: outErr } = await supabase
+    .from("transactions")
+    .update({ ...shared, account_id: from_account_id, amount: from_amount })
+    .eq("id", outgoingLeg.id)
+    .eq("user_id", user.id)
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (outErr) throw outErr;
+
+  const { data: updatedIn, error: inErr } = await supabase
+    .from("transactions")
+    .update({ ...shared, account_id: to_account_id, amount: to_amount })
+    .eq("id", incomingLeg.id)
+    .eq("user_id", user.id)
+    .select("*, categories(id, name, color, type), accounts(id, name, type)")
+    .single();
+  if (inErr) throw inErr;
+
+  return [updatedOut, updatedIn];
 }
 
 /**

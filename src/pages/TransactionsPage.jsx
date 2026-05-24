@@ -13,6 +13,7 @@ import TopBar from '../components/common/TopBar';
 import useTransactionManager from '../hooks/useTransactionManager';
 import {
   createTransactionOffline as createTransaction,
+  createAsymmetricTransferOffline,
 } from '../services/offlineAware';
 import {
   useTransactions,
@@ -336,6 +337,12 @@ export default function TransactionsPage() {
 
   const handleCreateTransfer = async (values) => {
     const [outgoing, incoming] = await createTransfer(values);
+    setTransactions((prev) => [outgoing, incoming, ...prev]);
+    setShowCreateModal(false);
+  };
+
+  const handleCreateAsymmetricTransfer = async (values) => {
+    const [outgoing, incoming] = await createAsymmetricTransferOffline(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
   };
@@ -798,6 +805,7 @@ export default function TransactionsPage() {
             accounts={accounts}
             onSubmit={handleCreate}
             onSubmitTransfer={handleCreateTransfer}
+            onSubmitAsymmetricTransfer={handleCreateAsymmetricTransfer}
             onSubmitLinkedTransfer={handleCreateLinkedTransfer}
             onSubmitAdjustment={handleCreateAdjustment}
             onCancel={() => setShowCreateModal(false)}
@@ -816,6 +824,7 @@ export default function TransactionsPage() {
             initialValues={mgr.editingTransaction}
             onSubmit={handleUpdateWithSplit}
             onSubmitTransfer={mgr.handleUpdateTransfer}
+            onSubmitAsymmetricTransfer={mgr.handleUpdateAsymmetricTransfer}
             onSubmitLinkedTransfer={handleUpdateLinkedTransferWithSplit}
             onSubmitAdjustment={mgr.handleUpdateAdjustment}
             onCancel={() => mgr.setEditingTransaction(null)}
@@ -830,6 +839,21 @@ export default function TransactionsPage() {
                       t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
                       t.id !== mgr.editingTransaction.id
                   )?.account_id
+                : undefined
+            }
+            transferCompanionAmount={
+              mgr.editingTransaction.transfer_group_id
+                ? (() => {
+                    const companion = transactions.find(
+                      (t) =>
+                        t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
+                        t.id !== mgr.editingTransaction.id
+                    );
+                    if (!companion) return undefined;
+                    // Pure transfer: editing transaction has transfer category — return companion amount
+                    // Linked transfer: editing transaction is the main leg (non-transfer category) — return companion amount
+                    return companion.amount;
+                  })()
                 : undefined
             }
             linkedAccountId={

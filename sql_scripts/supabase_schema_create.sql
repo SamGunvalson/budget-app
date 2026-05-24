@@ -167,7 +167,8 @@ CREATE TABLE transactions (
   transfer_group_id      UUID,
   status                 TEXT        NOT NULL DEFAULT 'posted'
                            CHECK (status IN ('projected', 'pending', 'posted')),
-  recurring_template_id  UUID,       -- FK added below in step 8
+  recurring_template_id    UUID,       -- FK added below in step 8
+  recurring_occurrence_date DATE,      -- originally-scheduled occurrence date; never changes when user edits the transaction
   created_at             TIMESTAMPTZ DEFAULT NOW(),
   updated_at             TIMESTAMPTZ DEFAULT NOW(),
   deleted_at             TIMESTAMPTZ
@@ -252,6 +253,9 @@ CREATE TABLE recurring_templates (
   split_method     TEXT        CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
   split_payer      TEXT        CHECK (split_payer  IS NULL OR split_payer  IN ('me', 'partner')),
   split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
+  -- Asymmetric transfer: when set, the incoming leg uses to_amount instead of amount.
+  -- Valid whenever a destination account is present (is_transfer = TRUE or linked transfer with to_account_id set).
+  to_amount        BIGINT      DEFAULT NULL CHECK (to_amount IS NULL OR (to_account_id IS NOT NULL AND to_amount > 0)),
   CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
 );
 
@@ -281,12 +285,14 @@ ALTER TABLE transactions
   REFERENCES recurring_templates(id) ON DELETE SET NULL;
 
 -- Prevents duplicate projected/pending/posted transactions per template per
--- date. account_id is included because transfer templates create two legs
--- (source + destination) that share recurring_template_id and transaction_date
--- but use different accounts.
+-- scheduled occurrence. account_id is included because transfer templates
+-- create two legs (source + destination) that share recurring_template_id and
+-- recurring_occurrence_date but use different accounts.
 CREATE UNIQUE INDEX idx_transactions_no_dup_recurring
-  ON transactions(recurring_template_id, transaction_date, account_id)
-  WHERE recurring_template_id IS NOT NULL AND deleted_at IS NULL;
+  ON transactions(recurring_template_id, recurring_occurrence_date, account_id)
+  WHERE recurring_template_id IS NOT NULL
+    AND recurring_occurrence_date IS NOT NULL
+    AND deleted_at IS NULL;
 
 CREATE INDEX idx_transactions_recurring_template
   ON transactions(recurring_template_id, transaction_date)
