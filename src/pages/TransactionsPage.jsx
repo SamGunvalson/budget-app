@@ -13,6 +13,7 @@ import TopBar from '../components/common/TopBar';
 import useTransactionManager from '../hooks/useTransactionManager';
 import {
   createTransactionOffline as createTransaction,
+  createAsymmetricTransferOffline,
 } from '../services/offlineAware';
 import {
   useTransactions,
@@ -22,7 +23,6 @@ import {
 } from '../hooks/queries';
 import {
   createTransfer,
-  createAsymmetricTransfer,
   createLinkedTransfer,
   createAdjustment,
   bulkUpdateTransactions,
@@ -342,7 +342,7 @@ export default function TransactionsPage() {
   };
 
   const handleCreateAsymmetricTransfer = async (values) => {
-    const [outgoing, incoming] = await createAsymmetricTransfer(values);
+    const [outgoing, incoming] = await createAsymmetricTransferOffline(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
   };

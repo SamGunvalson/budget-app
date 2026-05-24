@@ -59,6 +59,7 @@ import {
   createTransaction as _createTransaction,
   updateTransaction as _updateTransaction,
   deleteTransaction as _deleteTransaction,
+  createAsymmetricTransfer as _createAsymmetricTransfer,
   updateAsymmetricTransfer as _updateAsymmetricTransfer,
   getTransactionsYTD as _getTransactionsYTD,
   getTransactionsForYear as _getTransactionsForYear,
@@ -256,6 +257,94 @@ export async function deleteTransactionOffline(id) {
     await enqueue("transactions", id, "delete");
   }
   return [id];
+}
+
+/**
+ * Create both legs of an asymmetric transfer — dual-write when online,
+ * IndexedDB-only when offline.
+ *
+ * @param {Object} params - same shape accepted by createAsymmetricTransfer
+ * @returns {Promise<Object[]>} [outgoing, incoming]
+ */
+export async function createAsymmetricTransferOffline(params) {
+  const result = await tryOnline(() => _createAsymmetricTransfer(params));
+
+  if (!result.offline) {
+    const [outgoing, incoming] = result.data;
+    await db.transactions.put(outgoing);
+    await db.transactions.put(incoming);
+    notifyTable("transactions");
+    return result.data;
+  }
+
+  // Offline: generate UUIDs for both legs and store locally
+  const {
+    from_account_id,
+    to_account_id,
+    from_amount,
+    to_amount,
+    description,
+    payee,
+    transaction_date,
+    category_id,
+    status,
+  } = params;
+
+  const transfer_group_id = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Resolve category/account joins from local cache for display
+  const cat = category_id ? await db.categories.get(category_id) : null;
+  const catJoin = cat
+    ? { id: cat.id, name: cat.name, color: cat.color, type: cat.type }
+    : null;
+  const fromAcct = from_account_id
+    ? await db.accounts.get(from_account_id)
+    : null;
+  const toAcct = to_account_id ? await db.accounts.get(to_account_id) : null;
+
+  const base = {
+    user_id: null, // Filled on sync
+    category_id,
+    description: description?.trim() ?? "",
+    payee: payee?.trim() || null,
+    transaction_date,
+    transfer_group_id,
+    status: status || "posted",
+    deleted_at: null,
+    created_at: now,
+    updated_at: now,
+    categories: catJoin,
+  };
+
+  const outgoing = {
+    ...base,
+    id: crypto.randomUUID(),
+    account_id: from_account_id,
+    amount: from_amount,
+    is_income: false,
+    accounts: fromAcct
+      ? { id: fromAcct.id, name: fromAcct.name, type: fromAcct.type }
+      : null,
+  };
+
+  const incoming = {
+    ...base,
+    id: crypto.randomUUID(),
+    account_id: to_account_id,
+    amount: to_amount,
+    is_income: true,
+    accounts: toAcct
+      ? { id: toAcct.id, name: toAcct.name, type: toAcct.type }
+      : null,
+  };
+
+  await putOffline("transactions", outgoing, "create");
+  await enqueue("transactions", outgoing.id, "create");
+  await putOffline("transactions", incoming, "create");
+  await enqueue("transactions", incoming.id, "create");
+  notifyTable("transactions");
+  return [outgoing, incoming];
 }
 
 /**
