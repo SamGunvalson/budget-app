@@ -159,6 +159,10 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   const hasProjected = children.some((c) => c.status === 'projected');
   const hasPending = children.some((c) => c.status === 'pending');
   const hasTransfer = children.some((c) => c.categories?.type === 'transfer');
+  const hasNonTransfer = children.some((c) => c.categories?.type !== 'transfer');
+  // True when the group mixes income/expenses with transfers — net amount reflects
+  // the leftover in the base account after transfer outflows are subtracted.
+  const isMixedWithTransfers = hasTransfer && hasNonTransfer;
   const hasSplit = splitTransactionIds && children.some((c) => splitTransactionIds.has(c.id));
   const isNotPosted = hasProjected || hasPending;
 
@@ -290,6 +294,9 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
         <td className={`px-3 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
           <span className="text-xs font-bold">{isPositive ? '+' : '−'}</span>
           {formatCurrency(Math.abs(netAmount))}
+          {isMixedWithTransfers && (
+            <div className="text-[10px] font-normal text-stone-400 dark:text-stone-500">after transfers</div>
+          )}
         </td>
 
         {/* Actions — kebab menu */}
@@ -379,6 +386,9 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
       <td className={`px-4 py-3 text-right text-sm font-semibold whitespace-nowrap ${amountColor}`}>
         <span className="text-xs font-bold">{isPositive ? '+' : '−'}</span>
         {formatCurrency(Math.abs(netAmount))}
+        {isMixedWithTransfers && (
+          <div className="text-[10px] font-normal text-stone-400 dark:text-stone-500">after transfers</div>
+        )}
       </td>
 
       {/* Actions — kebab menu */}

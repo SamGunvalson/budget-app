@@ -128,12 +128,15 @@ export function groupTransactions(transactions, templateLookup) {
 
 /**
  * Compute net amount for a group of transactions.
- * Transfers are excluded from the net. Income adds, expense subtracts.
- * Exception: if all children are transfers, returns the amount of money moved
- * (sum of the outflow/expense side) rather than 0.
+ *
+ * - If ALL children are transfers: returns the amount moved (sum of outflow side).
+ * - Mixed groups (income/expense + transfers): income adds, expense subtracts,
+ *   and transfer **outflows** (is_income=false) are subtracted so the result
+ *   reflects the leftover amount remaining in the base account after money is
+ *   moved out. Transfer inflows are excluded to avoid double-counting.
  *
  * @param {Array} children
- * @returns {number} net amount in cents (positive = net income or transfer amount)
+ * @returns {number} net amount in cents (positive = net inflow / leftover)
  */
 export function computeGroupNet(children) {
   const allTransfers =
@@ -152,7 +155,12 @@ export function computeGroupNet(children) {
 
   let net = 0;
   for (const t of children) {
-    if (t.categories?.type === "transfer") continue;
+    if (t.categories?.type === "transfer") {
+      // Subtract outflow transfers (money leaving the base account) so the net
+      // reflects the true leftover. Inflow transfers are excluded.
+      if (!t.is_income) net -= Math.abs(t.amount);
+      continue;
+    }
     net += t.is_income ? Math.abs(t.amount) : -Math.abs(t.amount);
   }
   return net;
