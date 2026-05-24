@@ -10,11 +10,11 @@
 ALTER TABLE recurring_templates
   ADD COLUMN IF NOT EXISTS to_amount BIGINT DEFAULT NULL;
 
--- Optional constraint: to_amount must be positive and only valid on transfer templates.
--- Applied as a check constraint so it is enforced without a separate index.
+-- Constraint: to_amount must be positive when set.
+-- No restriction on is_transfer — linked transfer templates (is_transfer = FALSE) also use to_amount.
 ALTER TABLE recurring_templates
   DROP CONSTRAINT IF EXISTS recurring_templates_to_amount_check;
 
 ALTER TABLE recurring_templates
   ADD CONSTRAINT recurring_templates_to_amount_check
-  CHECK (to_amount IS NULL OR (is_transfer = TRUE AND to_amount > 0));
+  CHECK (to_amount IS NULL OR to_amount > 0);

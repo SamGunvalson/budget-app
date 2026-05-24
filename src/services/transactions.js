@@ -223,6 +223,7 @@ export async function createLinkedTransfer({
   payee,
   transaction_date,
   is_income,
+  companion_amount,
 }) {
   const user = await getCurrentUser();
   const transfer_group_id = crypto.randomUUID();
@@ -242,7 +243,6 @@ export async function createLinkedTransfer({
 
   const sharedFields = {
     user_id: user.id,
-    amount,
     description: description.trim(),
     payee: payee?.trim() || null,
     transaction_date,
@@ -252,16 +252,23 @@ export async function createLinkedTransfer({
   // Main leg — budget-impacting (user's real category)
   const { data: mainLeg, error: mainErr } = await supabase
     .from("transactions")
-    .insert({ ...sharedFields, account_id, category_id, is_income })
+    .insert({ ...sharedFields, account_id, category_id, is_income, amount })
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
 
-  // Companion leg — neutral (transfer category), opposite is_income
+  // Companion leg — neutral (transfer category), opposite is_income.
+  // If companion_amount is provided and differs from amount, the companion leg
+  // uses that amount instead (asymmetric linked transfer).
+  const companionAmt =
+    companion_amount != null && companion_amount !== amount
+      ? companion_amount
+      : amount;
   const { data: companionLeg, error: compErr } = await supabase
     .from("transactions")
     .insert({
       ...sharedFields,
+      amount: companionAmt,
       account_id: linked_account_id,
       category_id: companionCategoryId,
       is_income: !is_income,
@@ -292,6 +299,7 @@ export async function updateLinkedTransfer(
     payee,
     transaction_date,
     is_income,
+    companion_amount,
   },
 ) {
   // Find the transaction to get its transfer_group_id
@@ -322,8 +330,7 @@ export async function updateLinkedTransfer(
 
   const user = await getCurrentUser();
   const now = new Date().toISOString();
-  const shared = {
-    amount,
+  const sharedBase = {
     description: description?.trim() || "",
     payee: payee?.trim() || null,
     transaction_date,
@@ -333,17 +340,23 @@ export async function updateLinkedTransfer(
   // Update main leg
   const { data: updatedMain, error: mainErr } = await supabase
     .from("transactions")
-    .update({ ...shared, account_id, category_id, is_income })
+    .update({ ...sharedBase, amount, account_id, category_id, is_income })
     .eq("id", mainLeg.id)
     .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
   if (mainErr) throw mainErr;
 
-  // Update companion leg (keep its transfer category, flip is_income)
+  // Update companion leg (keep its transfer category, flip is_income).
+  // If companion_amount is provided, the companion uses that instead of amount
+  // (asymmetric linked transfer — e.g. principal portion < total payment).
+  const companionAmt =
+    companion_amount != null && companion_amount !== amount
+      ? companion_amount
+      : amount;
   const { data: updatedCompanion, error: compErr } = await supabase
     .from("transactions")
-    .update({ ...shared, account_id: linked_account_id, is_income: !is_income })
+    .update({ ...sharedBase, amount: companionAmt, account_id: linked_account_id, is_income: !is_income })
     .eq("id", companionLeg.id)
     .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")

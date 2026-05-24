@@ -54,6 +54,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   const toAmountNum = parseFloat(toAmountForAccount);
   const fromAmountNum = parseFloat(amount);
   const isAsymmetric = isTransfer && !isAdjustment && toAmountForAccount !== '' && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
+  const isAsymmetricLinked = !isTransfer && !!linkedAccountId && toAmountForAccount !== '' && !isNaN(toAmountNum) && toAmountNum !== fromAmountNum;
 
   // Filter categories based on transaction type
   const filteredCategories = isTransfer
@@ -125,6 +126,12 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         // Populate linked account if editing a linked transfer
         if (initialLinkedAccountId) {
           setLinkedAccountId(initialLinkedAccountId);
+          // Pre-populate asymmetric amount if companion differs from main leg
+          if (transferCompanionAmount != null && Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)) {
+            setToAmountForAccount(String(toDollars(Math.abs(transferCompanionAmount))));
+          } else {
+            setToAmountForAccount('');
+          }
         }
         setIsSplit(hasSplit ?? false);
       }
@@ -255,6 +262,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           transaction_date: transactionDate,
           is_income: isIncome,
           isSplit,
+          ...(isAsymmetricLinked && { companion_amount: toCents(parseFloat(toAmountForAccount)) }),
           ...(statusValue && { status: statusValue }),
         });
       } else {
@@ -578,11 +586,11 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         </div>
       </div>
 
-      {/* Asymmetric transfer: "Amount applied to account" field */}
-      {isTransfer && !isAdjustment && toAccountId && (
+      {/* Asymmetric field: "Amount applied to account" (pure transfers) or "Amount applied to linked account" (linked transfers) */}
+      {((isTransfer && !isAdjustment && toAccountId) || (!isTransfer && linkedAccountId)) && (
         <div className="space-y-1.5">
           <label className="flex items-center text-sm font-medium text-stone-700 dark:text-stone-300">
-            Amount applied to account ($)
+            {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
             <InfoTip text="Leave blank to apply the full amount. Enter a lower value if part of the payment is interest or fees that don't reduce the account balance (e.g. student loan interest)." />
           </label>
           <input
@@ -595,7 +603,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
             placeholder="Leave blank for full amount"
           />
           {errors.toAmountForAccount && <p className="text-xs text-red-500">{errors.toAmountForAccount}</p>}
-          {isAsymmetric && !errors.toAmountForAccount && (
+          {(isAsymmetric || isAsymmetricLinked) && !errors.toAmountForAccount && (
             <p className="text-xs text-stone-500 dark:text-stone-400">
               ${(fromAmountNum - toAmountNum).toFixed(2)} will not be credited to any account
             </p>

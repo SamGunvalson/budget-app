@@ -128,7 +128,7 @@ export async function createRecurringTemplate({
       split_partner_share_pct: is_transfer
         ? null
         : (split_partner_share_pct ?? null),
-      to_amount: is_transfer ? (to_amount || null) : null,
+      to_amount: to_account_id ? (to_amount || null) : null,
     })
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type)",
@@ -226,7 +226,7 @@ export async function updateRecurringTemplate(id, updates) {
       ? null
       : (updates.split_partner_share_pct ?? null);
   if (updates.to_amount !== undefined)
-    payload.to_amount = updates.is_transfer ? (updates.to_amount || null) : null;
+    payload.to_amount = (updates.to_account_id || updates.is_transfer) ? (updates.to_amount || null) : null;
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -501,11 +501,18 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
     .single();
   if (mainErr) throw mainErr;
 
-  // Companion leg — neutral (transfer category), flipped is_income
+  // Companion leg — neutral (transfer category), flipped is_income.
+  // If template.to_amount is set (asymmetric linked transfer), use it for
+  // the companion amount instead of the full payment amount.
+  const companionAmt =
+    template.to_amount != null
+      ? Math.abs(template.to_amount)
+      : Math.abs(template.amount);
   const { data: companionLeg, error: compErr } = await supabase
     .from("transactions")
     .insert({
       ...sharedFields,
+      amount: companionAmt,
       account_id: template.to_account_id,
       category_id: companionCategoryId,
       is_income: !template.is_income,

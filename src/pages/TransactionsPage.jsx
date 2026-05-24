@@ -842,13 +842,18 @@ export default function TransactionsPage() {
                 : undefined
             }
             transferCompanionAmount={
-              mgr.editingTransaction.transfer_group_id &&
-              mgr.editingTransaction.categories?.type === 'transfer'
-                ? transactions.find(
-                    (t) =>
-                      t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
-                      t.id !== mgr.editingTransaction.id
-                  )?.amount
+              mgr.editingTransaction.transfer_group_id
+                ? (() => {
+                    const companion = transactions.find(
+                      (t) =>
+                        t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
+                        t.id !== mgr.editingTransaction.id
+                    );
+                    if (!companion) return undefined;
+                    // Pure transfer: editing transaction has transfer category — return companion amount
+                    // Linked transfer: editing transaction is the main leg (non-transfer category) — return companion amount
+                    return companion.amount;
+                  })()
                 : undefined
             }
             linkedAccountId={

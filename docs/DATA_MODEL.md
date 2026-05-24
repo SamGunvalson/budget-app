@@ -268,7 +268,7 @@ const defaultCategories = [
 | `split_method`            | TEXT        | NULL                                        | How the expense is divided: `'equal'` (50/50), `'full'` (non-payer owes 100%), `'custom'` (partner owes `split_partner_share_pct`% of total)               |
 | `split_payer`             | TEXT        | NULL                                        | Who pays: `'me'` (current user) or `'partner'`                                                                                                             |
 | `split_partner_share_pct` | INT         | NULL                                        | Partner's share percentage (0–100); only meaningful when `split_method = 'custom'`                                                                         |
-| `to_amount`               | BIGINT      | NULL                                        | Asymmetric transfer override: when set on a transfer template (`is_transfer = TRUE`), the incoming leg credits `to_amount` instead of `amount`. The difference (`amount - to_amount`) represents interest, fees, or other costs that do not credit any tracked account. |
+| `to_amount`               | BIGINT      | NULL                                        | Asymmetric transfer override: when set on a template that has a `to_account_id` (pure transfer or linked transfer), the companion/incoming leg is credited `to_amount` instead of `amount`. The difference (`amount - to_amount`) represents interest, fees, or other costs that do not credit any tracked account. Works for both `is_transfer = TRUE` templates and linked transfer templates (`is_transfer = FALSE` with `to_account_id`). |
 
 **Constraints**:
 

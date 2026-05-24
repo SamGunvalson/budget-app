@@ -162,8 +162,8 @@ export default function RecurringForm({
     if (!description.trim()) errs.description = 'Description is required';
     const amtNum = parseFloat(amount);
     if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
-    // Asymmetric transfer validation
-    if (isTransfer && toAmountForAccount !== '') {
+    // Asymmetric transfer validation (applies to both pure transfers and linked transfers)
+    if ((isTransfer || linkedAccountId) && toAmountForAccount !== '') {
       const toAmt = parseFloat(toAmountForAccount);
       if (isNaN(toAmt) || toAmt <= 0) errs.toAmountForAccount = 'Enter a positive amount';
       else if (!isNaN(amtNum) && toAmt > amtNum) errs.toAmountForAccount = 'Cannot exceed the total payment amount';
@@ -230,7 +230,7 @@ export default function RecurringForm({
           !isTransfer && isSplit && splitMethod === 'custom'
             ? parseInt(splitPartnerSharePct, 10)
             : null,
-        to_amount: isTransfer && toAmountForAccount !== ''
+        to_amount: (isTransfer || linkedAccountId) && toAmountForAccount !== ''
           ? Math.abs(toCents(parseFloat(toAmountForAccount)))
           : null,
       });
@@ -351,10 +351,10 @@ export default function RecurringForm({
       </div>
 
       {/* Asymmetric transfer amount (e.g. only principal credited to loan account) */}
-      {isTransfer && toAccountId && (
+      {(isTransfer ? toAccountId : linkedAccountId) && (
         <div>
           <label className={labelClass}>
-            Amount applied to account ($)
+            {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
             <span className="ml-1 text-xs font-normal text-stone-400 dark:text-stone-500">optional</span>
           </label>
           <input
