@@ -421,20 +421,46 @@ async function cacheAccountsHelper(data) {
  *
  * Both online (Supabase RPC) and offline (local compute) paths return the
  * same shape: account rows enriched with `balance`, `pending_net`,
- * `projected_balance`, `transaction_net`, `is_asset`. The fresh fetch's
- * cache write only persists raw account rows (computed fields are stripped)
- * because balances are derived on each render from cached transactions.
+ * `projected_balance`, `transaction_net`, `is_asset`.
+ *
+ * The authoritative Supabase result (including computed balance fields) is
+ * stored in `rpc_cache` so subsequent reads on any device always serve the
+ * correct server-computed balances rather than a local recomputation from a
+ * potentially incomplete Dexie transactions table.  The local
+ * `computeAccountBalancesFromCache` path is kept as a genuine offline
+ * fallback only.
+ *
+ * `table: 'accounts'` lets swrRead call notifyTable after a background
+ * refresh so React Query re-renders with the fresh data.  This does not
+ * produce an infinite loop: after the first notification React Query
+ * refetches, the second bg-fetch returns identical data, shallowEqualData
+ * returns true, and no further notification is emitted.
  */
 export async function getAccountBalancesOffline({ projectedToDate } = {}) {
+  const cacheKey = `account_balances:${projectedToDate ?? "all"}`;
   return swrRead({
-    key: `account_balances:${projectedToDate ?? "all"}`,
-    // No `table` — this is RPC-derived data.  Calling notifyTable here would
-    // invalidate the very query that triggered this read (via queryBridge),
-    // producing an infinite refetch loop.  Sync.js calls notifyTable on
-    // actual table pulls, which already cascades into invalidating this query.
-    readCache: () => computeAccountBalancesFromCache({ projectedToDate }),
-    fetchFresh: () => _getAccountBalances({ projectedToDate }),
-    writeCache: (rows) => {
+    key: cacheKey,
+    table: "accounts",
+    readCache: async () => {
+      // Prefer the authoritative RPC result written by a prior online fetch.
+      const rpc = await readRpcCache(cacheKey);
+      if (rpc) return rpc;
+      // Cold rpc_cache — fall back to local computation so the UI isn't blank
+      // while the first online fetch is in flight.
+      return computeAccountBalancesFromCache({ projectedToDate });
+    },
+    fetchFresh: async () => {
+      const result = await tryOnline(() => _getAccountBalances({ projectedToDate }));
+      if (!result.offline) return result.data;
+      // Genuinely offline — compute from whatever transactions are in Dexie.
+      return computeAccountBalancesFromCache({ projectedToDate });
+    },
+    writeCache: async (rows) => {
+      // Store the full result (including computed balance fields) in rpc_cache
+      // so subsequent readCache calls serve the correct server-computed values.
+      await writeRpcCache(cacheKey, rows);
+      // Also write raw account metadata to db.accounts so the offline fallback
+      // (computeAccountBalancesFromCache) has up-to-date starting_balance / type.
       const COMPUTED = [
         "transaction_net",
         "balance",
@@ -442,7 +468,7 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
         "projected_balance",
         "is_asset",
       ];
-      return cacheAccountsHelper(
+      await cacheAccountsHelper(
         rows.map((row) => {
           const clean = { ...row };
           for (const k of COMPUTED) delete clean[k];
@@ -458,9 +484,9 @@ async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
   accounts = accounts.filter((a) => a.is_active !== false);
   if (!accounts.length) return [];
 
-  // Today's date string for filtering actual vs projected
+  // Today's date string — use UTC to match Supabase's CURRENT_DATE (server UTC).
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
   const allTx = await db.transactions.toArray();
   const netByAccount = {};
@@ -723,7 +749,7 @@ export async function getMaxProjectedDateOffline() {
 
   // Offline: scan IndexedDB for projected or future-dated posted transactions
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
   const allTx = await db.transactions.toArray();
   const dates = allTx
     .filter(
@@ -874,7 +900,7 @@ export async function getAccountBalanceHistoryOffline(opts) {
   if (!accounts.length) return [];
 
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
   let allTx = await db.transactions.toArray();
   allTx = allTx.filter(
@@ -959,7 +985,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   if (!accountIds?.length) return [];
 
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
   let rows = await db.transactions.toArray();
   rows = rows.filter(
