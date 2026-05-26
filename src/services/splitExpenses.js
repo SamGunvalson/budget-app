@@ -266,15 +266,21 @@ export async function getSplitTransactionIds(partnershipId) {
   return new Set((data ?? []).map((d) => d.transaction_id));
 }
 
-// ─── Notification seen-state helpers (localStorage, no DB required) ───────────
+// ─── Notification seen-state helpers ─────────────────────────────────────────
+//
+// Primary source of truth: the partnership row's user_a_seen_at / user_b_seen_at
+// columns in Supabase (cross-device).  localStorage is maintained as an offline
+// fallback so the correct seen-at is available immediately before the DB fetch
+// completes or when the app is offline.
 
 const SEEN_KEY = (userId) => `splitSeenAt_${userId}`;
 
 /**
- * Record that the current user has seen all split notifications up to now.
+ * Write the current timestamp to localStorage as an offline fallback.
+ * The authoritative server-side write is handled by markSplitsSeenDB in partnerships.js.
  * @param {string} userId
  */
-export function markSplitsSeen(userId) {
+export function markSplitsSeenLocal(userId) {
   if (!userId) return;
   try {
     localStorage.setItem(SEEN_KEY(userId), new Date().toISOString());
@@ -284,16 +290,38 @@ export function markSplitsSeen(userId) {
 }
 
 /**
- * Get the ISO timestamp of the last time this user dismissed split notifications.
- * Returns null if never seen.
+ * Get the best available "last seen at" timestamp for this user.
+ *
+ * Priority:
+ *   1. dbSeenAt — value from the partnership row (cross-device, passed by the caller)
+ *   2. localStorage — fallback for offline / before the DB value loads
+ *
+ * Returns null if never seen on any device.
+ *
  * @param {string} userId
- * @returns {string|null}
+ * @param {string|null} dbSeenAt - Value from partnership.user_a_seen_at or user_b_seen_at
+ * @returns {string|null} ISO timestamp or null
  */
-export function getLastSeenSplitsAt(userId) {
+export function getLastSeenSplitsAt(userId, dbSeenAt = null) {
   if (!userId) return null;
-  try {
-    return localStorage.getItem(SEEN_KEY(userId));
-  } catch {
+
+  // Use whichever is more recent: the DB value or the local cache
+  const localSeenAt = (() => {
+    try {
+      return localStorage.getItem(SEEN_KEY(userId));
+    } catch {
+      return null;
+    }
+  })();
+
+  if (dbSeenAt && localSeenAt) {
+    // Parse to ms to handle mixed ISO formats (e.g. Supabase "+00:00" vs JS "Z")
+    const dbMs = Date.parse(dbSeenAt);
+    const localMs = Date.parse(localSeenAt);
+    if (!isNaN(dbMs) && !isNaN(localMs)) return dbMs >= localMs ? dbSeenAt : localSeenAt;
+    if (!isNaN(dbMs)) return dbSeenAt;
+    if (!isNaN(localMs)) return localSeenAt;
     return null;
   }
+  return dbSeenAt ?? localSeenAt;
 }

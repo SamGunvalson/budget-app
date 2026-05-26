@@ -13,14 +13,16 @@
 -- 1. partnerships
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE partnerships (
-  id            UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_a_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  user_b_id     UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
-  invited_email TEXT        NOT NULL,
-  status        TEXT        NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending', 'active', 'dissolved')),
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
+  id               UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_a_id        UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_b_id        UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
+  invited_email    TEXT        NOT NULL,
+  status           TEXT        NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending', 'active', 'dissolved')),
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ DEFAULT NOW(),
+  user_a_seen_at   TIMESTAMPTZ,
+  user_b_seen_at   TIMESTAMPTZ
 );
 
 ALTER TABLE partnerships ENABLE ROW LEVEL SECURITY;

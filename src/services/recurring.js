@@ -13,6 +13,13 @@ import { computeShares, createSplitExpense } from "./splitExpenses";
 // browser tabs running initializeRecurringCycle at the same time).
 let _generatingPromise = null;
 
+/**
+ * How many days ahead to project recurring transactions.
+ * Used by both the auth-warmup init cycle and post-update regeneration to
+ * keep the window consistent across the session.
+ */
+export const PROJECTION_WINDOW_DAYS = 90;
+
 // ── CRUD ──
 
 /**
@@ -301,6 +308,56 @@ export async function clearProjectedTransactionsForTemplate(templateId) {
 }
 
 /**
+ * Clear all stale projected/pending transactions for a template (standalone or
+ * group), then reset projected_through on the template and its children.
+ *
+ * Unlike clearProjectedTransactionsForTemplate, this function:
+ *  - Re-fetches children from the DB (not React state) so it catches all active
+ *    children including any that may have been missed by a stale UI snapshot.
+ *  - Also clears deactivated children (is_active=false) that may still have
+ *    projected/pending transactions lingering from before they were removed.
+ *  - Resets projected_through to NULL so the system knows projections are stale.
+ *
+ * Call this AFTER updating the template (so the RPC has already created/removed
+ * children) and BEFORE calling generateProjectedTransactions.
+ *
+ * @param {string} templateId - Parent template ID (or standalone template ID)
+ */
+export async function clearAllProjectionsForTemplate(templateId) {
+  const now = new Date().toISOString();
+
+  // Fetch ALL children (active and inactive) so we also clean up transactions
+  // that belong to recently removed line items.
+  const { data: children, error: childErr } = await supabase
+    .from("recurring_templates")
+    .select("id")
+    .eq("group_id", templateId);
+  if (childErr) throw childErr;
+
+  const idsToClean = [
+    templateId,
+    ...(children || []).map((c) => c.id),
+  ];
+
+  // Soft-delete all projected/pending transactions for this template family.
+  const { error: txErr } = await supabase
+    .from("transactions")
+    .update({ deleted_at: now })
+    .in("recurring_template_id", idsToClean)
+    .in("status", ["projected", "pending"])
+    .is("deleted_at", null);
+  if (txErr) throw txErr;
+
+  // Reset projected_through on the parent and all children so the system
+  // knows the projection window needs to be refilled.
+  const { error: tplErr } = await supabase
+    .from("recurring_templates")
+    .update({ projected_through: null })
+    .in("id", idsToClean);
+  if (tplErr) throw tplErr;
+}
+
+/**
  * Soft-delete a recurring template (set is_active = false).
  * If it's a group parent, also soft-delete all children.
  * @param {string} id
@@ -560,12 +617,18 @@ export async function applyRecurringTemplates(today) {
             ...child,
             payee: child.payee || template.payee,
           };
+          const opts = {
+            recurring_template_id: child.id,
+            recurring_occurrence_date: dateStr,
+            status: child.auto_confirm ?? template.auto_confirm ? "posted" : "pending",
+          };
           try {
             if (childWithPayee.is_transfer && childWithPayee.to_account_id) {
               const [out, inc] = await applyAsTransfer(
                 user,
                 childWithPayee,
                 dateStr,
+                opts,
               );
               createdTransactions.push(out, inc);
             } else if (
@@ -576,6 +639,7 @@ export async function applyRecurringTemplates(today) {
                 user,
                 childWithPayee,
                 dateStr,
+                opts,
               );
               createdTransactions.push(main, comp);
             } else {
@@ -583,10 +647,13 @@ export async function applyRecurringTemplates(today) {
                 user,
                 childWithPayee,
                 dateStr,
+                opts,
               );
               createdTransactions.push(tx);
             }
           } catch (err) {
+            // 23505 = unique violation — this occurrence was already applied; skip silently
+            if (err?.code === "23505") continue;
             console.error(
               `Failed to apply group child "${childWithPayee.description}" for ${dateStr}:`,
               err,
@@ -611,23 +678,31 @@ export async function applyRecurringTemplates(today) {
       // ── Standalone template (non-group) ──
       for (const date of pending) {
         const dateStr = format(date, "yyyy-MM-dd");
+        const opts = {
+          recurring_template_id: template.id,
+          recurring_occurrence_date: dateStr,
+          status: template.auto_confirm ? "posted" : "pending",
+        };
 
         try {
           if (template.is_transfer && template.to_account_id) {
-            const [out, inc] = await applyAsTransfer(user, template, dateStr);
+            const [out, inc] = await applyAsTransfer(user, template, dateStr, opts);
             createdTransactions.push(out, inc);
           } else if (!template.is_transfer && template.to_account_id) {
             const [main, comp] = await applyAsLinkedTransfer(
               user,
               template,
               dateStr,
+              opts,
             );
             createdTransactions.push(main, comp);
           } else {
-            const tx = await applyAsTransaction(user, template, dateStr);
+            const tx = await applyAsTransaction(user, template, dateStr, opts);
             createdTransactions.push(tx);
           }
         } catch (err) {
+          // 23505 = unique violation — already applied; skip silently
+          if (err?.code === "23505") continue;
           console.error(
             `Failed to apply recurring "${template.description}" for ${dateStr}:`,
             err,
@@ -755,7 +830,7 @@ async function applyTemplateWithStatus(
 
 /**
  * Generate projected/pending transactions for all active recurring templates
- * within a rolling window (default: 30 days from today).
+ * within a rolling window (default: 90 days from today).
  *
  * Avoids duplicates by checking existing transactions linked to each template
  * via recurring_template_id + transaction_date.
@@ -764,7 +839,7 @@ async function applyTemplateWithStatus(
  * @returns {Promise<{ generated: number, transactions: Array }>}
  */
 export async function generateProjectedTransactions({
-  windowDays = 30,
+  windowDays = PROJECTION_WINDOW_DAYS,
   today: todayOverride,
 } = {}) {
   // Concurrency guard: if a generation run is already in flight, wait for it
@@ -1107,7 +1182,7 @@ export async function recordManualPayment(
  * @param {{ windowDays?: number }} [options]
  * @returns {Promise<{ generated: number, promoted: number, confirmed: number }>}
  */
-export async function initializeRecurringCycle({ windowDays = 30 } = {}) {
+export async function initializeRecurringCycle({ windowDays = PROJECTION_WINDOW_DAYS } = {}) {
   const result = { generated: 0, promoted: 0, confirmed: 0 };
 
   try {

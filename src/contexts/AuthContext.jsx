@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { pullAll, startSyncListener } from '../services/sync';
-import { initializeRecurringCycle } from '../services/recurring';
+import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import AuthContext from './authContextValue';
 
 export function AuthProvider({ children }) {
@@ -38,7 +38,7 @@ export function AuthProvider({ children }) {
       pullAll().catch((err) =>
         console.warn('AuthProvider: initial pull failed:', err?.message || err),
       );
-      initializeRecurringCycle({ windowDays: 180 }).catch((err) =>
+      initializeRecurringCycle({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
         console.warn('AuthProvider: recurring cycle init failed:', err?.message || err),
       );
       startSyncListener();

@@ -339,15 +339,17 @@ interface RecurringTemplate {
 
 **Purpose**: Link two users for shared expense splitting (2-person partnerships)
 
-| Column          | Type        | Constraints                 | Description                      |
-| --------------- | ----------- | --------------------------- | -------------------------------- |
-| `id`            | UUID        | PRIMARY KEY                 | Partnership ID                   |
-| `user_a_id`     | UUID        | FOREIGN KEY → users(id)     | Inviter                          |
-| `user_b_id`     | UUID        | FOREIGN KEY → users(id)     | Invitee (NULL until accepted)    |
-| `invited_email` | TEXT        | NOT NULL                    | Email of invited partner         |
-| `status`        | TEXT        | NOT NULL, DEFAULT 'pending' | 'pending', 'active', 'dissolved' |
-| `created_at`    | TIMESTAMPTZ | DEFAULT NOW()               | Creation timestamp               |
-| `updated_at`    | TIMESTAMPTZ | DEFAULT NOW()               | Last update timestamp            |
+| Column            | Type        | Constraints                 | Description                                         |
+| ----------------- | ----------- | --------------------------- | --------------------------------------------------- |
+| `id`              | UUID        | PRIMARY KEY                 | Partnership ID                                      |
+| `user_a_id`       | UUID        | FOREIGN KEY → users(id)     | Inviter                                             |
+| `user_b_id`       | UUID        | FOREIGN KEY → users(id)     | Invitee (NULL until accepted)                       |
+| `invited_email`   | TEXT        | NOT NULL                    | Email of invited partner                            |
+| `status`          | TEXT        | NOT NULL, DEFAULT 'pending' | 'pending', 'active', 'dissolved'                    |
+| `created_at`      | TIMESTAMPTZ | DEFAULT NOW()               | Creation timestamp                                  |
+| `updated_at`      | TIMESTAMPTZ | DEFAULT NOW()               | Last update timestamp                               |
+| `user_a_seen_at`  | TIMESTAMPTZ | NULL                        | Last time user_a dismissed their notification panel |
+| `user_b_seen_at`  | TIMESTAMPTZ | NULL                        | Last time user_b dismissed their notification panel |
 
 **Constraints**:
 
@@ -1144,6 +1146,7 @@ All tables are fully implemented and live.
 | `sql_scripts/supabase_split_expenses.sql`   | Creates partnerships, split_expenses tables, **and** `get_partner_email` RPC (run after main schema) |
 | `sql_scripts/supabase_partner_email_fn.sql` | Standalone migration — adds `get_partner_email` RPC to an **existing** database                      |
 | `sql_scripts/supabase_split_fix_rls.sql`    | Migration — fixes the `split_expenses` UPDATE policy on an existing database (drops and recreates)   |
+| `sql_scripts/supabase_partnership_seen.sql` | Migration — adds `user_a_seen_at` / `user_b_seen_at` columns to `partnerships` on an existing DB     |
 
 | Table                 | Purpose                                                         |
 | --------------------- | --------------------------------------------------------------- |
@@ -1159,6 +1162,6 @@ All tables are fully implemented and live.
 
 ---
 
-**Document version**: 1.6  
-**Last updated**: May 15, 2026  
+**Document version**: 1.7  
+**Last updated**: May 26, 2026  
 **Owner**: @SamGunvalson

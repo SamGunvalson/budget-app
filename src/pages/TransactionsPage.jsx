@@ -35,9 +35,10 @@ import {
   createRecurringGroup,
   updateRecurringGroup,
   generateProjectedTransactions,
-  clearProjectedTransactionsForTemplate,
+  clearAllProjectionsForTemplate,
   getRecurringTemplateById,
   getRecurringTemplates,
+  PROJECTION_WINDOW_DAYS,
 } from '../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
 import { toCents } from '../utils/helpers';
@@ -398,7 +399,7 @@ export default function TransactionsPage() {
   const handleCreateRecurring = async (values) => {
     await createRecurringTemplate(values);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions().catch((err) =>
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after recurring create:', err)
     );
     setShowRecurringForm(false);
@@ -406,13 +407,17 @@ export default function TransactionsPage() {
   };
 
   const handleUpdateRecurring = async (values) => {
-    // Clear stale projected/pending transactions so they're regenerated with the updated type
-    await clearProjectedTransactionsForTemplate(editingTemplate.id).catch((err) =>
-      console.warn('Failed to clear projected transactions before template update:', err)
-    );
+    // 1. Update the template first so the cleared projections are regenerated
+    //    with the new settings (not the old ones).
     await updateRecurringTemplate(editingTemplate.id, values);
-    // Regenerate projections using the updated template settings
-    await generateProjectedTransactions().catch((err) =>
+    // 2. Clear ALL stale projected/pending transactions for this template.
+    //    clearAllProjectionsForTemplate queries the DB directly (not React state)
+    //    to ensure every child of a group is covered, including recently removed ones.
+    await clearAllProjectionsForTemplate(editingTemplate.id).catch((err) =>
+      console.warn('Failed to clear projections before recurring update:', err)
+    );
+    // 3. Regenerate with the updated template settings.
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after recurring update:', err)
     );
     setEditingTemplate(null);
@@ -536,7 +541,7 @@ export default function TransactionsPage() {
 
     await createRecurringGroup(parentData, childrenData);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions().catch((err) =>
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after group create:', err)
     );
     setShowGroupForm(false);
@@ -545,14 +550,17 @@ export default function TransactionsPage() {
 
   const handleUpdateGroup = async (parentData, childrenData) => {
     if (!editingGroup) return;
-    // Clear stale projected/pending transactions for the parent and all current children
-    const clearIds = [editingGroup.id, ...(editingGroup.children || []).map((c) => c.id)];
-    await Promise.all(
-      clearIds.map((id) => clearProjectedTransactionsForTemplate(id).catch(() => {}))
-    );
+    // 1. Update the group template first (RPC handles adding/removing children).
     await updateRecurringGroup(editingGroup.id, parentData, childrenData);
-    // Regenerate projections using the updated template settings
-    await generateProjectedTransactions().catch((err) =>
+    // 2. Clear ALL stale projected/pending transactions.
+    //    clearAllProjectionsForTemplate re-fetches children from the DB so it
+    //    covers newly removed children (now is_active=false) and any that were
+    //    missing from the React-state snapshot in editingGroup.children.
+    await clearAllProjectionsForTemplate(editingGroup.id).catch((err) =>
+      console.warn('Failed to clear projections before group update:', err)
+    );
+    // 3. Regenerate with the updated template settings.
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after group update:', err)
     );
     setEditingGroup(null);

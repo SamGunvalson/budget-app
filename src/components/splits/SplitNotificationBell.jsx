@@ -1,21 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { formatCurrency } from '../../utils/helpers';
 
 /**
  * Bell icon button with notification badge for split expenses.
  *
  * Mobile: tapping the bell opens a bottom sheet that slides up from the bottom.
  * Desktop: opens a dropdown panel anchored below the bell button.
+ *
+ * Key design decisions:
+ * - Unseen expenses are snapshotted into local state when the panel opens so that
+ *   calling onMarkSeen() (which clears the live prop) does not empty the panel.
+ * - The bell is always clickable — even when unseenCount is 0 — so users can
+ *   review recent partner expenses at any time.
+ * - When there are no unseen items the panel shows recent partner history instead.
  */
 export default function SplitNotificationBell({
   unseenCount,
   unseenExpenses,
+  allPartnerExpenses,
   partnerEmail,
   currentUserId,
   onMarkSeen,
   loading,
 }) {
   const [open, setOpen] = useState(false);
+  // Snapshot of unseen items taken at the moment the panel opens.
+  // This prevents the panel from going blank when onMarkSeen() clears the live prop.
+  const [snapshot, setSnapshot] = useState([]);
   const panelRef = useRef(null);
   const buttonRef = useRef(null);
   const navigate = useNavigate();
@@ -36,8 +48,12 @@ export default function SplitNotificationBell({
   }, [open]);
 
   const handleToggle = () => {
-    if (!open && unseenCount > 0) {
-      onMarkSeen();
+    if (!open) {
+      // Snapshot unseen items BEFORE calling onMarkSeen so the panel can display them.
+      setSnapshot(unseenExpenses.slice());
+      if (unseenCount > 0) {
+        onMarkSeen();
+      }
     }
     setOpen((v) => !v);
   };
@@ -53,21 +69,26 @@ export default function SplitNotificationBell({
       day: 'numeric',
     });
 
-  const formatAmount = (cents) => `$${(cents / 100).toFixed(2)}`;
+  // Items to display: snapshotted unseen items when there are any; otherwise recent history.
+  const hasUnseen = snapshot.length > 0;
+  const displayItems = hasUnseen
+    ? snapshot
+    : (allPartnerExpenses ?? []).slice(0, 5);
 
   return (
     <div className="relative">
-      {/* Bell button */}
+      {/* Bell button — always enabled so users can review recent partner activity */}
       <button
         ref={buttonRef}
         type="button"
         aria-label={unseenCount > 0 ? `${unseenCount} new split expense${unseenCount !== 1 ? 's' : ''}` : 'Split notifications'}
         aria-expanded={open}
         onClick={handleToggle}
-        disabled={unseenCount === 0}
         className={`relative flex items-center justify-center rounded-lg p-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
           unseenCount === 0
-            ? 'cursor-default text-stone-300 dark:text-stone-600'
+            ? open
+              ? 'bg-stone-100 text-stone-700 dark:bg-stone-700 dark:text-stone-200'
+              : 'text-stone-400 hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-stone-700 dark:hover:text-stone-300'
             : open
               ? 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400'
               : 'text-stone-500 hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200'
@@ -99,7 +120,7 @@ export default function SplitNotificationBell({
         <div
           ref={panelRef}
           role="dialog"
-          aria-label="New split expenses"
+          aria-label="Split expense notifications"
           className={[
             // Shared
             'z-50 flex flex-col overflow-hidden bg-white dark:bg-stone-800',
@@ -116,7 +137,7 @@ export default function SplitNotificationBell({
           <div className="flex items-center justify-between border-b border-stone-200/60 px-4 py-3 dark:border-stone-700/60">
             <div>
               <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
-                {unseenCount > 0 ? 'New from partner' : 'Split notifications'}
+                {hasUnseen ? 'New from partner' : 'Recent from partner'}
               </p>
               {partnerEmail && (
                 <p className="mt-0.5 truncate text-xs text-stone-500 dark:text-stone-400">
@@ -137,30 +158,33 @@ export default function SplitNotificationBell({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overscroll-contain">
             {loading ? (
               <div className="space-y-2 p-4">
                 {[1, 2].map((i) => (
                   <div key={i} className="h-12 animate-pulse rounded-lg bg-stone-100 dark:bg-stone-700" />
                 ))}
               </div>
-            ) : unseenExpenses.length === 0 ? (
+            ) : displayItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
                 <svg className="mb-2 h-10 w-10 text-stone-300 dark:text-stone-600" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
                 </svg>
-                <p className="text-sm text-stone-500 dark:text-stone-400">You're all caught up!</p>
+                <p className="text-sm text-stone-500 dark:text-stone-400">No partner expenses yet.</p>
               </div>
             ) : (
               <ul className="divide-y divide-stone-100 dark:divide-stone-700/60">
-                {unseenExpenses.slice(0, 5).map((exp) => {
+                {displayItems.map((exp) => {
                   const iPaid = exp.paid_by_user_id === currentUserId;
-                  const obligationDollars = formatAmount(exp.partner_share);
                   return (
                     <li key={exp.id} className="flex items-center gap-3 px-4 py-3">
                       {/* Icon */}
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pink-50 dark:bg-pink-900/20">
-                        <svg className="h-4 w-4 text-pink-500 dark:text-pink-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                        hasUnseen
+                          ? 'bg-pink-50 dark:bg-pink-900/20'
+                          : 'bg-stone-100 dark:bg-stone-700'
+                      }`}>
+                        <svg className={`h-4 w-4 ${hasUnseen ? 'text-pink-500 dark:text-pink-400' : 'text-stone-500 dark:text-stone-400'}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                         </svg>
                       </div>
@@ -177,11 +201,11 @@ export default function SplitNotificationBell({
                           {!exp.is_settlement && (
                             iPaid ? (
                               <span className="rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:bg-teal-900/20 dark:text-teal-400">
-                                They owe you {obligationDollars}
+                                They owe you {formatCurrency(exp.partner_share)}
                               </span>
                             ) : (
                               <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                                You owe {obligationDollars}
+                                You owe {formatCurrency(exp.partner_share)}
                               </span>
                             )
                           )}
@@ -190,7 +214,7 @@ export default function SplitNotificationBell({
 
                       {/* Amount */}
                       <p className="shrink-0 text-sm font-semibold tabular-nums text-stone-900 dark:text-stone-100">
-                        {formatAmount(exp.total_amount)}
+                        {formatCurrency(exp.total_amount)}
                       </p>
                     </li>
                   );

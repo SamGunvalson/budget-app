@@ -209,3 +209,19 @@ export async function getPartnerEmail(partnership, currentUserId) {
   if (error) throw error;
   return data;
 }
+
+/**
+ * Record that the current user has seen all split notifications up to now.
+ * Updates the correct seen_at column based on whether the user is user_a or user_b.
+ * @param {string} partnershipId - ID of the partnership
+ * @param {boolean} isUserA - True if the current user is user_a in the partnership
+ * @returns {Promise<void>}
+ */
+export async function markSplitsSeenDB(partnershipId, isUserA) {
+  const column = isUserA ? 'user_a_seen_at' : 'user_b_seen_at';
+  const { error } = await supabase
+    .from('partnerships')
+    .update({ [column]: new Date().toISOString() })
+    .eq('id', partnershipId);
+  if (error) throw error;
+}

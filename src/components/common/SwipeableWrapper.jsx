@@ -2,6 +2,19 @@ import { useRef, useCallback } from 'react';
 import { useSwipeable } from 'react-swipeable';
 import useSwipeNavigation from '../../hooks/useSwipeNavigation';
 
+// Minimum swipe distance (px) before a gesture is evaluated.
+const SWIPE_DELTA = 80;
+// Minimum velocity (px/ms) — rejects slow accidental drags.
+const MIN_VELOCITY = 0.3;
+// Swipe must be at least this fraction horizontal (rejects mostly-vertical gestures).
+const MIN_HORIZONTAL_RATIO = 0.65;
+// Maximum gesture duration (ms) — rejects slow drags, requires a flick.
+const MAX_SWIPE_DURATION = 500;
+// Minimum ms between consecutive page navigations.
+const NAV_COOLDOWN_MS = 400;
+// px of total travel before the direction lock is committed.
+const DIRECTION_LOCK_THRESHOLD = 12;
+
 /**
  * Wraps page content to enable mobile swipe-left / swipe-right navigation.
  * On desktop (or when the page isn't in the swipe sequence) it renders children as-is.
@@ -9,6 +22,10 @@ import useSwipeNavigation from '../../hooks/useSwipeNavigation';
 export default function SwipeableWrapper({ children }) {
   const { goNext, goPrev, canGoNext, canGoPrev, isSwipePage } = useSwipeNavigation();
   const wrapperRef = useRef(null);
+  /** 'h' | 'v' | null — locked once the gesture travels past DIRECTION_LOCK_THRESHOLD */
+  const lockedAxis = useRef(null);
+  /** Timestamp of the last navigation to enforce NAV_COOLDOWN_MS */
+  const lastNavTime = useRef(0);
 
   const playAnimation = useCallback((className) => {
     const el = wrapperRef.current;
@@ -20,11 +37,30 @@ export default function SwipeableWrapper({ children }) {
     el.classList.add(className);
   }, []);
 
+  /** Called continuously during the gesture. Lock axis as early as possible. */
+  const handleSwiping = useCallback((e) => {
+    if (lockedAxis.current) return;
+    if (e.absX + e.absY > DIRECTION_LOCK_THRESHOLD) {
+      lockedAxis.current = e.absX >= e.absY ? 'h' : 'v';
+    }
+  }, []);
+
+  /** Reset direction lock when the gesture ends (fired after onSwiped* or on cancel). */
+  const handleTouchEnd = useCallback(() => {
+    lockedAxis.current = null;
+  }, []);
+
   const handleSwipedLeft = useCallback(
     (e) => {
+      if (lockedAxis.current === 'v') return;
       if (document.querySelector('[data-modal-open]')) return;
       if (isInsideScrollable(e.event)) return;
+      if (e.velocity < MIN_VELOCITY) return;
+      if (e.absX / (e.absX + e.absY) < MIN_HORIZONTAL_RATIO) return;
+      const now = Date.now();
+      if (now - lastNavTime.current < NAV_COOLDOWN_MS) return;
       if (canGoNext) {
+        lastNavTime.current = now;
         playAnimation('animate-slide-in-right');
         goNext();
       }
@@ -34,9 +70,15 @@ export default function SwipeableWrapper({ children }) {
 
   const handleSwipedRight = useCallback(
     (e) => {
+      if (lockedAxis.current === 'v') return;
       if (document.querySelector('[data-modal-open]')) return;
       if (isInsideScrollable(e.event)) return;
+      if (e.velocity < MIN_VELOCITY) return;
+      if (e.absX / (e.absX + e.absY) < MIN_HORIZONTAL_RATIO) return;
+      const now = Date.now();
+      if (now - lastNavTime.current < NAV_COOLDOWN_MS) return;
       if (canGoPrev) {
+        lastNavTime.current = now;
         playAnimation('animate-slide-in-left');
         goPrev();
       }
@@ -45,9 +87,12 @@ export default function SwipeableWrapper({ children }) {
   );
 
   const { ref: swipeRef, ...swipeProps } = useSwipeable({
+    onSwiping: handleSwiping,
     onSwipedLeft: handleSwipedLeft,
     onSwipedRight: handleSwipedRight,
-    delta: 50,
+    onTouchEndOrOnMouseUp: handleTouchEnd,
+    delta: SWIPE_DELTA,
+    swipeDuration: MAX_SWIPE_DURATION,
     trackTouch: true,
     trackMouse: false,
     preventScrollOnSwipe: false,
