@@ -6,8 +6,8 @@ import SplitExpenseList from '../components/splits/SplitExpenseList';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import SettleUpModal from '../components/splits/SettleUpModal';
 import Modal from '../components/common/Modal';
-import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
-import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeen } from '../services/splitExpenses';
+import { getPartnership, getPartnerEmail, getPartnerId, markSplitsSeenDB } from '../services/partnerships';
+import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeenLocal } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 
 export default function SplitExpensesPage() {
@@ -63,8 +63,11 @@ export default function SplitExpensesPage() {
 
   // Mark split notifications as seen when this page is viewed
   useEffect(() => {
-    if (currentUser?.id) markSplitsSeen(currentUser.id);
-  }, [currentUser?.id]);
+    if (!currentUser?.id || !partnership?.id) return;
+    const isUserA = partnership.user_a_id === currentUser.id;
+    markSplitsSeenLocal(currentUser.id);
+    markSplitsSeenDB(partnership.id, isUserA).catch(() => {});
+  }, [currentUser?.id, partnership?.id, partnership?.user_a_id]);
 
   // Load split expenses + balance
   const loadExpenses = useCallback(async () => {

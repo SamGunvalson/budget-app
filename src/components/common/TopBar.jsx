@@ -27,6 +27,7 @@ export default function TopBar() {
   const [partnership, setPartnership] = useState(null);
   const [partnerEmail, setPartnerEmail] = useState('');
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [isUserA, setIsUserA] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +37,7 @@ export default function TopBar() {
         if (cancelled) return;
         setCurrentUserId(user?.id ?? null);
         setPartnership(p);
+        setIsUserA(p?.user_a_id === user?.id);
         if (p && user) {
           const email = await getPartnerEmail(p, user.id);
           if (!cancelled) setPartnerEmail(email);
@@ -46,8 +48,8 @@ export default function TopBar() {
     return () => { cancelled = true; };
   }, []);
 
-  const { unseenCount, unseenExpenses, markAsSeen, loading: notifLoading } =
-    useSplitNotifications({ partnership, currentUserId });
+  const { unseenCount, unseenExpenses, allPartnerExpenses, markAsSeen, loading: notifLoading } =
+    useSplitNotifications({ partnership, currentUserId, isUserA });
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -90,7 +92,7 @@ export default function TopBar() {
   );
 
   return (
-    <nav className="sticky top-0 z-10 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
+    <nav className="sticky top-0 z-30 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Left: logo + mobile hamburger */}
         <div className="flex items-center gap-3">
@@ -173,6 +175,7 @@ export default function TopBar() {
             <SplitNotificationBell
               unseenCount={unseenCount}
               unseenExpenses={unseenExpenses}
+              allPartnerExpenses={allPartnerExpenses}
               partnerEmail={partnerEmail}
               currentUserId={currentUserId}
               onMarkSeen={markAsSeen}
