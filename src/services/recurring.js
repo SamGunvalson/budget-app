@@ -1174,16 +1174,100 @@ export async function recordManualPayment(
 }
 
 /**
+ * Soft-delete future projected/pending transactions that are no longer valid
+ * for their recurring template's current schedule.
+ *
+ * This handles the case where a template was edited (frequency, day, etc.)
+ * before the clear-on-update workflow existed, leaving stale projected
+ * transactions whose occurrence dates don't match the template's new schedule.
+ *
+ * Algorithm:
+ *  1. Compute all valid occurrence dates per template within the projection window.
+ *  2. Fetch every future projected/pending transaction linked to a template.
+ *  3. Soft-delete any transaction whose recurring_occurrence_date (or fallback
+ *     transaction_date) is not in the template's valid occurrence set.
+ *
+ * Safe to run on every login — it only touches projected/pending rows and
+ * never modifies posted transactions.
+ *
+ * @param {{ windowDays?: number, today?: Date }} [options]
+ * @returns {Promise<{ cleaned: number }>}
+ */
+export async function cleanupOrphanedProjections({
+  windowDays = PROJECTION_WINDOW_DAYS,
+  today: todayOverride,
+} = {}) {
+  const today = startOfDay(todayOverride || new Date());
+  const windowEnd = addDays(today, windowDays);
+  const todayStr = format(today, "yyyy-MM-dd");
+
+  // Build a set of valid "templateId|occurrenceDate" keys for the window.
+  const templates = await getRecurringTemplates();
+  const validKeys = new Set();
+
+  for (const template of templates) {
+    const occurrences = getOccurrencesInRange(template, today, windowEnd);
+    for (const d of occurrences) {
+      const dateStr = format(d, "yyyy-MM-dd");
+      if (template.is_group_parent) {
+        for (const child of template.children || []) {
+          validKeys.add(`${child.id}|${dateStr}`);
+        }
+      } else {
+        validKeys.add(`${template.id}|${dateStr}`);
+      }
+    }
+  }
+
+  // Also include today and any past-due pending transactions as valid — we
+  // only want to clean up future orphans, not today-or-past ones (those are
+  // handled by the confirm/skip flow).
+  const { data: futureTxs, error: fetchErr } = await supabase
+    .from("transactions")
+    .select("id, recurring_template_id, recurring_occurrence_date, transaction_date")
+    .in("status", ["projected", "pending"])
+    .is("deleted_at", null)
+    .not("recurring_template_id", "is", null)
+    .gt("transaction_date", todayStr);
+  if (fetchErr) throw fetchErr;
+
+  const orphanIds = (futureTxs || [])
+    .filter((tx) => {
+      const occDate = tx.recurring_occurrence_date ?? tx.transaction_date;
+      return !validKeys.has(`${tx.recurring_template_id}|${occDate}`);
+    })
+    .map((tx) => tx.id);
+
+  if (orphanIds.length === 0) return { cleaned: 0 };
+
+  const { error: delErr } = await supabase
+    .from("transactions")
+    .update({ deleted_at: new Date().toISOString() })
+    .in("id", orphanIds);
+  if (delErr) throw delErr;
+
+  return { cleaned: orphanIds.length };
+}
+
+/**
  * Run the full recurring lifecycle on app startup:
- * 1. Generate new projected/pending transactions for the rolling window
- * 2. Promote projected → pending for items within 7 days
- * 3. Auto-confirm due pending items (where template.auto_confirm = true)
+ * 1. Clean up orphaned projected/pending transactions (stale from past template edits)
+ * 2. Generate new projected/pending transactions for the rolling window
+ * 3. Promote projected → pending for items within 7 days
+ * 4. Auto-confirm due pending items (where template.auto_confirm = true)
  *
  * @param {{ windowDays?: number }} [options]
- * @returns {Promise<{ generated: number, promoted: number, confirmed: number }>}
+ * @returns {Promise<{ cleaned: number, generated: number, promoted: number, confirmed: number }>}
  */
 export async function initializeRecurringCycle({ windowDays = PROJECTION_WINDOW_DAYS } = {}) {
-  const result = { generated: 0, promoted: 0, confirmed: 0 };
+  const result = { cleaned: 0, generated: 0, promoted: 0, confirmed: 0 };
+
+  try {
+    const cleanResult = await cleanupOrphanedProjections({ windowDays });
+    result.cleaned = cleanResult.cleaned;
+  } catch (err) {
+    console.error("Failed to clean up orphaned projections:", err);
+  }
 
   try {
     const genResult = await generateProjectedTransactions({ windowDays });
