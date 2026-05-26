@@ -18,7 +18,7 @@ All reads go through React Query hooks in `src/hooks/queries.js`. Each hook wrap
 
 ### Data flow (writes)
 
-Mutations are imperative calls to the `*Offline` wrappers in `src/services/offlineAware.js`. Each wrapper:
+Mutations may be called directly from components via the `*Offline` wrappers in `src/services/offlineAware.js` — no hook layer is required for writes. Each wrapper:
 
 1. Online: calls the underlying Supabase service, then updates Dexie.
 2. Offline: writes to Dexie with `_offline` flags and enqueues the mutation for sync.
