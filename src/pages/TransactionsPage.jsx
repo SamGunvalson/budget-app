@@ -413,7 +413,9 @@ export default function TransactionsPage() {
     // 2. Clear ALL stale projected/pending transactions for this template.
     //    clearAllProjectionsForTemplate queries the DB directly (not React state)
     //    to ensure every child of a group is covered, including recently removed ones.
-    await clearAllProjectionsForTemplate(editingTemplate.id);
+    await clearAllProjectionsForTemplate(editingTemplate.id).catch((err) =>
+      console.warn('Failed to clear projections before recurring update:', err)
+    );
     // 3. Regenerate with the updated template settings.
     await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after recurring update:', err)
@@ -554,7 +556,9 @@ export default function TransactionsPage() {
     //    clearAllProjectionsForTemplate re-fetches children from the DB so it
     //    covers newly removed children (now is_active=false) and any that were
     //    missing from the React-state snapshot in editingGroup.children.
-    await clearAllProjectionsForTemplate(editingGroup.id);
+    await clearAllProjectionsForTemplate(editingGroup.id).catch((err) =>
+      console.warn('Failed to clear projections before group update:', err)
+    );
     // 3. Regenerate with the updated template settings.
     await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
       console.warn('Failed to generate projections after group update:', err)

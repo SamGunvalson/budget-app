@@ -56,8 +56,9 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
         );
 
         const lastSeenAt = getLastSeenSplitsAt(currentUserId, dbSeenAt);
-        const unseen = lastSeenAt
-          ? partnerAdded.filter((e) => e.created_at > lastSeenAt)
+        const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+        const unseen = !isNaN(lastSeenMs)
+          ? partnerAdded.filter((e) => Date.parse(e.created_at) > lastSeenMs)
           : partnerAdded;
 
         setAllPartnerExpenses(partnerAdded);
