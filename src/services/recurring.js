@@ -830,7 +830,7 @@ async function applyTemplateWithStatus(
 
 /**
  * Generate projected/pending transactions for all active recurring templates
- * within a rolling window (default: 30 days from today).
+ * within a rolling window (default: 90 days from today).
  *
  * Avoids duplicates by checking existing transactions linked to each template
  * via recurring_template_id + transaction_date.
