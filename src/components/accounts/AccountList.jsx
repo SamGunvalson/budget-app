@@ -122,6 +122,13 @@ function AccountGroup({ title, accounts, total, projectedTotal, totalColor, onVi
           const actual = account.balance;
           const projected = account.projected_balance ?? account.balance;
           const diff = projected - actual;
+          const isLiability = !isAssetAccount(account.type);
+          const positiveDiffColor = isLiability
+            ? 'text-red-500 dark:text-red-400'
+            : 'text-emerald-500 dark:text-emerald-400';
+          const negativeDiffColor = isLiability
+            ? 'text-emerald-500 dark:text-emerald-400'
+            : 'text-red-400 dark:text-red-500';
           const closed = Boolean(account.closed_at);
           return (
             <div
@@ -177,7 +184,7 @@ function AccountGroup({ title, accounts, total, projectedTotal, totalColor, onVi
                 {/* Projected balance — diff stacks above when positive, below when negative */}
                 <div className="text-right sm:w-24 flex flex-col items-end">
                   {diff > 0 && (
-                    <span className="text-[10px] font-medium text-emerald-500 dark:text-emerald-400">
+                    <span className={`text-[10px] font-medium ${positiveDiffColor}`}>
                       +{formatCurrency(Math.abs(diff))}
                     </span>
                   )}
@@ -187,7 +194,7 @@ function AccountGroup({ title, accounts, total, projectedTotal, totalColor, onVi
                     {projected < 0 && !isAssetAccount(account.type) ? '' : projected < 0 ? '−' : ''}{formatCurrency(Math.abs(projected))}
                   </span>
                   {diff < 0 && (
-                    <span className="text-[10px] font-medium text-red-400 dark:text-red-500">
+                    <span className={`text-[10px] font-medium ${negativeDiffColor}`}>
                       −{formatCurrency(Math.abs(diff))}
                     </span>
                   )}
