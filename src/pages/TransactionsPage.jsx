@@ -1005,7 +1005,7 @@ export default function TransactionsPage() {
               try {
                 const existing = await getSplitByTransaction(splittingTransaction.id);
                 if (existing) {
-                  await deleteSplitExpense(existing.id);
+                  await deleteSplitExpense(existing.id, partnership.id);
                 }
                 await createSplitExpense({
                   partnershipId: partnership.id,

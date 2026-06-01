@@ -34,7 +34,7 @@ archive/                ← Completed phase build guides (historical)
 
 - Supabase account & project creation
 - Environment variables (`.env`)
-- Database migration (`sql_scripts/supabase_schema_create.sql` + optional `sql_scripts/supabase_split_expenses.sql`)
+- Database migration (`sql_scripts/supabase_schema_create.sql` + optional `sql_scripts/supabase_split_expenses.sql`; use `sql_scripts/supabase_split_fix_rls.sql` for split RLS repair and `sql_scripts/supabase_split_dedup.sql` for duplicate split cleanup)
 - Default data setup, troubleshooting
 
 ### "I'm designing or querying the database"
@@ -316,7 +316,7 @@ package.json        ← Dependencies
 ## ❓ FAQ
 
 **Q: Where does the full database schema live?**  
-A: [DATA_MODEL.md](./DATA_MODEL.md) is the reference. For setup, run `sql_scripts/supabase_schema_create.sql` (core) and optionally `sql_scripts/supabase_split_expenses.sql` for split-expense features.
+A: [DATA_MODEL.md](./DATA_MODEL.md) is the reference. For setup, run `sql_scripts/supabase_schema_create.sql` (core) and optionally `sql_scripts/supabase_split_expenses.sql` for split-expense features. If split edit/delete RLS is broken on an existing DB, run `sql_scripts/supabase_split_fix_rls.sql`.
 
 **Q: How do I avoid AI hallucinations when generating code?**  
 A: [CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md)

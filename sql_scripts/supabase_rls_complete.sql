@@ -210,24 +210,17 @@ CREATE POLICY "Members can delete their partnerships"
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE split_expenses ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'split_expenses'
-      AND policyname = 'Members can view split expenses'
-  ) THEN
-    CREATE POLICY "Members can view split expenses"
-      ON split_expenses FOR SELECT
-      USING (
-        partnership_id IN (
-          SELECT id FROM partnerships
-          WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-            AND status = 'active'
-        )
-        AND deleted_at IS NULL
-      );
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Members can view split expenses" ON split_expenses;
+
+CREATE POLICY "Members can view split expenses"
+  ON split_expenses FOR SELECT
+  USING (
+    partnership_id IN (
+      SELECT id FROM partnerships
+      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+    )
+    AND deleted_at IS NULL
+  );
 
 DO $$ BEGIN
   IF NOT EXISTS (
@@ -261,34 +254,26 @@ CREATE POLICY "Members can update split expenses"
     AND partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
   )
   WITH CHECK (
     partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
   );
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'split_expenses'
-      AND policyname = 'Members can delete split expenses'
-  ) THEN
-    CREATE POLICY "Members can delete split expenses"
-      ON split_expenses FOR DELETE
-      USING (
-        partnership_id IN (
-          SELECT id FROM partnerships
-          WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-            AND status = 'active'
-        )
-      );
-  END IF;
-END $$;
+-- DROP + CREATE so re-running this script can correct an existing bad policy.
+DROP POLICY IF EXISTS "Members can delete split expenses" ON split_expenses;
+
+CREATE POLICY "Members can delete split expenses"
+  ON split_expenses FOR DELETE
+  USING (
+    partnership_id IN (
+      SELECT id FROM partnerships
+      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+    )
+  );
 
 
 -- =============================================================================

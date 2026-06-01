@@ -111,15 +111,16 @@ CREATE INDEX idx_split_expenses_paid_by
   ON split_expenses(paid_by_user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_split_expenses_transaction
   ON split_expenses(transaction_id) WHERE transaction_id IS NOT NULL AND deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_split_expenses_one_active_per_transaction
+  ON split_expenses(transaction_id) WHERE transaction_id IS NOT NULL AND deleted_at IS NULL;
 
--- RLS: scoped via active partnership membership
+-- RLS: scoped via partnership membership
 CREATE POLICY "Members can view split expenses"
   ON split_expenses FOR SELECT
   USING (
     partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
     AND deleted_at IS NULL
   );
@@ -140,7 +141,6 @@ CREATE POLICY "Members can update split expenses"
     partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
     AND deleted_at IS NULL
   )
@@ -148,7 +148,6 @@ CREATE POLICY "Members can update split expenses"
     partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
   );
 
@@ -158,7 +157,6 @@ CREATE POLICY "Members can delete split expenses"
     partnership_id IN (
       SELECT id FROM partnerships
       WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
     )
   );
 
