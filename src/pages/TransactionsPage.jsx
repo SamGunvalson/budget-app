@@ -107,15 +107,18 @@ export default function TransactionsPage() {
     );
   }, [queryClient, viewMode, year, month]);
 
-  // Incremented each time a load completes — used to trigger scroll-to-posted
+  const periodKey = `${viewMode}-${month}-${year}`;
+
+  // Trigger initial auto-scroll once per period, but preserve user scroll
+  // position during same-period data refreshes (e.g. saving edits).
   const [dataLoadKey, setDataLoadKey] = useState(0);
-  const lastUpdatedAtRef = useRef(0);
+  const autoScrolledPeriodRef = useRef('');
   useEffect(() => {
-    if (txQuery.dataUpdatedAt && txQuery.dataUpdatedAt !== lastUpdatedAtRef.current) {
-      lastUpdatedAtRef.current = txQuery.dataUpdatedAt;
-      setDataLoadKey((k) => k + 1);
-    }
-  }, [txQuery.dataUpdatedAt]);
+    if (!txQuery.isSuccess || !txQuery.dataUpdatedAt) return;
+    if (autoScrolledPeriodRef.current === periodKey) return;
+    autoScrolledPeriodRef.current = periodKey;
+    setDataLoadKey((k) => k + 1);
+  }, [txQuery.isSuccess, txQuery.dataUpdatedAt, periodKey]);
 
   // Filter state
   const [filters, setFilters] = useState({
@@ -194,7 +197,6 @@ export default function TransactionsPage() {
 
   // ---------- Reset selection on period/view change ----------
   // Render-time pattern (avoids set-state-in-effect lint rule).
-  const periodKey = `${viewMode}-${month}-${year}`;
   const [lastPeriodKey, setLastPeriodKey] = useState(periodKey);
   if (lastPeriodKey !== periodKey) {
     setLastPeriodKey(periodKey);
