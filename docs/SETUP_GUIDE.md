@@ -208,6 +208,8 @@ npm install recharts
 2. Re-run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
 3. In Supabase → Authentication → Policies, check each table has policies enabled
 4. If you use split expenses, make sure you also ran [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql)
+5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`sql_scripts/supabase_split_fix_rls.sql`](../sql_scripts/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
+6. If recurring confirmations created duplicate split rows, run [`sql_scripts/supabase_split_dedup.sql`](../sql_scripts/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
 
 ### Database tables not showing up
 

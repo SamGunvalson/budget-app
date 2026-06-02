@@ -86,6 +86,19 @@ export async function createSplitExpense({
   transactionId,
   expenseDate,
 }) {
+  if (transactionId) {
+    const { data: existing, error: existingErr } = await supabase
+      .from("split_expenses")
+      .select("*")
+      .eq("transaction_id", transactionId)
+      .eq("partnership_id", partnershipId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (existingErr) throw existingErr;
+    if (existing) return existing;
+  }
+
   const { data, error } = await supabase
     .from("split_expenses")
     .insert({
@@ -147,6 +160,10 @@ export async function createSettlement({
  * @param {string} partnershipId - Partnership the expense belongs to (used for defense-in-depth RLS filter)
  */
 export async function deleteSplitExpense(id, partnershipId) {
+  if (!partnershipId) {
+    throw new Error("deleteSplitExpense requires partnershipId");
+  }
+
   const { error } = await supabase
     .from("split_expenses")
     .update({ deleted_at: new Date().toISOString() })

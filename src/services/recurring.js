@@ -1051,14 +1051,17 @@ export async function autoConfirmDueTransactions(todayOverride) {
   if (toConfirm.length === 0) return 0;
 
   const confirmIds = toConfirm.map((tx) => tx.id);
-  const { error: updateErr } = await supabase
+  const { data: confirmedTxs, error: updateErr } = await supabase
     .from("transactions")
     .update({ status: "posted", updated_at: new Date().toISOString() })
-    .in("id", confirmIds);
+    .in("id", confirmIds)
+    .eq("status", "pending")
+    .is("deleted_at", null)
+    .select("id, recurring_template_id, transaction_date, description");
   if (updateErr) throw updateErr;
 
   // ── Auto-create split expenses for qualifying confirmed transactions ──
-  const splitTxs = toConfirm.filter((tx) => {
+  const splitTxs = (confirmedTxs || []).filter((tx) => {
     const tpl = splitTemplateMap.get(tx.recurring_template_id);
     return tpl && tpl.is_split && !tpl.is_transfer;
   });
@@ -1113,7 +1116,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
     }
   }
 
-  return confirmIds.length;
+  return (confirmedTxs || []).length;
 }
 
 /**

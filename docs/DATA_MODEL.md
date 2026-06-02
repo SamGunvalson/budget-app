@@ -384,13 +384,14 @@ interface RecurringTemplate {
 
 - CHECK: `total_amount > 0`
 - CHECK: `payer_share + partner_share = total_amount`
+- Unique partial: `transaction_id WHERE transaction_id IS NOT NULL AND deleted_at IS NULL` — at most one active split row per linked transaction
 
 **Balance formula** (from current user's perspective, positive = partner owes you):
 
 - Non-settlements: `+partner_share` when I paid, `-partner_share` when partner paid
 - Settlements: `+total_amount` when I paid (my debt decreases), `-total_amount` when partner paid me (their debt to me decreases)
 
-**RLS**: All operations scoped via active partnership membership (both `user_a_id` and `user_b_id`). Key detail for soft-delete: the UPDATE policy `USING` clause enforces `deleted_at IS NULL` (you can only update non-deleted rows), but the `WITH CHECK` clause intentionally does **not** require `deleted_at IS NULL` — this is what allows a soft-delete UPDATE to set the column without triggering a policy violation.
+**RLS**: Operations are scoped via partnership membership (both `user_a_id` and `user_b_id`); inserts require active partnerships, while reads/updates/deletes are membership-scoped. Key detail for soft-delete: the UPDATE policy `USING` clause enforces `deleted_at IS NULL` (you can only update non-deleted rows), but the `WITH CHECK` clause intentionally does **not** require `deleted_at IS NULL` — this is what allows a soft-delete UPDATE to set the column without triggering a policy violation.
 
 ---
 
@@ -1144,8 +1145,9 @@ All tables are fully implemented and live.
 | `sql_scripts/supabase_schema_create.sql`    | Creates all tables, indexes, and RLS policies from scratch on a new project                          |
 | `sql_scripts/supabase_rls_complete.sql`     | Idempotently re-applies RLS policies to an existing database (safe to re-run)                        |
 | `sql_scripts/supabase_split_expenses.sql`   | Creates partnerships, split_expenses tables, **and** `get_partner_email` RPC (run after main schema) |
+| `sql_scripts/supabase_split_dedup.sql`      | Migration — soft-deletes duplicate split rows by `transaction_id` and adds unique active-row index      |
 | `sql_scripts/supabase_partner_email_fn.sql` | Standalone migration — adds `get_partner_email` RPC to an **existing** database                      |
-| `sql_scripts/supabase_split_fix_rls.sql`    | Migration — fixes the `split_expenses` UPDATE policy on an existing database (drops and recreates)   |
+| `sql_scripts/supabase_split_fix_rls.sql`    | Migration — fixes `split_expenses` UPDATE/DELETE policies on an existing database (drops and recreates) |
 | `sql_scripts/supabase_partnership_seen.sql` | Migration — adds `user_a_seen_at` / `user_b_seen_at` columns to `partnerships` on an existing DB     |
 
 | Table                 | Purpose                                                         |
@@ -1162,6 +1164,6 @@ All tables are fully implemented and live.
 
 ---
 
-**Document version**: 1.7  
-**Last updated**: May 26, 2026  
+**Document version**: 2.0  
+**Last updated**: June 1, 2026  
 **Owner**: @SamGunvalson
