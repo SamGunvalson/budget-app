@@ -20,6 +20,7 @@ import {
   useTransactionsForYear,
   useCategories,
   useAccounts,
+  useUserPreference,
 } from '../hooks/queries';
 import {
   createTransfer,
@@ -49,6 +50,10 @@ import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partn
 import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
+import {
+  QUICK_TRANSACTION_TEMPLATES_KEY,
+  normalizeQuickTransactionTemplates,
+} from '../services/quickTransactions';
 
 // ================================================
 // TransactionsPage
@@ -68,10 +73,18 @@ export default function TransactionsPage() {
   const txQuery = viewMode === 'yearly' ? yearlyTxQuery : monthlyTxQuery;
   const categoriesQuery = useCategories();
   const accountsQuery = useAccounts();
+  const quickTemplatesQuery = useUserPreference(QUICK_TRANSACTION_TEMPLATES_KEY);
 
   const transactions = useMemo(() => txQuery.data ?? [], [txQuery.data]);
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const quickTemplates = useMemo(
+    () =>
+      normalizeQuickTransactionTemplates(quickTemplatesQuery.data).filter(
+        (t) => t.is_active !== false,
+      ),
+    [quickTemplatesQuery.data],
+  );
 
   // favoriteAccountIds — not yet served by react-query (single user pref). Loaded once.
   const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
@@ -134,6 +147,7 @@ export default function TransactionsPage() {
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showQuickModal, setShowQuickModal] = useState(false);
   const [showRecurringPanel, setShowRecurringPanel] = useState(false);
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [showGroupForm, setShowGroupForm] = useState(false);
@@ -165,6 +179,11 @@ export default function TransactionsPage() {
   const [splitTransactionIds, setSplitTransactionIds] = useState(new Set());
   const [splittingTransaction, setSplittingTransaction] = useState(null);
   const [splitLoading, setSplitLoading] = useState(false);
+  const [selectedQuickTemplate, setSelectedQuickTemplate] = useState(null);
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState('');
 
   // Transaction management hook
   const handleError = useCallback((msg) => setMutationError(msg), []);
@@ -364,6 +383,81 @@ export default function TransactionsPage() {
     const created = await createAdjustment(values);
     setTransactions((prev) => [created, ...prev]);
     setShowCreateModal(false);
+  };
+
+  const openQuickModal = () => {
+    setShowQuickModal(true);
+    setSelectedQuickTemplate(null);
+    setQuickAmount('');
+    setQuickDate(new Date().toISOString().split('T')[0]);
+    setQuickError('');
+  };
+
+  const handleQuickSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedQuickTemplate) return;
+    const amountNum = Number(quickAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setQuickError('Amount must be greater than 0.');
+      return;
+    }
+    if (!quickDate) {
+      setQuickError('Date is required.');
+      return;
+    }
+
+    setQuickSaving(true);
+    setQuickError('');
+    try {
+      const amountCents = toCents(amountNum);
+      const created = await createTransaction({
+        account_id: selectedQuickTemplate.account_id,
+        category_id: selectedQuickTemplate.category_id,
+        amount: amountCents,
+        description: selectedQuickTemplate.description,
+        payee: selectedQuickTemplate.payee || null,
+        transaction_date: quickDate,
+        is_income: selectedQuickTemplate.is_income,
+      });
+      setTransactions((prev) => [created, ...prev]);
+
+      if (selectedQuickTemplate.is_split && partnership && currentUser) {
+        const partnerIdForSplit = getPartnerId(partnership, currentUser.id);
+        if (partnerIdForSplit) {
+          const { payerShare, partnerShare, paidByUserId } = computeShares(
+            Math.abs(amountCents),
+            selectedQuickTemplate.split_method,
+            selectedQuickTemplate.split_payer,
+            selectedQuickTemplate.split_partner_share_pct,
+            currentUser.id,
+            partnerIdForSplit,
+          );
+          await createSplitExpense({
+            partnershipId: partnership.id,
+            description:
+              selectedQuickTemplate.description ||
+              selectedQuickTemplate.label ||
+              created.description,
+            totalAmount: Math.abs(amountCents),
+            payerShare,
+            partnerShare,
+            paidByUserId,
+            transactionId: created.id,
+            expenseDate: quickDate,
+          });
+          setSplitTransactionIds((prev) => new Set([...prev, created.id]));
+        }
+      }
+
+      setShowQuickModal(false);
+      setSelectedQuickTemplate(null);
+      setQuickAmount('');
+      setQuickDate(new Date().toISOString().split('T')[0]);
+    } catch (err) {
+      setQuickError(err?.message || 'Failed to create quick transaction.');
+    } finally {
+      setQuickSaving(false);
+    }
   };
 
   // ---------- Update wrappers (intercept isSplit) ----------
@@ -595,6 +689,17 @@ export default function TransactionsPage() {
             </button>
             <button
               type="button"
+              title="Quick"
+              onClick={openQuickModal}
+              className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-2.5 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 sm:px-5 sm:py-2.5 dark:border-emerald-700 dark:bg-stone-800 dark:text-emerald-400 dark:hover:bg-stone-700"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a5.25 5.25 0 10-7.43 7.43 5.25 5.25 0 007.43-7.43zM8.5 8.5l7 7m0-7h4.5m-4.5 0V4" />
+              </svg>
+              <span className="hidden sm:inline">Quick</span>
+            </button>
+            <button
+              type="button"
               title="New Transaction"
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 rounded-xl bg-amber-500 px-2.5 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] sm:px-5 sm:py-2.5"
@@ -808,6 +913,105 @@ export default function TransactionsPage() {
             partnership={partnership}
             favoriteAccountIds={favoriteAccountIds}
           />
+        </Modal>
+      )}
+
+      {/* Quick create modal */}
+      {showQuickModal && (
+        <Modal
+          title={selectedQuickTemplate ? `Quick: ${selectedQuickTemplate.label}` : 'Quick Transactions'}
+          onClose={() => {
+            setShowQuickModal(false);
+            setSelectedQuickTemplate(null);
+            setQuickError('');
+          }}
+        >
+          {selectedQuickTemplate ? (
+            <form onSubmit={handleQuickSubmit} className="space-y-4">
+              {quickError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                  {quickError}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-stone-200/60 bg-stone-50/60 px-3 py-2 dark:border-stone-700/60 dark:bg-stone-900/40">
+                <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{selectedQuickTemplate.description}</p>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  {selectedQuickTemplate.payee || 'No payee'}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">Amount ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={quickAmount}
+                  onChange={(e) => setQuickAmount(e.target.value)}
+                  autoFocus
+                  className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">Date</label>
+                <input
+                  type="date"
+                  value={quickDate}
+                  onChange={(e) => setQuickDate(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedQuickTemplate(null);
+                    setQuickAmount('');
+                    setQuickError('');
+                  }}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickSaving}
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {quickSaving ? 'Posting…' : 'Post'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-3">
+              {quickTemplates.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-stone-200 px-3 py-3 text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+                  No quick templates configured yet. Add them in Settings.
+                </p>
+              ) : (
+                quickTemplates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedQuickTemplate(tpl);
+                      setQuickError('');
+                    }}
+                    className="w-full rounded-xl border border-stone-200/60 bg-white px-4 py-3 text-left shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-stone-700/60 dark:bg-stone-900/40 dark:hover:border-emerald-700 dark:hover:bg-stone-800"
+                  >
+                    <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{tpl.label}</p>
+                    <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+                      {tpl.description}
+                      {tpl.payee ? ` · ${tpl.payee}` : ''}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </Modal>
       )}
 
