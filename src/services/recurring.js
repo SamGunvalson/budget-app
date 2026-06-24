@@ -291,24 +291,78 @@ export async function getRecurringTemplateById(id) {
 }
 
 /**
- * Soft-delete all projected and pending transactions generated from a specific
+ * Soft-delete all future projected and pending transactions generated from a specific
  * recurring template. Call this before updating a template so stale projections
  * are cleared and regenerated with the updated settings.
  * Posted transactions are intentionally left untouched.
  * @param {string} templateId
  */
 export async function clearProjectedTransactionsForTemplate(templateId) {
+  const now = new Date().toISOString();
+  const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
   const { error } = await supabase
     .from("transactions")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ deleted_at: now, updated_at: now })
     .eq("recurring_template_id", templateId)
     .in("status", ["projected", "pending"])
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .gte("transaction_date", todayStr);
+  if (error) throw error;
+}
+
+async function getTemplateFamilyIds(
+  templateId,
+  { includeSiblingsForChild = true } = {},
+) {
+  const { data: template, error: tplErr } = await supabase
+    .from("recurring_templates")
+    .select("id, group_id, is_group_parent")
+    .eq("id", templateId)
+    .maybeSingle();
+  if (tplErr) throw tplErr;
+
+  // Missing template (already deleted) — still clean by the provided id.
+  if (!template) return [templateId];
+
+  if (template.group_id && !includeSiblingsForChild) return [template.id];
+
+  const familyRootId = template.group_id || template.id;
+  const { data: children, error: childErr } = await supabase
+    .from("recurring_templates")
+    .select("id")
+    .eq("group_id", familyRootId);
+  if (childErr) throw childErr;
+
+  return [familyRootId, ...(children || []).map((c) => c.id)];
+}
+
+async function clearFutureProjectedPendingForTemplateIds(templateIds) {
+  if (!templateIds.length) return 0;
+  const now = new Date().toISOString();
+  const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
+  const { data, error } = await supabase
+    .from("transactions")
+    .update({ deleted_at: now, updated_at: now })
+    .in("recurring_template_id", templateIds)
+    .in("status", ["projected", "pending"])
+    .is("deleted_at", null)
+    .gte("transaction_date", todayStr)
+    .select("id");
+  if (error) throw error;
+  return data?.length || 0;
+}
+
+async function resetProjectedThroughForTemplateIds(templateIds) {
+  if (!templateIds.length) return;
+  const { error } = await supabase
+    .from("recurring_templates")
+    .update({ projected_through: null })
+    .in("id", templateIds);
   if (error) throw error;
 }
 
 /**
- * Clear all stale projected/pending transactions for a template (standalone or
+ * Clear future stale projected/pending transactions for a template (standalone or
  * group), then reset projected_through on the template and its children.
  *
  * Unlike clearProjectedTransactionsForTemplate, this function:
@@ -324,37 +378,30 @@ export async function clearProjectedTransactionsForTemplate(templateId) {
  * @param {string} templateId - Parent template ID (or standalone template ID)
  */
 export async function clearAllProjectionsForTemplate(templateId) {
-  const now = new Date().toISOString();
+  const templateIds = await getTemplateFamilyIds(templateId);
+  await clearFutureProjectedPendingForTemplateIds(templateIds);
+  await resetProjectedThroughForTemplateIds(templateIds);
+}
 
-  // Fetch ALL children (active and inactive) so we also clean up transactions
-  // that belong to recently removed line items.
-  const { data: children, error: childErr } = await supabase
-    .from("recurring_templates")
-    .select("id")
-    .eq("group_id", templateId);
-  if (childErr) throw childErr;
-
-  const idsToClean = [
-    templateId,
-    ...(children || []).map((c) => c.id),
-  ];
-
-  // Soft-delete all projected/pending transactions for this template family.
-  const { error: txErr } = await supabase
-    .from("transactions")
-    .update({ deleted_at: now })
-    .in("recurring_template_id", idsToClean)
-    .in("status", ["projected", "pending"])
-    .is("deleted_at", null);
-  if (txErr) throw txErr;
-
-  // Reset projected_through on the parent and all children so the system
-  // knows the projection window needs to be refilled.
-  const { error: tplErr } = await supabase
-    .from("recurring_templates")
-    .update({ projected_through: null })
-    .in("id", idsToClean);
-  if (tplErr) throw tplErr;
+/**
+ * Rebuild future recurring transactions for a template family:
+ * 1) clear future projected/pending rows
+ * 2) reset projected_through
+ * 3) regenerate projection window
+ *
+ * @param {string} templateId
+ * @param {{ windowDays?: number }} [options]
+ * @returns {Promise<{ cleaned: number, generated: number }>}
+ */
+export async function refreshRecurringTemplateFamily(
+  templateId,
+  { windowDays = PROJECTION_WINDOW_DAYS } = {},
+) {
+  const templateIds = await getTemplateFamilyIds(templateId);
+  const cleaned = await clearFutureProjectedPendingForTemplateIds(templateIds);
+  await resetProjectedThroughForTemplateIds(templateIds);
+  const generated = await generateProjectedTransactions({ windowDays });
+  return { cleaned, generated: generated.generated };
 }
 
 /**
@@ -363,6 +410,11 @@ export async function clearAllProjectionsForTemplate(templateId) {
  * @param {string} id
  */
 export async function deleteRecurringTemplate(id) {
+  const familyIds = await getTemplateFamilyIds(id, {
+    includeSiblingsForChild: false,
+  });
+  await clearFutureProjectedPendingForTemplateIds(familyIds);
+
   // Check if this is a group parent
   const { data: template } = await supabase
     .from("recurring_templates")
@@ -394,7 +446,13 @@ export async function deleteRecurringTemplate(id) {
  * @param {string} id
  */
 export async function pauseRecurringTemplate(id) {
-  return updateRecurringTemplate(id, { is_paused: true });
+  const updated = await updateRecurringTemplate(id, { is_paused: true });
+  const templateIds = await getTemplateFamilyIds(id, {
+    includeSiblingsForChild: false,
+  });
+  await clearFutureProjectedPendingForTemplateIds(templateIds);
+  await resetProjectedThroughForTemplateIds(templateIds);
+  return updated;
 }
 
 /**
@@ -402,7 +460,14 @@ export async function pauseRecurringTemplate(id) {
  * @param {string} id
  */
 export async function resumeRecurringTemplate(id) {
-  return updateRecurringTemplate(id, { is_paused: false });
+  const updated = await updateRecurringTemplate(id, { is_paused: false });
+  const templateIds = await getTemplateFamilyIds(id, {
+    includeSiblingsForChild: false,
+  });
+  await clearFutureProjectedPendingForTemplateIds(templateIds);
+  await resetProjectedThroughForTemplateIds(templateIds);
+  await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS });
+  return updated;
 }
 
 /**
@@ -1245,7 +1310,10 @@ export async function cleanupOrphanedProjections({
 
   const { error: delErr } = await supabase
     .from("transactions")
-    .update({ deleted_at: new Date().toISOString() })
+    .update({
+      deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
     .in("id", orphanIds);
   if (delErr) throw delErr;
 

@@ -20,6 +20,7 @@ import {
   useTransactionsForYear,
   useCategories,
   useAccounts,
+  useUserPreference,
 } from '../hooks/queries';
 import {
   createTransfer,
@@ -35,7 +36,7 @@ import {
   createRecurringGroup,
   updateRecurringGroup,
   generateProjectedTransactions,
-  clearAllProjectionsForTemplate,
+  refreshRecurringTemplateFamily,
   getRecurringTemplateById,
   getRecurringTemplates,
   PROJECTION_WINDOW_DAYS,
@@ -49,6 +50,10 @@ import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partn
 import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/supabase';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
+import {
+  QUICK_TRANSACTION_TEMPLATES_KEY,
+  normalizeQuickTransactionTemplates,
+} from '../services/quickTransactions';
 
 // ================================================
 // TransactionsPage
@@ -68,10 +73,18 @@ export default function TransactionsPage() {
   const txQuery = viewMode === 'yearly' ? yearlyTxQuery : monthlyTxQuery;
   const categoriesQuery = useCategories();
   const accountsQuery = useAccounts();
+  const quickTemplatesQuery = useUserPreference(QUICK_TRANSACTION_TEMPLATES_KEY);
 
   const transactions = useMemo(() => txQuery.data ?? [], [txQuery.data]);
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const quickTemplates = useMemo(
+    () =>
+      normalizeQuickTransactionTemplates(quickTemplatesQuery.data).filter(
+        (t) => t.is_active !== false,
+      ),
+    [quickTemplatesQuery.data],
+  );
 
   // favoriteAccountIds — not yet served by react-query (single user pref). Loaded once.
   const [favoriteAccountIds, setFavoriteAccountIds] = useState([]);
@@ -134,6 +147,7 @@ export default function TransactionsPage() {
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showQuickModal, setShowQuickModal] = useState(false);
   const [showRecurringPanel, setShowRecurringPanel] = useState(false);
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [showGroupForm, setShowGroupForm] = useState(false);
@@ -165,6 +179,11 @@ export default function TransactionsPage() {
   const [splitTransactionIds, setSplitTransactionIds] = useState(new Set());
   const [splittingTransaction, setSplittingTransaction] = useState(null);
   const [splitLoading, setSplitLoading] = useState(false);
+  const [selectedQuickTemplate, setSelectedQuickTemplate] = useState(null);
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState('');
 
   // Transaction management hook
   const handleError = useCallback((msg) => setMutationError(msg), []);
@@ -366,6 +385,81 @@ export default function TransactionsPage() {
     setShowCreateModal(false);
   };
 
+  const openQuickModal = () => {
+    setShowQuickModal(true);
+    setSelectedQuickTemplate(null);
+    setQuickAmount('');
+    setQuickDate(new Date().toISOString().split('T')[0]);
+    setQuickError('');
+  };
+
+  const handleQuickSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedQuickTemplate) return;
+    const amountNum = Number(quickAmount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setQuickError('Amount must be greater than 0.');
+      return;
+    }
+    if (!quickDate) {
+      setQuickError('Date is required.');
+      return;
+    }
+
+    setQuickSaving(true);
+    setQuickError('');
+    try {
+      const amountCents = toCents(amountNum);
+      const created = await createTransaction({
+        account_id: selectedQuickTemplate.account_id,
+        category_id: selectedQuickTemplate.category_id,
+        amount: amountCents,
+        description: selectedQuickTemplate.description,
+        payee: selectedQuickTemplate.payee || null,
+        transaction_date: quickDate,
+        is_income: selectedQuickTemplate.is_income,
+      });
+      setTransactions((prev) => [created, ...prev]);
+
+      if (selectedQuickTemplate.is_split && partnership && currentUser) {
+        const partnerIdForSplit = getPartnerId(partnership, currentUser.id);
+        if (partnerIdForSplit) {
+          const { payerShare, partnerShare, paidByUserId } = computeShares(
+            Math.abs(amountCents),
+            selectedQuickTemplate.split_method,
+            selectedQuickTemplate.split_payer,
+            selectedQuickTemplate.split_partner_share_pct,
+            currentUser.id,
+            partnerIdForSplit,
+          );
+          await createSplitExpense({
+            partnershipId: partnership.id,
+            description:
+              selectedQuickTemplate.description ||
+              selectedQuickTemplate.label ||
+              created.description,
+            totalAmount: Math.abs(amountCents),
+            payerShare,
+            partnerShare,
+            paidByUserId,
+            transactionId: created.id,
+            expenseDate: quickDate,
+          });
+          setSplitTransactionIds((prev) => new Set([...prev, created.id]));
+        }
+      }
+
+      setShowQuickModal(false);
+      setSelectedQuickTemplate(null);
+      setQuickAmount('');
+      setQuickDate(new Date().toISOString().split('T')[0]);
+    } catch (err) {
+      setQuickError(err?.message || 'Failed to create quick transaction.');
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
   // ---------- Update wrappers (intercept isSplit) ----------
   const handleUpdateWithSplit = async (values) => {
     const { isSplit, ...rest } = values;
@@ -398,30 +492,27 @@ export default function TransactionsPage() {
   };
 
   // ---------- Recurring handlers ----------
+  const invalidateRecurringSideEffects = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'active' });
+    queryClient.invalidateQueries({ queryKey: ['accounts'], refetchType: 'active' });
+  }, [queryClient]);
+
   const handleCreateRecurring = async (values) => {
     await createRecurringTemplate(values);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after recurring create:', err)
-    );
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS });
+    invalidateRecurringSideEffects();
     setShowRecurringForm(false);
     setRecurringKey((k) => k + 1); // refresh the panel
   };
 
   const handleUpdateRecurring = async (values) => {
-    // 1. Update the template first so the cleared projections are regenerated
-    //    with the new settings (not the old ones).
+    // Update the template, clear future projected/pending rows, then regenerate.
     await updateRecurringTemplate(editingTemplate.id, values);
-    // 2. Clear ALL stale projected/pending transactions for this template.
-    //    clearAllProjectionsForTemplate queries the DB directly (not React state)
-    //    to ensure every child of a group is covered, including recently removed ones.
-    await clearAllProjectionsForTemplate(editingTemplate.id).catch((err) =>
-      console.warn('Failed to clear projections before recurring update:', err)
-    );
-    // 3. Regenerate with the updated template settings.
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after recurring update:', err)
-    );
+    await refreshRecurringTemplateFamily(editingTemplate.id, {
+      windowDays: PROJECTION_WINDOW_DAYS,
+    });
+    invalidateRecurringSideEffects();
     setEditingTemplate(null);
     setRecurringKey((k) => k + 1);
   };
@@ -543,38 +634,26 @@ export default function TransactionsPage() {
 
     await createRecurringGroup(parentData, childrenData);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after group create:', err)
-    );
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS });
+    invalidateRecurringSideEffects();
     setShowGroupForm(false);
     setRecurringKey((k) => k + 1);
   };
 
   const handleUpdateGroup = async (parentData, childrenData) => {
     if (!editingGroup) return;
-    // 1. Update the group template first (RPC handles adding/removing children).
+    // Update the group, clear future projected/pending rows, then regenerate.
     await updateRecurringGroup(editingGroup.id, parentData, childrenData);
-    // 2. Clear ALL stale projected/pending transactions.
-    //    clearAllProjectionsForTemplate re-fetches children from the DB so it
-    //    covers newly removed children (now is_active=false) and any that were
-    //    missing from the React-state snapshot in editingGroup.children.
-    await clearAllProjectionsForTemplate(editingGroup.id).catch((err) =>
-      console.warn('Failed to clear projections before group update:', err)
-    );
-    // 3. Regenerate with the updated template settings.
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after group update:', err)
-    );
+    await refreshRecurringTemplateFamily(editingGroup.id, {
+      windowDays: PROJECTION_WINDOW_DAYS,
+    });
+    invalidateRecurringSideEffects();
     setEditingGroup(null);
     setRecurringKey((k) => k + 1);
   };
 
   const handleRecurringApplied = (result) => {
-    if (result.applied > 0) {
-      // Refresh transactions to show newly created ones (recurring service
-      // doesn't go through the offlineAware notifyTable path).
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    }
+    if (result.applied > 0) invalidateRecurringSideEffects();
   };
 
   // ---------- Render ----------
@@ -607,6 +686,17 @@ export default function TransactionsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.183" />
               </svg>
               <span className="hidden sm:inline">Recurring</span>
+            </button>
+            <button
+              type="button"
+              title="Quick"
+              onClick={openQuickModal}
+              className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-2.5 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 sm:px-5 sm:py-2.5 dark:border-emerald-700 dark:bg-stone-800 dark:text-emerald-400 dark:hover:bg-stone-700"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 2L3 6v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V6l-3-4H6zM3.8 6h16.4M16 10a4 4 0 1 1-8 0" />
+              </svg>
+              <span className="hidden sm:inline">Quick</span>
             </button>
             <button
               type="button"
@@ -655,6 +745,7 @@ export default function TransactionsPage() {
               onApplied={handleRecurringApplied}
               onEdit={handleEditTemplate}
               onEditGroup={handleEditGroup}
+              onMutated={invalidateRecurringSideEffects}
             />
           </div>
         )}
@@ -822,6 +913,105 @@ export default function TransactionsPage() {
             partnership={partnership}
             favoriteAccountIds={favoriteAccountIds}
           />
+        </Modal>
+      )}
+
+      {/* Quick create modal */}
+      {showQuickModal && (
+        <Modal
+          title={selectedQuickTemplate ? `Quick: ${selectedQuickTemplate.label}` : 'Quick Transactions'}
+          onClose={() => {
+            setShowQuickModal(false);
+            setSelectedQuickTemplate(null);
+            setQuickError('');
+          }}
+        >
+          {selectedQuickTemplate ? (
+            <form onSubmit={handleQuickSubmit} className="space-y-4">
+              {quickError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+                  {quickError}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-stone-200/60 bg-stone-50/60 px-3 py-2 dark:border-stone-700/60 dark:bg-stone-900/40">
+                <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{selectedQuickTemplate.description}</p>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  {selectedQuickTemplate.payee || 'No payee'}
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">Amount ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={quickAmount}
+                  onChange={(e) => setQuickAmount(e.target.value)}
+                  autoFocus
+                  className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">Date</label>
+                <input
+                  type="date"
+                  value={quickDate}
+                  onChange={(e) => setQuickDate(e.target.value)}
+                  className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedQuickTemplate(null);
+                    setQuickAmount('');
+                    setQuickError('');
+                  }}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickSaving}
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition-all hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {quickSaving ? 'Posting…' : 'Post'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-3">
+              {quickTemplates.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-stone-200 px-3 py-3 text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+                  No quick templates configured yet. Add them in Settings.
+                </p>
+              ) : (
+                quickTemplates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedQuickTemplate(tpl);
+                      setQuickError('');
+                    }}
+                    className="w-full rounded-xl border border-stone-200/60 bg-white px-4 py-3 text-left shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-stone-700/60 dark:bg-stone-900/40 dark:hover:border-emerald-700 dark:hover:bg-stone-800"
+                  >
+                    <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">{tpl.label}</p>
+                    <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+                      {tpl.description}
+                      {tpl.payee ? ` · ${tpl.payee}` : ''}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </Modal>
       )}
 
