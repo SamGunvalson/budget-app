@@ -694,7 +694,7 @@ export default function TransactionsPage() {
               className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-2.5 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 sm:px-5 sm:py-2.5 dark:border-emerald-700 dark:bg-stone-800 dark:text-emerald-400 dark:hover:bg-stone-700"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a5.25 5.25 0 10-7.43 7.43 5.25 5.25 0 007.43-7.43zM8.5 8.5l7 7m0-7h4.5m-4.5 0V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 2L3 6v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V6l-3-4H6zM3.8 6h16.4M16 10a4 4 0 1 1-8 0" />
               </svg>
               <span className="hidden sm:inline">Quick</span>
             </button>
