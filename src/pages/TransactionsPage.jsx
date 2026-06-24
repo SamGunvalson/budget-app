@@ -35,7 +35,7 @@ import {
   createRecurringGroup,
   updateRecurringGroup,
   generateProjectedTransactions,
-  clearAllProjectionsForTemplate,
+  refreshRecurringTemplateFamily,
   getRecurringTemplateById,
   getRecurringTemplates,
   PROJECTION_WINDOW_DAYS,
@@ -398,30 +398,27 @@ export default function TransactionsPage() {
   };
 
   // ---------- Recurring handlers ----------
+  const invalidateRecurringSideEffects = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'active' });
+    queryClient.invalidateQueries({ queryKey: ['accounts'], refetchType: 'active' });
+  }, [queryClient]);
+
   const handleCreateRecurring = async (values) => {
     await createRecurringTemplate(values);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after recurring create:', err)
-    );
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS });
+    invalidateRecurringSideEffects();
     setShowRecurringForm(false);
     setRecurringKey((k) => k + 1); // refresh the panel
   };
 
   const handleUpdateRecurring = async (values) => {
-    // 1. Update the template first so the cleared projections are regenerated
-    //    with the new settings (not the old ones).
+    // Update the template, clear future projected/pending rows, then regenerate.
     await updateRecurringTemplate(editingTemplate.id, values);
-    // 2. Clear ALL stale projected/pending transactions for this template.
-    //    clearAllProjectionsForTemplate queries the DB directly (not React state)
-    //    to ensure every child of a group is covered, including recently removed ones.
-    await clearAllProjectionsForTemplate(editingTemplate.id).catch((err) =>
-      console.warn('Failed to clear projections before recurring update:', err)
-    );
-    // 3. Regenerate with the updated template settings.
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after recurring update:', err)
-    );
+    await refreshRecurringTemplateFamily(editingTemplate.id, {
+      windowDays: PROJECTION_WINDOW_DAYS,
+    });
+    invalidateRecurringSideEffects();
     setEditingTemplate(null);
     setRecurringKey((k) => k + 1);
   };
@@ -543,38 +540,26 @@ export default function TransactionsPage() {
 
     await createRecurringGroup(parentData, childrenData);
     // Generate projected transactions immediately so they appear without a page refresh
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after group create:', err)
-    );
+    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS });
+    invalidateRecurringSideEffects();
     setShowGroupForm(false);
     setRecurringKey((k) => k + 1);
   };
 
   const handleUpdateGroup = async (parentData, childrenData) => {
     if (!editingGroup) return;
-    // 1. Update the group template first (RPC handles adding/removing children).
+    // Update the group, clear future projected/pending rows, then regenerate.
     await updateRecurringGroup(editingGroup.id, parentData, childrenData);
-    // 2. Clear ALL stale projected/pending transactions.
-    //    clearAllProjectionsForTemplate re-fetches children from the DB so it
-    //    covers newly removed children (now is_active=false) and any that were
-    //    missing from the React-state snapshot in editingGroup.children.
-    await clearAllProjectionsForTemplate(editingGroup.id).catch((err) =>
-      console.warn('Failed to clear projections before group update:', err)
-    );
-    // 3. Regenerate with the updated template settings.
-    await generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS }).catch((err) =>
-      console.warn('Failed to generate projections after group update:', err)
-    );
+    await refreshRecurringTemplateFamily(editingGroup.id, {
+      windowDays: PROJECTION_WINDOW_DAYS,
+    });
+    invalidateRecurringSideEffects();
     setEditingGroup(null);
     setRecurringKey((k) => k + 1);
   };
 
   const handleRecurringApplied = (result) => {
-    if (result.applied > 0) {
-      // Refresh transactions to show newly created ones (recurring service
-      // doesn't go through the offlineAware notifyTable path).
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    }
+    if (result.applied > 0) invalidateRecurringSideEffects();
   };
 
   // ---------- Render ----------
@@ -655,6 +640,7 @@ export default function TransactionsPage() {
               onApplied={handleRecurringApplied}
               onEdit={handleEditTemplate}
               onEditGroup={handleEditGroup}
+              onMutated={invalidateRecurringSideEffects}
             />
           </div>
         )}
