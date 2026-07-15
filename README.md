@@ -109,6 +109,38 @@ The app will be available at `http://localhost:5173`.
 
 See [docs/SETUP_GUIDE.md](./docs/SETUP_GUIDE.md) for detailed Supabase setup instructions.
 
+### Android SDK path setup (for release builds)
+
+If Gradle fails with `SDK location not found`, create `android/local.properties` (this file is machine-local and should not be committed):
+
+```properties
+sdk.dir=<your-android-sdk-path>
+```
+
+Examples:
+
+- macOS:
+  ```properties
+  sdk.dir=/Users/<your-user>/Library/Android/sdk
+  ```
+- Linux:
+  ```properties
+  sdk.dir=/home/<your-user>/Android/Sdk
+  ```
+- Windows:
+  ```properties
+  sdk.dir=C:\\Users\\<your-user>\\AppData\\Local\\Android\\Sdk
+  ```
+
+Then run:
+
+```bash
+cd android
+./gradlew bundleRelease
+```
+
+For full Android/Capacitor setup and publishing steps, see [android-app.md](./docs/android-app.md).
+
 ## Documentation
 
 ```

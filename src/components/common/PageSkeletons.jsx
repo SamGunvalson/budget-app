@@ -12,7 +12,7 @@ function Shell({ children }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
       {/* TopBar placeholder */}
-      <div className="h-14 border-b border-stone-200 bg-white/80 dark:border-stone-800 dark:bg-stone-900/80" />
+      <div className="safe-area-pt h-14 border-b border-stone-200 bg-white/80 dark:border-stone-800 dark:bg-stone-900/80" />
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">{children}</div>
     </div>
   );

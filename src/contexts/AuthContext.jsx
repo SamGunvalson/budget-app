@@ -14,17 +14,22 @@
  * not on every protected route mount or App re-render.
  */
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { supabase } from '../services/supabase';
+import { supabase, isSupabaseReady } from '../services/supabase';
 import { pullAll, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import AuthContext from './authContextValue';
 
-export function AuthProvider({ children }) {
+export function AuthProvider({ children, enabled = true }) {
   const [session, setSession] = useState(null);
   const [isChecking, setIsChecking] = useState(true);
   const warmedUp = useRef(false);
 
   useEffect(() => {
+    if (!enabled || !isSupabaseReady()) {
+      warmedUp.current = false;
+      return undefined;
+    }
+
     let mounted = true;
 
     /**
@@ -45,14 +50,22 @@ export function AuthProvider({ children }) {
     };
 
     // 1. Check the current session once on mount.
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return;
-      if (error) console.error('AuthProvider: unable to check session', error);
-      const s = data?.session ?? null;
-      setSession(s);
-      setIsChecking(false);
-      if (s) doWarmUp();
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) console.error('AuthProvider: unable to check session', error);
+        const s = data?.session ?? null;
+        setSession(s);
+        setIsChecking(false);
+        if (s) doWarmUp();
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        console.error('AuthProvider: session bootstrap failed', error);
+        setSession(null);
+        setIsChecking(false);
+      });
 
     // 2. Subscribe to auth state changes (sign-in / sign-out / token refresh).
     const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
@@ -66,7 +79,7 @@ export function AuthProvider({ children }) {
       mounted = false;
       listener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [enabled]);
 
   const value = useMemo(() => ({ session, isChecking }), [session, isChecking]);
 

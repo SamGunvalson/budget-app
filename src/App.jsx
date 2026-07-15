@@ -1,9 +1,10 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import SwipeableWrapper from './components/common/SwipeableWrapper';
 import { AuthProvider } from './contexts/AuthContext';
 import useRoutePreload from './hooks/useRoutePreload';
+import { getSupabaseBootstrapState } from './services/supabase';
 import {
   TransactionsSkeleton,
   BudgetSkeleton,
@@ -22,6 +23,7 @@ const BudgetPage = lazy(() => import('./pages/BudgetPage'));
 const AccountsPage = lazy(() => import('./pages/AccountsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SplitExpensesPage = lazy(() => import('./pages/SplitExpensesPage'));
+const ServerSetupPage = lazy(() => import('./pages/ServerSetupPage'));
 
 function LoadingSpinner() {
   return (
@@ -36,9 +38,9 @@ function LoadingSpinner() {
  * Each protected route gets its own <Suspense> with a layout-matched
  * skeleton so users see a meaningful placeholder instead of a generic spinner.
  */
-function ProtectedPage({ fallback, children }) {
+function ProtectedPage({ fallback, children, serverReady }) {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute serverReady={serverReady}>
       <Suspense fallback={fallback}>
         <SwipeableWrapper>{children}</SwipeableWrapper>
       </Suspense>
@@ -46,19 +48,39 @@ function ProtectedPage({ fallback, children }) {
   );
 }
 
-function AppRoutes() {
+function AppRoutes({ serverState, onServerConfigured }) {
   // Phase 6: preload next-likely route chunks in the background.
   useRoutePreload();
+  const serverReady = serverState.status === 'ready';
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app" replace />} />
-      <Route path="/auth" element={<Suspense fallback={<LoadingSpinner />}><AuthPage /></Suspense>} />
+      <Route path="/" element={<Navigate to={serverReady ? '/app' : '/setup'} replace />} />
+      <Route
+        path="/setup"
+        element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <ServerSetupPage serverState={serverState} onConfigured={onServerConfigured} />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/auth"
+        element={
+          serverReady ? (
+            <Suspense fallback={<LoadingSpinner />}>
+              <AuthPage />
+            </Suspense>
+          ) : (
+            <Navigate to="/setup" replace />
+          )
+        }
+      />
       <Route path="/app" element={<Navigate to="/app/transactions" replace />} />
       <Route
         path="/app/categories"
         element={
-          <ProtectedPage fallback={<CategoriesSkeleton />}>
+          <ProtectedPage fallback={<CategoriesSkeleton />} serverReady={serverReady}>
             <CategoriesPage />
           </ProtectedPage>
         }
@@ -66,7 +88,7 @@ function AppRoutes() {
       <Route
         path="/app/transactions"
         element={
-          <ProtectedPage fallback={<TransactionsSkeleton />}>
+          <ProtectedPage fallback={<TransactionsSkeleton />} serverReady={serverReady}>
             <TransactionsPage />
           </ProtectedPage>
         }
@@ -74,7 +96,7 @@ function AppRoutes() {
       <Route
         path="/app/budgets"
         element={
-          <ProtectedPage fallback={<BudgetSkeleton />}>
+          <ProtectedPage fallback={<BudgetSkeleton />} serverReady={serverReady}>
             <BudgetPage />
           </ProtectedPage>
         }
@@ -82,7 +104,7 @@ function AppRoutes() {
       <Route
         path="/app/accounts"
         element={
-          <ProtectedPage fallback={<AccountsSkeleton />}>
+          <ProtectedPage fallback={<AccountsSkeleton />} serverReady={serverReady}>
             <AccountsPage />
           </ProtectedPage>
         }
@@ -90,7 +112,7 @@ function AppRoutes() {
       <Route
         path="/app/reports"
         element={
-          <ProtectedPage fallback={<ReportsSkeleton />}>
+          <ProtectedPage fallback={<ReportsSkeleton />} serverReady={serverReady}>
             <ReportsPage />
           </ProtectedPage>
         }
@@ -99,7 +121,7 @@ function AppRoutes() {
       <Route
         path="/app/settings"
         element={
-          <ProtectedPage fallback={<SettingsSkeleton />}>
+          <ProtectedPage fallback={<SettingsSkeleton />} serverReady={serverReady}>
             <SettingsPage />
           </ProtectedPage>
         }
@@ -107,12 +129,12 @@ function AppRoutes() {
       <Route
         path="/app/splits"
         element={
-          <ProtectedPage fallback={<SplitsSkeleton />}>
+          <ProtectedPage fallback={<SplitsSkeleton />} serverReady={serverReady}>
             <SplitExpensesPage />
           </ProtectedPage>
         }
       />
-      <Route path="*" element={<Navigate to="/auth" replace />} />
+      <Route path="*" element={<Navigate to={serverReady ? '/auth' : '/setup'} replace />} />
     </Routes>
   );
 }
@@ -123,9 +145,14 @@ function AppRoutes() {
  * that previously ran in the App useEffect on every mount).
  */
 function App() {
+  const [serverState, setServerState] = useState(() => getSupabaseBootstrapState());
+  const handleServerConfigured = useCallback(() => {
+    setServerState(getSupabaseBootstrapState());
+  }, []);
+
   return (
-    <AuthProvider>
-      <AppRoutes />
+    <AuthProvider enabled={serverState.status === 'ready'}>
+      <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
     </AuthProvider>
   );
 }
