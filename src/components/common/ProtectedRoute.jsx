@@ -6,9 +6,13 @@ import useAuth from '../../hooks/useAuth';
  * instead of calling supabase.auth.getSession() on every mount.
  * This eliminates a per-route JWT validation round-trip.
  */
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, serverReady = true }) {
   const location = useLocation();
   const { session, isChecking } = useAuth();
+
+  if (!serverReady) {
+    return <Navigate to="/setup" state={{ from: location }} replace />;
+  }
 
   if (isChecking) {
     return (

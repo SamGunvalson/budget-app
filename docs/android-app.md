@@ -228,3 +228,5 @@ Upload the new `.aab` to Play Console.
 - Supabase values for mobile are baked at web build time here; always confirm `.env.production` is correct before `npm run build`.
 - Keep `applicationId` stable once published (do not change after first Play release).
 - Any web code change requires rebuild + `npx cap sync android` before Android run/release.
+- If you ship a generic app build (no fixed env values), first launch now opens a **Connect to your server** screen before login. Enter your server root URL (for example `https://budget.<tailnet>.ts.net`) and run **Test connection**.
+- Connection errors are surfaced with actionable messages (offline device, timeout, invalid server config, TLS issues, unreachable server) so users know whether they need Tailscale/network access or server-side config fixes.

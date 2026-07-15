@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../services/supabase';
+import { getConnectionErrorMessage, isLikelyConnectionError } from '../../utils/connectionErrors';
 
 function SignupForm({ onSuccess }) {
   const [email, setEmail] = useState('');
@@ -21,6 +22,10 @@ function SignupForm({ onSuccess }) {
       });
 
       if (signUpError) {
+        if (isLikelyConnectionError(signUpError)) {
+          setError(getConnectionErrorMessage(signUpError));
+          return;
+        }
         setError(signUpError.message);
         return;
       }
@@ -32,7 +37,11 @@ function SignupForm({ onSuccess }) {
 
       setMessage('Check your email to confirm your account, then sign in.');
     } catch (submitError) {
-      setError(submitError?.message || 'Account creation failed. Please try again.');
+      setError(
+        isLikelyConnectionError(submitError)
+          ? getConnectionErrorMessage(submitError)
+          : submitError?.message || 'Account creation failed. Please try again.',
+      );
     } finally {
       setIsSubmitting(false);
     }
