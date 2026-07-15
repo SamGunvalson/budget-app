@@ -3,6 +3,7 @@
 This is a repo-specific, end-to-end checklist to package this Vite + React PWA as a real Android app using Capacitor and produce a Play Store upload (`.aab`).
 
 > Assumptions used below:
+>
 > - App name: `Budget App`
 > - Android application ID: `com.samgunvalson.budgetapp`
 > - Build machine is Linux/macOS shell (adjust paths for Windows)
@@ -53,6 +54,7 @@ npx cap add android
 ```
 
 This creates:
+
 - `capacitor.config.*`
 - `android/` native project
 
