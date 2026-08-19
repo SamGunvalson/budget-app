@@ -145,7 +145,8 @@ function matchesTransactionScope(tx, filters = {}) {
   } else if (filters.year && filters.throughMonth) {
     const startDate = `${filters.year}-01-01`;
     const endMonth = filters.throughMonth === 12 ? 1 : filters.throughMonth + 1;
-    const endYear = filters.throughMonth === 12 ? filters.year + 1 : filters.year;
+    const endYear =
+      filters.throughMonth === 12 ? filters.year + 1 : filters.year;
     const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
     if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
   } else if (filters.year) {
@@ -154,7 +155,11 @@ function matchesTransactionScope(tx, filters = {}) {
     if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
   }
 
-  if (filters.status && filters.status !== "all" && tx.status !== filters.status) {
+  if (
+    filters.status &&
+    filters.status !== "all" &&
+    tx.status !== filters.status
+  ) {
     return false;
   }
 
@@ -670,7 +675,9 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
       return computeAccountBalancesFromCache({ projectedToDate });
     },
     fetchFresh: async () => {
-      const result = await tryOnline(() => _getAccountBalances({ projectedToDate }));
+      const result = await tryOnline(() =>
+        _getAccountBalances({ projectedToDate }),
+      );
       if (!result.offline) return result.data;
       // Genuinely offline — compute from whatever transactions are in Dexie.
       return computeAccountBalancesFromCache({ projectedToDate });
@@ -704,7 +711,8 @@ async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
   accounts = accounts.filter((a) => a.is_active !== false);
   if (!accounts.length) return [];
 
-  // Today's date string — use UTC to match Supabase's CURRENT_DATE (server UTC).
+  // Today's date string — intentionally UTC so this offline fold matches the
+  // get_account_balances RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -968,8 +976,7 @@ export async function getMaxProjectedDateOffline() {
   if (!result.offline) return result.data;
 
   // Offline: scan IndexedDB for projected or future-dated posted transactions
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
   const allTx = await db.transactions.toArray();
   const dates = allTx
     .filter(
@@ -1119,6 +1126,8 @@ export async function getAccountBalanceHistoryOffline(opts) {
   );
   if (!accounts.length) return [];
 
+  // Intentionally UTC so this offline fold matches the
+  // get_account_balance_history RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -1204,8 +1213,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   const { accountIds, endDate } = opts;
   if (!accountIds?.length) return [];
 
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
 
   let rows = await db.transactions.toArray();
   rows = rows.filter(
@@ -1690,6 +1698,8 @@ import {
   isTrueIncome as _isTrueIncome,
   isSpendingCredit as _isSpendingCredit,
   isIncomeDebit as _isIncomeDebit,
+  toDateString,
+  getTodayString,
 } from "../utils/helpers";
 
 import {
@@ -1879,8 +1889,8 @@ function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
     anchorEnd.getMonth() - months + 1,
     1,
   );
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = anchorEnd.toISOString().slice(0, 10);
+  const startStr = toDateString(startDate);
+  const endStr = toDateString(anchorEnd);
 
   const map = {};
   for (const t of rows) {
@@ -1971,7 +1981,7 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
           : new Date();
       const startYear = anchorEnd.getFullYear() - years + 1;
       const startStr = `${startYear}-01-01`;
-      const endStr = anchorEnd.toISOString().slice(0, 10);
+      const endStr = toDateString(anchorEnd);
 
       const map = {};
       for (const t of rows) {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName } from '../../utils/helpers';
+import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
 
@@ -153,7 +153,7 @@ export default function RecurringGroupForm({
   // Default start date to today for new groups
   useEffect(() => {
     if (!isEditing && !startDate) {
-      setStartDate(new Date().toISOString().split('T')[0]);
+      setStartDate(getTodayString());
     }
   }, [isEditing, startDate]);
 

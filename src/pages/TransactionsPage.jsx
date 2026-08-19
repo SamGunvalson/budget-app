@@ -42,7 +42,7 @@ import {
   PROJECTION_WINDOW_DAYS,
 } from '../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
-import { toCents } from '../utils/helpers';
+import { toCents, getTodayString } from '../utils/helpers';
 import { getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
@@ -181,7 +181,7 @@ export default function TransactionsPage() {
   const [splitLoading, setSplitLoading] = useState(false);
   const [selectedQuickTemplate, setSelectedQuickTemplate] = useState(null);
   const [quickAmount, setQuickAmount] = useState('');
-  const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
+  const [quickDate, setQuickDate] = useState(getTodayString());
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState('');
 
@@ -389,7 +389,7 @@ export default function TransactionsPage() {
     setShowQuickModal(true);
     setSelectedQuickTemplate(null);
     setQuickAmount('');
-    setQuickDate(new Date().toISOString().split('T')[0]);
+    setQuickDate(getTodayString());
     setQuickError('');
   };
 
@@ -452,7 +452,7 @@ export default function TransactionsPage() {
       setShowQuickModal(false);
       setSelectedQuickTemplate(null);
       setQuickAmount('');
-      setQuickDate(new Date().toISOString().split('T')[0]);
+      setQuickDate(getTodayString());
     } catch (err) {
       setQuickError(err?.message || 'Failed to create quick transaction.');
     } finally {
