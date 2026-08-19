@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getTodayString } from '../../utils/helpers';
 
 /**
  * Infer the split method from stored share values.
@@ -30,7 +31,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
 
   const [description, setDescription] = useState(initialDescription || (isEditing ? editingExpense.description : ''));
   const [amount, setAmount] = useState(initialAmount || (isEditing ? (editingExpense.total_amount / 100).toFixed(2) : ''));
-  const [expenseDate, setExpenseDate] = useState(initialDate || (isEditing ? editingExpense.expense_date : new Date().toISOString().split('T')[0]));
+  const [expenseDate, setExpenseDate] = useState(initialDate || (isEditing ? editingExpense.expense_date : getTodayString()));
   const [paidBy, setPaidBy] = useState(initialPaidBy);
   const [splitMethod, setSplitMethod] = useState(initialSplitMethod);
   const [customMyShare, setCustomMyShare] = useState(initialSplitMethod === 'custom' ? initialCustomMyShare : '');

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName } from '../../utils/helpers';
+import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
 
 /**
@@ -148,7 +148,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   // Default date to today for new transactions
   useEffect(() => {
     if (!isEditing && !transactionDate) {
-      setTransactionDate(new Date().toISOString().split('T')[0]);
+      setTransactionDate(getTodayString());
     }
   }, [isEditing, transactionDate]);
 

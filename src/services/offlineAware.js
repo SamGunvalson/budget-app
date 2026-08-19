@@ -704,7 +704,8 @@ async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
   accounts = accounts.filter((a) => a.is_active !== false);
   if (!accounts.length) return [];
 
-  // Today's date string — use UTC to match Supabase's CURRENT_DATE (server UTC).
+  // Today's date string — intentionally UTC so this offline fold matches the
+  // get_account_balances RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -968,8 +969,7 @@ export async function getMaxProjectedDateOffline() {
   if (!result.offline) return result.data;
 
   // Offline: scan IndexedDB for projected or future-dated posted transactions
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
   const allTx = await db.transactions.toArray();
   const dates = allTx
     .filter(
@@ -1119,6 +1119,8 @@ export async function getAccountBalanceHistoryOffline(opts) {
   );
   if (!accounts.length) return [];
 
+  // Intentionally UTC so this offline fold matches the
+  // get_account_balance_history RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -1204,8 +1206,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   const { accountIds, endDate } = opts;
   if (!accountIds?.length) return [];
 
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
 
   let rows = await db.transactions.toArray();
   rows = rows.filter(
@@ -1690,6 +1691,8 @@ import {
   isTrueIncome as _isTrueIncome,
   isSpendingCredit as _isSpendingCredit,
   isIncomeDebit as _isIncomeDebit,
+  toDateString,
+  getTodayString,
 } from "../utils/helpers";
 
 import {
@@ -1879,8 +1882,8 @@ function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
     anchorEnd.getMonth() - months + 1,
     1,
   );
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = anchorEnd.toISOString().slice(0, 10);
+  const startStr = toDateString(startDate);
+  const endStr = toDateString(anchorEnd);
 
   const map = {};
   for (const t of rows) {
@@ -1971,7 +1974,7 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
           : new Date();
       const startYear = anchorEnd.getFullYear() - years + 1;
       const startStr = `${startYear}-01-01`;
-      const endStr = anchorEnd.toISOString().slice(0, 10);
+      const endStr = toDateString(anchorEnd);
 
       const map = {};
       for (const t of rows) {
