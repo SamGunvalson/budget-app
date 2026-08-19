@@ -145,7 +145,8 @@ function matchesTransactionScope(tx, filters = {}) {
   } else if (filters.year && filters.throughMonth) {
     const startDate = `${filters.year}-01-01`;
     const endMonth = filters.throughMonth === 12 ? 1 : filters.throughMonth + 1;
-    const endYear = filters.throughMonth === 12 ? filters.year + 1 : filters.year;
+    const endYear =
+      filters.throughMonth === 12 ? filters.year + 1 : filters.year;
     const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
     if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
   } else if (filters.year) {
@@ -154,7 +155,11 @@ function matchesTransactionScope(tx, filters = {}) {
     if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
   }
 
-  if (filters.status && filters.status !== "all" && tx.status !== filters.status) {
+  if (
+    filters.status &&
+    filters.status !== "all" &&
+    tx.status !== filters.status
+  ) {
     return false;
   }
 
@@ -670,7 +675,9 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
       return computeAccountBalancesFromCache({ projectedToDate });
     },
     fetchFresh: async () => {
-      const result = await tryOnline(() => _getAccountBalances({ projectedToDate }));
+      const result = await tryOnline(() =>
+        _getAccountBalances({ projectedToDate }),
+      );
       if (!result.offline) return result.data;
       // Genuinely offline — compute from whatever transactions are in Dexie.
       return computeAccountBalancesFromCache({ projectedToDate });

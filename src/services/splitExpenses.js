@@ -336,7 +336,8 @@ export function getLastSeenSplitsAt(userId, dbSeenAt = null) {
     // Parse to ms to handle mixed ISO formats (e.g. Supabase "+00:00" vs JS "Z")
     const dbMs = Date.parse(dbSeenAt);
     const localMs = Date.parse(localSeenAt);
-    if (!isNaN(dbMs) && !isNaN(localMs)) return dbMs >= localMs ? dbSeenAt : localSeenAt;
+    if (!isNaN(dbMs) && !isNaN(localMs))
+      return dbMs >= localMs ? dbSeenAt : localSeenAt;
     if (!isNaN(dbMs)) return dbSeenAt;
     if (!isNaN(localMs)) return localSeenAt;
     return null;
