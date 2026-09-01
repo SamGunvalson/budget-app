@@ -92,7 +92,7 @@ export default function TopBar() {
   );
 
   return (
-    <nav className="sticky top-0 z-30 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
+    <nav className="safe-area-pt sticky top-0 z-30 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Left: logo + mobile hamburger */}
         <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { getTodayString } from "../utils/helpers";
 
 /**
  * Compute payer_share, partner_share, and paidByUserId from a template's
@@ -110,7 +111,7 @@ export async function createSplitExpense({
       payer_share: payerShare,
       partner_share: partnerShare,
       is_settlement: false,
-      expense_date: expenseDate || new Date().toISOString().split("T")[0],
+      expense_date: expenseDate || getTodayString(),
     })
     .select()
     .single();
@@ -145,7 +146,7 @@ export async function createSettlement({
       payer_share: amount,
       partner_share: 0,
       is_settlement: true,
-      expense_date: expenseDate || new Date().toISOString().split("T")[0],
+      expense_date: expenseDate || getTodayString(),
     })
     .select()
     .single();
@@ -335,7 +336,8 @@ export function getLastSeenSplitsAt(userId, dbSeenAt = null) {
     // Parse to ms to handle mixed ISO formats (e.g. Supabase "+00:00" vs JS "Z")
     const dbMs = Date.parse(dbSeenAt);
     const localMs = Date.parse(localSeenAt);
-    if (!isNaN(dbMs) && !isNaN(localMs)) return dbMs >= localMs ? dbSeenAt : localSeenAt;
+    if (!isNaN(dbMs) && !isNaN(localMs))
+      return dbMs >= localMs ? dbSeenAt : localSeenAt;
     if (!isNaN(dbMs)) return dbSeenAt;
     if (!isNaN(localMs)) return localSeenAt;
     return null;

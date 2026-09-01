@@ -105,6 +105,7 @@ const defaultCategories = [
 
 - `type_group_order`: Array of type strings defining display order, e.g. `["income", "needs", "wants", "savings"]`
 - `favorite_accounts`: Array of account UUIDs marked as favorites, e.g. `["uuid1", "uuid2"]`. Surfaced as a "⭐ Favorites" optgroup at the top of account selectors in the transaction form.
+- `quick_transaction_templates`: Array of quick-transaction template objects used by Settings + Transactions quick-post flow. Each object stores transaction defaults (label, description, payee, `account_id`, `category_id`, `is_income`) plus optional split defaults (`is_split`, `split_method`, `split_payer`, `split_partner_share_pct`). Amount is intentionally **not** stored and is entered at post time.
 
 **RLS**: Users can only access their own preferences
 

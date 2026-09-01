@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../services/supabase';
+import { getConnectionErrorMessage, isLikelyConnectionError } from '../../utils/connectionErrors';
 
 function LoginForm({ onSuccess }) {
   const [email, setEmail] = useState('');
@@ -19,13 +20,21 @@ function LoginForm({ onSuccess }) {
       });
 
       if (signInError) {
+        if (isLikelyConnectionError(signInError)) {
+          setError(getConnectionErrorMessage(signInError));
+          return;
+        }
         setError(signInError.message);
         return;
       }
 
       onSuccess?.(data?.session);
     } catch (submitError) {
-      setError(submitError?.message || 'Sign-in failed. Please try again.');
+      setError(
+        isLikelyConnectionError(submitError)
+          ? getConnectionErrorMessage(submitError)
+          : submitError?.message || 'Sign-in failed. Please try again.',
+      );
     } finally {
       setIsSubmitting(false);
     }

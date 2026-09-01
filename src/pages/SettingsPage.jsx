@@ -1,14 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import TopBar from '../components/common/TopBar';
 import ExportData from '../components/common/ExportData';
 import ImportCSV from '../components/transactions/ImportCSV';
 import BudgetImportModal from '../components/budgets/BudgetImportModal';
-import { useCategories, useAccounts } from '../hooks/queries';
+import { useCategories, useAccounts, useUserPreference } from '../hooks/queries';
 import useThresholds from '../hooks/useThresholds';
 import useTheme from '../hooks/useTheme';
 import useSafeMode from '../hooks/useSafeMode';
 import { DEFAULT_THRESHOLDS } from '../utils/budgetCalculations';
+import { maskAccountName } from '../utils/helpers';
+import {
+  QUICK_TRANSACTION_TEMPLATES_KEY,
+  normalizeQuickTransactionTemplates,
+  saveQuickTransactionTemplates,
+} from '../services/quickTransactions';
+import { getPartnership } from '../services/partnerships';
 
 export default function SettingsPage() {
   const {
@@ -33,11 +40,44 @@ export default function SettingsPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showBudgetImportModal, setShowBudgetImportModal] = useState(false);
 
-  // Lazy-load categories + accounts only while an import modal is open. The
-  // queries stay cached afterwards so reopening the modal is instant.
-  const importOpen = showImportModal || showBudgetImportModal;
-  const { data: importCategories = [] } = useCategories({ enabled: importOpen });
-  const { data: importAccounts = [] } = useAccounts({ enabled: importOpen });
+  // Category/account data is also used by quick-transaction template settings.
+  const { data: categories = [] } = useCategories();
+  const { data: accounts = [] } = useAccounts();
+
+  // Quick templates preference
+  const quickTemplatesQuery = useUserPreference(QUICK_TRANSACTION_TEMPLATES_KEY);
+  const quickTemplates = useMemo(
+    () => normalizeQuickTransactionTemplates(quickTemplatesQuery.data),
+    [quickTemplatesQuery.data],
+  );
+  const [quickForm, setQuickForm] = useState({
+    id: null,
+    label: '',
+    description: '',
+    payee: '',
+    account_id: '',
+    category_id: '',
+    is_income: false,
+    is_split: false,
+    split_method: 'equal',
+    split_payer: 'me',
+    split_partner_share_pct: 50,
+  });
+  const [quickFormError, setQuickFormError] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [partnership, setPartnership] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPartnership()
+      .then((p) => {
+        if (!cancelled) setPartnership(p);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Resolve displayed values: local overrides while editing, else loaded thresholds
   const displayUnderBudget = underBudgetInput ?? thresholds.underBudget;
@@ -107,6 +147,126 @@ export default function SettingsPage() {
     dangerInput == null;
 
   useEffect(() => { document.title = 'Budget App | Settings'; }, []);
+
+  const nonTransferCategories = categories.filter((c) => c.type !== 'transfer');
+  const groupedQuickCategories = {
+    income: nonTransferCategories.filter((c) => c.type === 'income'),
+    needs: nonTransferCategories.filter((c) => c.type === 'needs'),
+    wants: nonTransferCategories.filter((c) => c.type === 'wants'),
+    savings: nonTransferCategories.filter((c) => c.type === 'savings'),
+  };
+  const openAccounts = accounts.filter((a) => !a.closed_at || a.id === quickForm.account_id);
+
+  const resetQuickForm = () => {
+    setQuickForm({
+      id: null,
+      label: '',
+      description: '',
+      payee: '',
+      account_id: '',
+      category_id: '',
+      is_income: false,
+      is_split: false,
+      split_method: 'equal',
+      split_payer: 'me',
+      split_partner_share_pct: 50,
+    });
+    setQuickFormError('');
+  };
+
+  const handleQuickEdit = (tpl) => {
+    setQuickForm({
+      id: tpl.id,
+      label: tpl.label || '',
+      description: tpl.description || '',
+      payee: tpl.payee || '',
+      account_id: tpl.account_id || '',
+      category_id: tpl.category_id || '',
+      is_income: !!tpl.is_income,
+      is_split: !!tpl.is_split,
+      split_method: tpl.split_method || 'equal',
+      split_payer: tpl.split_payer || 'me',
+      split_partner_share_pct: tpl.split_partner_share_pct ?? 50,
+    });
+    setQuickFormError('');
+  };
+
+  const handleQuickDelete = async (id) => {
+    setQuickSaving(true);
+    setQuickFormError('');
+    try {
+      await saveQuickTransactionTemplates(quickTemplates.filter((t) => t.id !== id));
+      if (quickForm.id === id) resetQuickForm();
+    } catch (err) {
+      setQuickFormError(err?.message || 'Failed to delete quick template.');
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  const handleQuickSave = async () => {
+    if (!quickForm.label.trim()) {
+      setQuickFormError('Template name is required.');
+      return;
+    }
+    if (!quickForm.description.trim()) {
+      setQuickFormError('Description is required.');
+      return;
+    }
+    if (!quickForm.account_id) {
+      setQuickFormError('Account is required.');
+      return;
+    }
+    if (!quickForm.category_id) {
+      setQuickFormError('Category is required.');
+      return;
+    }
+    if (quickForm.is_split && quickForm.split_method === 'custom') {
+      const pct = Number(quickForm.split_partner_share_pct);
+      if (!Number.isFinite(pct) || pct < 1 || pct > 99) {
+        setQuickFormError('Custom split must be between 1% and 99%.');
+        return;
+      }
+    }
+
+    const template = {
+      id: quickForm.id || crypto.randomUUID(),
+      label: quickForm.label.trim(),
+      description: quickForm.description.trim(),
+      payee: quickForm.payee.trim(),
+      account_id: quickForm.account_id,
+      category_id: quickForm.category_id,
+      is_income: quickForm.is_income,
+      is_split: partnership ? quickForm.is_split : false,
+      split_method: partnership ? quickForm.split_method : 'equal',
+      split_payer: partnership ? quickForm.split_payer : 'me',
+      split_partner_share_pct: partnership
+        ? Number(quickForm.split_partner_share_pct ?? 50)
+        : 50,
+      is_active: true,
+      sort_order: 0,
+    };
+
+    let next;
+    if (quickForm.id) {
+      next = quickTemplates.map((t) => (t.id === quickForm.id ? { ...t, ...template } : t));
+    } else {
+      next = [...quickTemplates, { ...template, sort_order: quickTemplates.length }];
+    }
+
+    setQuickSaving(true);
+    setQuickFormError('');
+    try {
+      await saveQuickTransactionTemplates(
+        next.map((t, idx) => ({ ...t, sort_order: idx })),
+      );
+      resetQuickForm();
+    } catch (err) {
+      setQuickFormError(err?.message || 'Failed to save quick template.');
+    } finally {
+      setQuickSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
@@ -222,6 +382,193 @@ export default function SettingsPage() {
 
         {/* ── Left column: Budget Thresholds + Manage Categories ── */}
         <div className="flex flex-col gap-6">
+
+        {/* ── Quick Transactions ────────────────────── */}
+        <div className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
+          <h2 className="mb-1 text-lg font-semibold text-stone-900 dark:text-stone-100">Quick Transactions</h2>
+          <p className="mb-5 text-sm text-stone-500 dark:text-stone-400">
+            Save transaction defaults so you only enter the amount when posting.
+          </p>
+
+          {quickFormError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+              {quickFormError}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {quickTemplates.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-stone-200 px-3 py-2 text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+                No quick templates yet.
+              </p>
+            ) : (
+              quickTemplates.map((tpl) => (
+                <div key={tpl.id} className="flex items-center justify-between rounded-xl border border-stone-200/60 bg-stone-50/50 px-3 py-2 dark:border-stone-700/60 dark:bg-stone-900/30">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-stone-800 dark:text-stone-200">{tpl.label}</p>
+                    <p className="truncate text-xs text-stone-500 dark:text-stone-400">
+                      {tpl.description}
+                      {tpl.payee ? ` · ${tpl.payee}` : ''}
+                    </p>
+                  </div>
+                  <div className="ml-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickEdit(tpl)}
+                      className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-600 hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickDelete(tpl.id)}
+                      disabled={quickSaving}
+                      className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:bg-stone-800 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-5 space-y-3 rounded-xl border border-stone-200/60 bg-stone-50/40 p-4 dark:border-stone-700/60 dark:bg-stone-900/30">
+            <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">
+              {quickForm.id ? 'Edit Quick Template' : 'New Quick Template'}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={quickForm.label}
+                onChange={(e) => setQuickForm((prev) => ({ ...prev, label: e.target.value }))}
+                placeholder="Button label (e.g. Grocery Run)"
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+              />
+              <select
+                value={quickForm.is_income ? 'income' : 'expense'}
+                onChange={(e) => setQuickForm((prev) => ({ ...prev, is_income: e.target.value === 'income' }))}
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+              >
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+              </select>
+            </div>
+
+            <input
+              type="text"
+              value={quickForm.description}
+              onChange={(e) => setQuickForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Description"
+              className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+            />
+            <input
+              type="text"
+              value={quickForm.payee}
+              onChange={(e) => setQuickForm((prev) => ({ ...prev, payee: e.target.value }))}
+              placeholder="Payee (optional)"
+              className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <select
+                value={quickForm.account_id}
+                onChange={(e) => setQuickForm((prev) => ({ ...prev, account_id: e.target.value }))}
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+              >
+                <option value="">Select account…</option>
+                {openAccounts.map((a) => (
+                  <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+                ))}
+              </select>
+
+              <select
+                value={quickForm.category_id}
+                onChange={(e) => setQuickForm((prev) => ({ ...prev, category_id: e.target.value }))}
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+              >
+                <option value="">Select category…</option>
+                {Object.entries(groupedQuickCategories).map(([type, items]) => (
+                  items.length > 0 ? (
+                    <optgroup key={type} label={type.charAt(0).toUpperCase() + type.slice(1)}>
+                      {items.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </optgroup>
+                  ) : null
+                ))}
+              </select>
+            </div>
+
+            {partnership && (
+              <div className="rounded-xl border border-stone-200/60 bg-white px-3 py-3 dark:border-stone-700/60 dark:bg-stone-800/70">
+                <div className="mb-2 flex items-center gap-2">
+                  <input
+                    id="quickSplitToggle"
+                    type="checkbox"
+                    checked={quickForm.is_split}
+                    onChange={(e) => setQuickForm((prev) => ({ ...prev, is_split: e.target.checked }))}
+                  />
+                  <label htmlFor="quickSplitToggle" className="text-sm font-medium text-stone-700 dark:text-stone-300">
+                    Auto-create split expense
+                  </label>
+                </div>
+                {quickForm.is_split && (
+                  <div className="grid grid-cols-3 gap-2">
+                    <select
+                      value={quickForm.split_method}
+                      onChange={(e) => setQuickForm((prev) => ({ ...prev, split_method: e.target.value }))}
+                      className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-900 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                    >
+                      <option value="equal">50/50</option>
+                      <option value="full">100% owed</option>
+                      <option value="custom">Custom %</option>
+                    </select>
+                    <select
+                      value={quickForm.split_payer}
+                      onChange={(e) => setQuickForm((prev) => ({ ...prev, split_payer: e.target.value }))}
+                      className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-900 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                    >
+                      <option value="me">Paid by me</option>
+                      <option value="partner">Paid by partner</option>
+                    </select>
+                    <input
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={quickForm.split_method === 'custom' ? quickForm.split_partner_share_pct : ''}
+                      onChange={(e) => setQuickForm((prev) => ({ ...prev, split_partner_share_pct: Number(e.target.value || 0) }))}
+                      disabled={quickForm.split_method !== 'custom'}
+                      placeholder="Partner %"
+                      className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-900 disabled:opacity-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleQuickSave}
+                disabled={quickSaving}
+                className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-600 disabled:opacity-50"
+              >
+                {quickForm.id ? 'Update template' : 'Add template'}
+              </button>
+              {quickForm.id && (
+                <button
+                  type="button"
+                  onClick={resetQuickForm}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 hover:bg-stone-50 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+                >
+                  Cancel edit
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* ── Budget Thresholds ────────────────────────── */}
         {isLoading ? (
@@ -469,8 +816,8 @@ export default function SettingsPage() {
               </button>
             </div>
             <ImportCSV
-              categories={importCategories}
-              accounts={importAccounts}
+              categories={categories}
+              accounts={accounts}
               onComplete={() => {}}
               onClose={() => setShowImportModal(false)}
             />
@@ -481,7 +828,7 @@ export default function SettingsPage() {
       {/* Import Budget CSV modal */}
       {showBudgetImportModal && (
         <BudgetImportModal
-          categories={importCategories}
+          categories={categories}
           onClose={() => setShowBudgetImportModal(false)}
           onImportComplete={() => setShowBudgetImportModal(false)}
         />

@@ -1,5 +1,6 @@
 import { supabase, getCurrentUser } from "./supabase";
 import { getUserPreference, setUserPreference } from "./categories";
+import { getTodayString } from "../utils/helpers";
 
 /**
  * Account type constants and groupings.
@@ -242,8 +243,7 @@ export async function getNetWorthHistory({ projectedToDate } = {}) {
  */
 export async function getMaxProjectedDate() {
   const user = await getCurrentUser();
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
 
   // Max date from recurring-projected transactions
   const { data: projData, error: projErr } = await supabase
@@ -375,8 +375,7 @@ export async function getAccountBalanceHistory({
 export async function getUpcomingTransactions({ accountIds, endDate }) {
   if (!accountIds?.length) return [];
 
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
 
   const PAGE_SIZE = 1000;
   let allData = [];

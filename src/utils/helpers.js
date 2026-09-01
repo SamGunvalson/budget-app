@@ -203,6 +203,24 @@ export const formatDate = (date) => {
 };
 
 /**
+ * Format a Date as a YYYY-MM-DD string using local time (not UTC)
+ * @param {Date} [date] - Date to format, defaults to now
+ * @returns {string} YYYY-MM-DD
+ */
+export const toDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * Today's date as a YYYY-MM-DD string in the user's local timezone
+ * @returns {string} YYYY-MM-DD
+ */
+export const getTodayString = () => toDateString();
+
+/**
  * Get month name from month number
  * @param {number} month - Month number (1-12)
  * @returns {string} Month name

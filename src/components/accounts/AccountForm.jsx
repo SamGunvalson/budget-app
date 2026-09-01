@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toCents, toDollars } from '../../utils/helpers';
+import { toCents, toDollars, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAccountClosed } from '../../services/accounts';
 
 const ACCOUNT_TYPE_GROUPS = [
@@ -105,7 +105,7 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
   }
 
   async function handleClose() {
-    const dateVal = closureDate || new Date().toISOString().slice(0, 10);
+    const dateVal = closureDate || getTodayString();
     setIsClosing(true);
     try {
       await onClose(selectedId, dateVal);
@@ -277,7 +277,7 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
             <button
               type="button"
               onClick={() => {
-                setClosureDate(new Date().toISOString().slice(0, 10));
+                setClosureDate(getTodayString());
                 setShowCloseConfirm(true);
               }}
               className="w-full rounded-xl border border-amber-200 bg-amber-50 px-6 py-2 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"

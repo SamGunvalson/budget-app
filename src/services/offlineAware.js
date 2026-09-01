@@ -80,7 +80,7 @@ export async function getTransactionsOffline(filters = {}) {
     table: "transactions",
     readCache: () => readTransactionsFromCache(filters),
     fetchFresh: () => _getTransactions(filters),
-    writeCache: (rows) => cacheTransactions(rows),
+    writeCache: (rows) => cacheTransactions(rows, filters),
   });
 }
 
@@ -129,7 +129,44 @@ async function readTransactionsFromCache(filters = {}) {
   return rows;
 }
 
-async function cacheTransactions(data) {
+function inDateRange(date, startInclusive, endExclusive) {
+  return date >= startInclusive && date < endExclusive;
+}
+
+function matchesTransactionScope(tx, filters = {}) {
+  if (!tx?.transaction_date) return false;
+
+  if (filters.month && filters.year) {
+    const startDate = `${filters.year}-${String(filters.month).padStart(2, "0")}-01`;
+    const endMonth = filters.month === 12 ? 1 : filters.month + 1;
+    const endYear = filters.month === 12 ? filters.year + 1 : filters.year;
+    const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+    if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
+  } else if (filters.year && filters.throughMonth) {
+    const startDate = `${filters.year}-01-01`;
+    const endMonth = filters.throughMonth === 12 ? 1 : filters.throughMonth + 1;
+    const endYear =
+      filters.throughMonth === 12 ? filters.year + 1 : filters.year;
+    const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+    if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
+  } else if (filters.year) {
+    const startDate = `${filters.year}-01-01`;
+    const endDate = `${filters.year + 1}-01-01`;
+    if (!inDateRange(tx.transaction_date, startDate, endDate)) return false;
+  }
+
+  if (
+    filters.status &&
+    filters.status !== "all" &&
+    tx.status !== filters.status
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+async function cacheTransactions(data, filters = {}) {
   // Don't wipe the whole table — only upsert fetched rows to preserve offline-pending ones
   const pending = await db.transactions
     .where("_offline")
@@ -138,6 +175,20 @@ async function cacheTransactions(data) {
   const pendingSet = new Set(pending);
   const toCache = data.filter((r) => !pendingSet.has(r.id));
   if (toCache.length) await db.transactions.bulkPut(toCache);
+
+  // Reconcile stale rows for this fetch scope so soft-deleted rows removed on
+  // the server don't linger locally and appear as duplicates.
+  const freshIds = new Set(data.map((r) => r.id));
+  const local = await db.transactions.toArray();
+  const staleIds = local
+    .filter(
+      (row) =>
+        matchesTransactionScope(row, filters) &&
+        !pendingSet.has(row.id) &&
+        !freshIds.has(row.id),
+    )
+    .map((row) => row.id);
+  if (staleIds.length) await db.transactions.bulkDelete(staleIds);
 }
 
 /**
@@ -440,7 +491,7 @@ export async function getTransactionsYTDOffline({ year, throughMonth }) {
     table: "transactions",
     readCache: () => readTransactionsYTDFromCache({ year, throughMonth }),
     fetchFresh: () => _getTransactionsYTD({ year, throughMonth }),
-    writeCache: (rows) => cacheTransactions(rows),
+    writeCache: (rows) => cacheTransactions(rows, { year, throughMonth }),
   });
 }
 
@@ -491,7 +542,7 @@ export async function getTransactionsForYearOffline({ year }) {
     table: "transactions",
     readCache: () => readTransactionsForYearFromCache({ year }),
     fetchFresh: () => _getTransactionsForYear({ year }),
-    writeCache: (rows) => cacheTransactions(rows),
+    writeCache: (rows) => cacheTransactions(rows, { year }),
   });
 }
 
@@ -624,7 +675,9 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
       return computeAccountBalancesFromCache({ projectedToDate });
     },
     fetchFresh: async () => {
-      const result = await tryOnline(() => _getAccountBalances({ projectedToDate }));
+      const result = await tryOnline(() =>
+        _getAccountBalances({ projectedToDate }),
+      );
       if (!result.offline) return result.data;
       // Genuinely offline — compute from whatever transactions are in Dexie.
       return computeAccountBalancesFromCache({ projectedToDate });
@@ -658,7 +711,8 @@ async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
   accounts = accounts.filter((a) => a.is_active !== false);
   if (!accounts.length) return [];
 
-  // Today's date string — use UTC to match Supabase's CURRENT_DATE (server UTC).
+  // Today's date string — intentionally UTC so this offline fold matches the
+  // get_account_balances RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -922,8 +976,7 @@ export async function getMaxProjectedDateOffline() {
   if (!result.offline) return result.data;
 
   // Offline: scan IndexedDB for projected or future-dated posted transactions
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
   const allTx = await db.transactions.toArray();
   const dates = allTx
     .filter(
@@ -1073,6 +1126,8 @@ export async function getAccountBalanceHistoryOffline(opts) {
   );
   if (!accounts.length) return [];
 
+  // Intentionally UTC so this offline fold matches the
+  // get_account_balance_history RPC, which anchors on Postgres CURRENT_DATE.
   const now = new Date();
   const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
@@ -1158,8 +1213,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   const { accountIds, endDate } = opts;
   if (!accountIds?.length) return [];
 
-  const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = getTodayString();
 
   let rows = await db.transactions.toArray();
   rows = rows.filter(
@@ -1644,6 +1698,8 @@ import {
   isTrueIncome as _isTrueIncome,
   isSpendingCredit as _isSpendingCredit,
   isIncomeDebit as _isIncomeDebit,
+  toDateString,
+  getTodayString,
 } from "../utils/helpers";
 
 import {
@@ -1833,8 +1889,8 @@ function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
     anchorEnd.getMonth() - months + 1,
     1,
   );
-  const startStr = startDate.toISOString().slice(0, 10);
-  const endStr = anchorEnd.toISOString().slice(0, 10);
+  const startStr = toDateString(startDate);
+  const endStr = toDateString(anchorEnd);
 
   const map = {};
   for (const t of rows) {
@@ -1925,7 +1981,7 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
           : new Date();
       const startYear = anchorEnd.getFullYear() - years + 1;
       const startStr = `${startYear}-01-01`;
-      const endStr = anchorEnd.toISOString().slice(0, 10);
+      const endStr = toDateString(anchorEnd);
 
       const map = {};
       for (const t of rows) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName } from '../../utils/helpers';
+import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
 
@@ -135,7 +135,7 @@ export default function RecurringForm({
   // Default start date to today for new templates
   useEffect(() => {
     if (!isEditing && !startDate) {
-      setStartDate(new Date().toISOString().split('T')[0]);
+      setStartDate(getTodayString());
     }
   }, [isEditing, startDate]);
 

@@ -15,8 +15,9 @@ import { formatCurrency, formatDate, toDollars, toCents, maskAccountName } from 
  *  - onApplied(result): callback after applying recurring transactions
  *  - onEdit(template): callback to open edit modal for standalone templates
  *  - onEditGroup(template): callback to open group edit modal
+ *  - onMutated(): callback after recurring template mutations (delete/pause/etc.)
  */
-export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
+export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMutated }) {
   const [templates, setTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -175,6 +176,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup }) {
     try {
       await deleteRecurringTemplate(id);
       setTemplates((prev) => prev.filter((t) => t.id !== id));
+      if (onMutated) onMutated();
     } catch (err) {
       setError(err.message || 'Failed to delete template');
     } finally {

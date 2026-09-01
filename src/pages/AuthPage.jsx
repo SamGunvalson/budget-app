@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/common/LoginForm';
 import SignupForm from '../components/common/SignupForm';
 import { supabase } from '../services/supabase';
+import { getConnectionErrorMessage, isLikelyConnectionError } from '../utils/connectionErrors';
 
 const features = [
   {
@@ -34,6 +35,7 @@ const features = [
 function AuthPage() {
   const [mode, setMode] = useState('login');
   const [isChecking, setIsChecking] = useState(true);
+  const [connectionError, setConnectionError] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => { document.title = 'Budget App | Sign In'; }, []);
@@ -42,15 +44,29 @@ function AuthPage() {
     let isMounted = true;
 
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!isMounted) return;
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (!isMounted) return;
 
-      if (data?.session) {
-        navigate('/app', { replace: true });
-        return;
+        if (error) {
+          if (isLikelyConnectionError(error)) {
+            setConnectionError(getConnectionErrorMessage(error));
+          } else {
+            console.error('AuthPage: session check failed', error);
+          }
+        }
+
+        if (data?.session) {
+          navigate('/app', { replace: true });
+          return;
+        }
+
+        setIsChecking(false);
+      } catch (error) {
+        if (!isMounted) return;
+        setConnectionError(getConnectionErrorMessage(error));
+        setIsChecking(false);
       }
-
-      setIsChecking(false);
     };
 
     checkSession();
@@ -108,6 +124,13 @@ function AuthPage() {
           <p className="mt-3 text-base text-stone-500 dark:text-stone-400">
             Track spending, plan with confidence, and build stronger financial habits.
           </p>
+
+          {connectionError && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+              <span className="mr-1.5">⚠</span>
+              {connectionError}
+            </div>
+          )}
         </div>
 
         {/* Features */}

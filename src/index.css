@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-area-pt {
+  padding-top: var(--safe-area-top);
+}
+
 /* Remove spinner arrows from all number inputs */
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-outer-spin-button,
