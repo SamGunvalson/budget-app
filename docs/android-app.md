@@ -213,11 +213,24 @@ npm run build
 npx cap sync android
 ```
 
-Then build release:
+Bump the versionCode and versionName in `android/app/build.gradle` as needed.
+
+```bash
+versionCode 2
+versionName "1.0.1"
+```
+
+Then build release (outside of dev container):
 
 ```bash
 cd /workspaces/budget-app/android
 ./gradlew bundleRelease
+```
+
+Then you can sideload the app:
+
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 Upload the new `.aab` to Play Console.
