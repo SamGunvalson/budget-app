@@ -904,7 +904,6 @@ export default function TransactionsPage() {
       {showCreateModal && (
         <Modal title="New Transaction" onClose={() => setShowCreateModal(false)}>
           <TransactionForm
-            key={mgr.editingTransaction.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreate}
@@ -1022,6 +1021,7 @@ export default function TransactionsPage() {
       {mgr.editingTransaction && (
         <Modal title="Edit Transaction" onClose={() => mgr.setEditingTransaction(null)}>
           <TransactionForm
+            key={mgr.editingTransaction.id}
             categories={categories}
             accounts={accounts}
             initialValues={mgr.editingTransaction}
@@ -1089,7 +1089,6 @@ export default function TransactionsPage() {
       {showRecurringForm && (
         <Modal title="New Recurring Transaction" onClose={() => setShowRecurringForm(false)}>
           <RecurringForm
-            key={editingTemplate.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreateRecurring}
@@ -1104,6 +1103,7 @@ export default function TransactionsPage() {
       {editingTemplate && (
         <Modal title="Edit Recurring Transaction" onClose={() => setEditingTemplate(null)}>
           <RecurringForm
+            key={editingTemplate.id}
             categories={categories}
             accounts={accounts}
             initialValues={editingTemplate}
@@ -1120,7 +1120,6 @@ export default function TransactionsPage() {
       {showGroupForm && (
         <Modal title="New Recurring Group" onClose={() => setShowGroupForm(false)} wide>
           <RecurringGroupForm
-            key={editingGroup.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreateGroup}
@@ -1133,6 +1132,7 @@ export default function TransactionsPage() {
       {editingGroup && (
         <Modal title="Edit Recurring Group" onClose={() => setEditingGroup(null)} wide>
           <RecurringGroupForm
+            key={editingGroup.id}
             categories={categories}
             accounts={accounts}
             initialValues={editingGroup}
