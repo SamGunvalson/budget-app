@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
@@ -20,6 +20,66 @@ function blankChild(defaults = {}) {
     linkedAccountId: '',
     payee: defaults.payee || '',
   };
+}
+
+function getInitialFormValues(initialValues, isEditing) {
+  if (!initialValues) {
+    return {
+      description: '',
+      payee: '',
+      accountId: '',
+      categoryId: '',
+      frequency: 'monthly',
+      dayOfMonth: '1',
+      dayOfMonth2: '15',
+      dayOfWeek: '0',
+      customInterval: 2,
+      customUnit: 'days',
+      startDate: isEditing ? '' : getTodayString(),
+      endDate: '',
+      autoConfirm: true,
+      children: [blankChild()],
+    };
+  }
+
+  return {
+    description: initialValues.description || '',
+    payee: initialValues.payee || '',
+    accountId: initialValues.account_id || '',
+    categoryId: initialValues.category_id || '',
+    frequency: initialValues.frequency || 'monthly',
+    dayOfMonth: String(initialValues.day_of_month || 1),
+    dayOfMonth2: String(initialValues.day_of_month_2 || 15),
+    dayOfWeek: String(initialValues.day_of_week ?? 0),
+    customInterval: initialValues.custom_interval || 2,
+    customUnit: initialValues.custom_unit || 'months',
+    startDate: initialValues.start_date || '',
+    endDate: initialValues.end_date || '',
+    autoConfirm: initialValues.auto_confirm !== false,
+    children: initialValues.children?.length
+      ? initialValues.children.map((child) => ({
+          _key: crypto.randomUUID(),
+          id: child.id || null,
+          txType: child.is_transfer ? 'transfer' : child.is_income ? 'income' : 'expense',
+          description: child.description || '',
+          amount: String(toDollars(Math.abs(child.amount))),
+          categoryId: child.category_id || '',
+          accountId: child.account_id || initialValues.account_id || '',
+          toAccountId: child.is_transfer ? child.to_account_id || '' : '',
+          linkedAccountId: !child.is_transfer && child.to_account_id ? child.to_account_id : '',
+          payee: child.payee || '',
+        }))
+      : [blankChild({ accountId: initialValues.account_id, payee: initialValues.payee })],
+  };
+}
+
+function getEffectiveChildCategoryId(child, categories) {
+  const childCategories = child.txType === 'transfer'
+    ? categories.filter((category) => category.type === 'transfer')
+    : categories.filter((category) => category.type !== 'transfer');
+  return childCategories.some((category) => category.id === child.categoryId)
+    ? child.categoryId
+    : childCategories[0]?.id || '';
 }
 
 /**
@@ -45,23 +105,26 @@ export default function RecurringGroupForm({
   onCancel,
   isEditing = false,
 }) {
+  const [initialFormValues] = useState(() =>
+    getInitialFormValues(initialValues, isEditing),
+  );
   // ── Parent state ──
-  const [description, setDescription] = useState('');
-  const [payee, setPayee] = useState('');
-  const [accountId, setAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [frequency, setFrequency] = useState('monthly');
-  const [dayOfMonth, setDayOfMonth] = useState('1');
-  const [dayOfMonth2, setDayOfMonth2] = useState('15');
-  const [dayOfWeek, setDayOfWeek] = useState('0');
-  const [customInterval, setCustomInterval] = useState(2);
-  const [customUnit, setCustomUnit] = useState('days');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [autoConfirm, setAutoConfirm] = useState(true);
+  const [description, setDescription] = useState(initialFormValues.description);
+  const [payee, setPayee] = useState(initialFormValues.payee);
+  const [accountId, setAccountId] = useState(initialFormValues.accountId);
+  const [categoryId, setCategoryId] = useState(initialFormValues.categoryId);
+  const [frequency, setFrequency] = useState(initialFormValues.frequency);
+  const [dayOfMonth, setDayOfMonth] = useState(initialFormValues.dayOfMonth);
+  const [dayOfMonth2, setDayOfMonth2] = useState(initialFormValues.dayOfMonth2);
+  const [dayOfWeek, setDayOfWeek] = useState(initialFormValues.dayOfWeek);
+  const [customInterval, setCustomInterval] = useState(initialFormValues.customInterval);
+  const [customUnit, setCustomUnit] = useState(initialFormValues.customUnit);
+  const [startDate, setStartDate] = useState(initialFormValues.startDate);
+  const [endDate, setEndDate] = useState(initialFormValues.endDate);
+  const [autoConfirm, setAutoConfirm] = useState(initialFormValues.autoConfirm);
 
   // ── Children state ──
-  const [children, setChildren] = useState([blankChild()]);
+  const [children, setChildren] = useState(initialFormValues.children);
 
   // ── UI state ──
   const [errors, setErrors] = useState({});
@@ -113,49 +176,6 @@ export default function RecurringGroupForm({
     const netCents = incomeCents - expenseCents;
     return { incomeCents, expenseCents, transferCents, netCents };
   }, [children]);
-
-  // Populate form when editing
-  useEffect(() => {
-    if (initialValues) {
-      setDescription(initialValues.description || '');
-      setPayee(initialValues.payee || '');
-      setAccountId(initialValues.account_id || '');
-      setCategoryId(initialValues.category_id || '');
-      setFrequency(initialValues.frequency || 'monthly');
-      setDayOfMonth(String(initialValues.day_of_month || 1));
-      setDayOfMonth2(String(initialValues.day_of_month_2 || 15));
-      setDayOfWeek(String(initialValues.day_of_week ?? 0));
-      setCustomInterval(initialValues.custom_interval || 2);
-      setCustomUnit(initialValues.custom_unit || 'months');
-      setStartDate(initialValues.start_date || '');
-      setEndDate(initialValues.end_date || '');
-      setAutoConfirm(initialValues.auto_confirm !== false);
-
-      if (initialValues.children?.length > 0) {
-        setChildren(
-          initialValues.children.map((c) => ({
-            _key: crypto.randomUUID(),
-            id: c.id || null,
-            txType: c.is_transfer ? 'transfer' : c.is_income ? 'income' : 'expense',
-            description: c.description || '',
-            amount: String(toDollars(Math.abs(c.amount))),
-            categoryId: c.category_id || '',
-            accountId: c.account_id || initialValues.account_id || '',
-            toAccountId: c.is_transfer ? (c.to_account_id || '') : '',
-            linkedAccountId: (!c.is_transfer && c.to_account_id) ? c.to_account_id : '',
-            payee: c.payee || '',
-          })),
-        );
-      }
-    }
-  }, [initialValues]);
-
-  // Default start date to today for new groups
-  useEffect(() => {
-    if (!isEditing && !startDate) {
-      setStartDate(getTodayString());
-    }
-  }, [isEditing, startDate]);
 
   // ── Child handlers ──
   const updateChild = (index, field, value) => {
@@ -219,7 +239,7 @@ export default function RecurringGroupForm({
       const ce = {};
       const amt = parseFloat(child.amount);
       if (!child.amount || isNaN(amt) || amt <= 0) ce.amount = 'Required';
-      if (!child.categoryId) ce.categoryId = 'Required';
+      if (!getEffectiveChildCategoryId(child, categories)) ce.categoryId = 'Required';
       if (!child.accountId) ce.accountId = 'Required';
       if (child.txType === 'transfer' && !child.toAccountId) ce.toAccountId = 'Required';
       if (child.txType === 'transfer' && child.toAccountId === child.accountId) ce.toAccountId = 'Must differ';
@@ -251,7 +271,7 @@ export default function RecurringGroupForm({
         return {
           id: child.id || undefined,
           account_id: child.accountId,
-          category_id: child.categoryId,
+          category_id: getEffectiveChildCategoryId(child, categories),
           description: child.description?.trim() || null,
           payee: child.payee?.trim() || null,
           amount: Math.abs(amountCents),
@@ -691,7 +711,7 @@ export default function RecurringGroupForm({
                     {/* Category */}
                     <div>
                       <select
-                        value={child.categoryId}
+                        value={getEffectiveChildCategoryId(child, categories)}
                         onChange={(e) => updateChild(index, 'categoryId', e.target.value)}
                         className={`${cellInputClass} ${childErrs.categoryId ? 'border-red-300 dark:border-red-700' : ''}`}
                       >
@@ -868,7 +888,7 @@ export default function RecurringGroupForm({
                     className={cellInputClass}
                   />
                   <select
-                    value={child.categoryId}
+                    value={getEffectiveChildCategoryId(child, categories)}
                     onChange={(e) => updateChild(index, 'categoryId', e.target.value)}
                     className={`${cellInputClass} ${childErrs.categoryId ? 'border-red-300 dark:border-red-700' : ''}`}
                   >

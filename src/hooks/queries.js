@@ -23,6 +23,7 @@
  * to keep keys aligned across pages.
  */
 import { useQuery } from "@tanstack/react-query";
+import useAuth from "./useAuth";
 import {
   // transactions
   getTransactionsOffline,
@@ -52,6 +53,8 @@ import {
   getMonthlySpendingTrendOffline,
   getYearlySpendingTrendOffline,
 } from "../services/offlineAware";
+import { getPartnership, getPartnerEmail, getPartnerId } from "../services/partnerships";
+import { getBalance, getSplitExpenses } from "../services/splitExpenses";
 
 // ── Transactions ──────────────────────────────────────────────────────────
 
@@ -220,6 +223,64 @@ export function useBudgetItems(budgetPlanId, { enabled = true } = {}) {
     queryKey: ["budget_items", budgetPlanId],
     queryFn: () => getBudgetItemsOffline(budgetPlanId),
     enabled: enabled && !!budgetPlanId,
+  });
+}
+
+export function useAnnualBudgetData(year, { enabled = true } = {}) {
+  const { session } = useAuth();
+  const userId = session?.user?.id;
+  return useQuery({
+    queryKey: ["budget_plans", "annual", userId, year],
+    queryFn: async () => {
+      const plans = (await Promise.all(
+        Array.from({ length: 12 }, (_, index) =>
+          getBudgetPlanOffline(index + 1, year),
+        ),
+      )).filter(Boolean);
+      const entries = await Promise.all(
+        plans.map(async (plan) => {
+          const items = await getBudgetItemsOffline(plan.id);
+          const allocations = Object.fromEntries(
+            items.map((item) => [item.category_id, item.planned_amount]),
+          );
+          return [plan.month, { planId: plan.id, allocations }];
+        }),
+      );
+      return Object.fromEntries(entries);
+    },
+    enabled: enabled && !!userId && year != null,
+  });
+}
+
+export function usePartnership(userId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["partnership", userId],
+    queryFn: async () => {
+      const partnership = await getPartnership();
+      if (!partnership) {
+        return { partnership: null, partnerEmail: "", partnerId: null };
+      }
+      const [partnerEmail, partnerId] = await Promise.all([
+        getPartnerEmail(partnership, userId),
+        Promise.resolve(getPartnerId(partnership, userId)),
+      ]);
+      return { partnership, partnerEmail, partnerId };
+    },
+    enabled: enabled && !!userId,
+  });
+}
+
+export function useSplitExpenses(partnershipId, userId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["split_expenses", userId, partnershipId],
+    queryFn: async () => {
+      const [expenses, balance] = await Promise.all([
+        getSplitExpenses(partnershipId),
+        getBalance(partnershipId),
+      ]);
+      return { expenses, balance };
+    },
+    enabled: enabled && !!partnershipId && !!userId,
   });
 }
 

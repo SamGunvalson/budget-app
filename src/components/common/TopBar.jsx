@@ -11,6 +11,65 @@ import { getPartnership, getPartnerEmail } from '../../services/partnerships';
 
 const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
 
+function MobileNavigationMenu({ pathname }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleClick);
+    return () => document.removeEventListener('pointerdown', handleClick);
+  }, [menuOpen]);
+
+  return (
+    <div className="relative md:hidden" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setMenuOpen((v) => !v)}
+        aria-label="Navigation menu"
+        aria-expanded={menuOpen}
+        className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
+      >
+        {menuOpen ? (
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        ) : (
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          </svg>
+        )}
+      </button>
+      {menuOpen && (
+        <div className="absolute left-0 top-full mt-2 w-56 rounded-xl border border-stone-200/60 bg-white py-2 shadow-xl dark:border-stone-700/60 dark:bg-stone-800">
+          {navPages.map((page) => {
+            const isActive = pathname === page.link;
+            return (
+              <Link
+                key={page.id}
+                to={page.link}
+                className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'text-stone-600 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-stone-700/50'
+                }`}
+              >
+                {page.iconSmall}
+                {page.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Shared sticky top navigation bar.
  *
@@ -19,9 +78,7 @@ const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
  */
 export default function TopBar() {
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
-  const menuRef = useRef(null);
 
   // Partnership + current user for split notifications
   const [partnership, setPartnership] = useState(null);
@@ -62,23 +119,6 @@ export default function TopBar() {
     }
   };
 
-  // Close mobile menu on navigation
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
-
-  // Close on click outside
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handleClick);
-    return () => document.removeEventListener('pointerdown', handleClick);
-  }, [menuOpen]);
-
   // ── Logo block ──
   const logo = (
     <>
@@ -96,49 +136,7 @@ export default function TopBar() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Left: logo + mobile hamburger */}
         <div className="flex items-center gap-3">
-          {/* Hamburger — mobile only */}
-          <div className="relative md:hidden" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-label="Navigation menu"
-              aria-expanded={menuOpen}
-              className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
-            >
-              {menuOpen ? (
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                </svg>
-              )}
-            </button>
-
-            {/* Dropdown overlay */}
-            {menuOpen && (
-              <div className="absolute left-0 top-full mt-2 w-56 rounded-xl border border-stone-200/60 bg-white py-2 shadow-xl dark:border-stone-700/60 dark:bg-stone-800">
-                {navPages.map((page) => {
-                  const isActive = pathname === page.link;
-                  return (
-                    <Link
-                      key={page.id}
-                      to={page.link}
-                      className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                          : 'text-stone-600 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-stone-700/50'
-                      }`}
-                    >
-                      {page.iconSmall}
-                      {page.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <MobileNavigationMenu key={pathname} pathname={pathname} />
 
           <Link to="/app/transactions" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             {logo}

@@ -34,7 +34,8 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
   const [fetchedForKey, setFetchedForKey] = useState(null);
 
   const active = !!(partnership?.id && currentUserId);
-  const fetchKey = active ? `${partnership.id}:${currentUserId}` : null;
+  const partnershipId = partnership?.id;
+  const fetchKey = active ? `${partnershipId}:${currentUserId}` : null;
 
   // DB-side seen_at for this user (comes from the already-loaded partnership object)
   const dbSeenAt = active
@@ -42,12 +43,12 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
     : null;
 
   useEffect(() => {
-    if (!partnership?.id || !currentUserId) return;
+    if (!partnershipId || !currentUserId) return;
 
     let cancelled = false;
-    const key = `${partnership.id}:${currentUserId}`;
+    const key = `${partnershipId}:${currentUserId}`;
 
-    getSplitExpenses(partnership.id)
+    getSplitExpenses(partnershipId)
       .then((expenses) => {
         if (cancelled) return;
 
@@ -75,16 +76,16 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
   // dbSeenAt is intentionally excluded — we only want to re-fetch expenses when
   // the partnership or user changes, not when the seen timestamp updates locally.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partnership?.id, currentUserId]);
+  }, [partnershipId, currentUserId]);
 
   const markAsSeen = useCallback(() => {
-    if (!currentUserId || !partnership?.id) return;
+    if (!currentUserId || !partnershipId) return;
     // Write to localStorage immediately (offline fallback)
     markSplitsSeenLocal(currentUserId);
     // Persist to DB (fire-and-forget; non-critical)
-    markSplitsSeenDB(partnership.id, isUserA).catch(() => {});
+    markSplitsSeenDB(partnershipId, isUserA).catch(() => {});
     setUnseenExpenses([]);
-  }, [currentUserId, partnership?.id, isUserA]);
+  }, [currentUserId, partnershipId, isUserA]);
 
   return {
     unseenCount: active ? unseenExpenses.length : 0,

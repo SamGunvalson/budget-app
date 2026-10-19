@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import useAuth from '../hooks/useAuth';
+import { usePartnership, useSplitExpenses } from '../hooks/queries';
 import TopBar from '../components/common/TopBar';
 import PartnerSetup from '../components/splits/PartnerSetup';
 import BalanceSummary from '../components/splits/BalanceSummary';
@@ -6,25 +9,30 @@ import SplitExpenseList from '../components/splits/SplitExpenseList';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import SettleUpModal from '../components/splits/SettleUpModal';
 import Modal from '../components/common/Modal';
-import { getPartnership, getPartnerEmail, getPartnerId, markSplitsSeenDB } from '../services/partnerships';
-import { getSplitExpenses, getBalance, createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeenLocal } from '../services/splitExpenses';
-import { getCurrentUser } from '../services/supabase';
+import { markSplitsSeenDB } from '../services/partnerships';
+import { createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeenLocal } from '../services/splitExpenses';
 
 export default function SplitExpensesPage() {
-  // Auth
-  const [currentUser, setCurrentUser] = useState(null);
-
-  // Partnership state
-  const [partnership, setPartnership] = useState(null);
-  const [partnerEmail, setPartnerEmail] = useState('');
-  const [partnerId, setPartnerId] = useState(null);
-  const [partnershipLoading, setPartnershipLoading] = useState(true);
-
-  // Split expenses state
-  const [expenses, setExpenses] = useState([]);
-  const [balance, setBalance] = useState(0);
-  const [dataLoading, setDataLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { session, isChecking } = useAuth();
+  const currentUser = session?.user ?? null;
+  const currentUserId = currentUser?.id;
+  const queryClient = useQueryClient();
+  const partnershipQuery = usePartnership(currentUserId);
+  const partnership = partnershipQuery.data?.partnership ?? null;
+  const partnershipId = partnership?.id;
+  const partnerEmail = partnershipQuery.data?.partnerEmail ?? '';
+  const partnerId = partnershipQuery.data?.partnerId ?? null;
+  const expensesQuery = useSplitExpenses(partnership?.id, currentUserId);
+  const expenses = expensesQuery.data?.expenses ?? [];
+  const balance = expensesQuery.data?.balance ?? 0;
+  const partnershipLoading = isChecking || (!!currentUserId && partnershipQuery.isLoading);
+  const dataLoading = expensesQuery.isLoading || expensesQuery.isFetching;
+  const [mutationError, setMutationError] = useState('');
+  const error =
+    mutationError ||
+    partnershipQuery.error?.message ||
+    expensesQuery.error?.message ||
+    '';
 
   // Modal state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -34,32 +42,11 @@ export default function SplitExpensesPage() {
 
   useEffect(() => { document.title = 'Budget App | Split Expenses'; }, []);
 
-  // Load current user
-  useEffect(() => {
-    getCurrentUser().then(setCurrentUser).catch(() => {});
-  }, []);
-
-  // Load partnership
-  const loadPartnership = useCallback(async () => {
-    setPartnershipLoading(true);
-    setError('');
-    try {
-      const p = await getPartnership();
-      setPartnership(p);
-      if (p && currentUser) {
-        setPartnerEmail(await getPartnerEmail(p, currentUser.id));
-        setPartnerId(getPartnerId(p, currentUser.id));
-      }
-    } catch (err) {
-      setError(err?.message || 'Failed to load partnership.');
-    } finally {
-      setPartnershipLoading(false);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (currentUser) loadPartnership();
-  }, [currentUser, loadPartnership]);
+  const refreshPartnership = useCallback(() => {
+    return queryClient.invalidateQueries({
+      queryKey: ['partnership', currentUserId],
+    });
+  }, [queryClient, currentUserId]);
 
   // Mark split notifications as seen when this page is viewed
   useEffect(() => {
@@ -69,32 +56,17 @@ export default function SplitExpensesPage() {
     markSplitsSeenDB(partnership.id, isUserA).catch(() => {});
   }, [currentUser?.id, partnership?.id, partnership?.user_a_id]);
 
-  // Load split expenses + balance
-  const loadExpenses = useCallback(async () => {
-    if (!partnership) return;
-    setDataLoading(true);
-    try {
-      const [expData, bal] = await Promise.all([
-        getSplitExpenses(partnership.id),
-        getBalance(partnership.id),
-      ]);
-      setExpenses(expData);
-      setBalance(bal);
-    } catch (err) {
-      setError(err?.message || 'Failed to load expenses.');
-    } finally {
-      setDataLoading(false);
-    }
-  }, [partnership]);
-
-  useEffect(() => {
-    loadExpenses();
-  }, [loadExpenses]);
+  const refreshExpenses = useCallback(() => {
+    if (!partnershipId || !currentUserId) return Promise.resolve();
+    return queryClient.invalidateQueries({
+      queryKey: ['split_expenses', currentUserId, partnershipId],
+    });
+  }, [queryClient, partnershipId, currentUserId]);
 
   // Handlers
   async function handleAddExpense(formData) {
     setActionLoading(true);
-    setError('');
+    setMutationError('');
     try {
       await createSplitExpense({
         partnershipId: partnership.id,
@@ -106,9 +78,9 @@ export default function SplitExpensesPage() {
         expenseDate: formData.expenseDate,
       });
       setShowAddForm(false);
-      await loadExpenses();
+      await refreshExpenses();
     } catch (err) {
-      setError(err?.message || 'Failed to add expense.');
+      setMutationError(err?.message || 'Failed to add expense.');
     } finally {
       setActionLoading(false);
     }
@@ -116,7 +88,7 @@ export default function SplitExpensesPage() {
 
   async function handleSettleUp(amount, paidByUserId) {
     setActionLoading(true);
-    setError('');
+    setMutationError('');
     try {
       await createSettlement({
         partnershipId: partnership.id,
@@ -124,27 +96,27 @@ export default function SplitExpensesPage() {
         paidByUserId,
       });
       setShowSettleUp(false);
-      await loadExpenses();
+      await refreshExpenses();
     } catch (err) {
-      setError(err?.message || 'Failed to settle up.');
+      setMutationError(err?.message || 'Failed to settle up.');
     } finally {
       setActionLoading(false);
     }
   }
 
   async function handleDeleteExpense(id) {
-    setError('');
+    setMutationError('');
     try {
       await deleteSplitExpense(id, partnership.id);
-      await loadExpenses();
+      await refreshExpenses();
     } catch (err) {
-      setError(err?.message || 'Failed to delete expense.');
+      setMutationError(err?.message || 'Failed to delete expense.');
     }
   }
 
   async function handleEditExpense(formData) {
     setActionLoading(true);
-    setError('');
+    setMutationError('');
     try {
       await updateSplitExpense({
         id: editingExpense.id,
@@ -157,9 +129,9 @@ export default function SplitExpensesPage() {
         expenseDate: formData.expenseDate,
       });
       setEditingExpense(null);
-      await loadExpenses();
+      await refreshExpenses();
     } catch (err) {
-      setError(err?.message || 'Failed to update expense.');
+      setMutationError(err?.message || 'Failed to update expense.');
     } finally {
       setActionLoading(false);
     }
@@ -198,7 +170,7 @@ export default function SplitExpensesPage() {
               <span className="mr-1.5">⚠</span>{error}
             </div>
           )}
-          <PartnerSetup onPartnershipCreated={loadPartnership} />
+          <PartnerSetup onPartnershipCreated={refreshPartnership} />
         </div>
       </div>
     );

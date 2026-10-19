@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import FileUploader from './FileUploader';
 import ColumnMapper from './ColumnMapper';
 import AccountMatcher from './AccountMatcher';
@@ -35,23 +35,35 @@ export default function ImportCSV({ categories, accounts, onComplete, onClose })
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
 
-  // Local copy of accounts so inline-created accounts appear immediately in dropdowns
-  const [localAccounts, setLocalAccounts] = useState(accounts || []);
+  const [localAccountAdditions, setLocalAccountAdditions] = useState([]);
+  const parentAccounts = accounts ?? [];
 
-  // Sync with parent when the accounts prop updates (e.g. async fetch completes)
-  useEffect(() => {
-    if (accounts?.length) {
-      setLocalAccounts((prev) => {
-        // Merge: keep any locally-created accounts that aren't in the prop yet
-        const propIds = new Set(accounts.map((a) => a.id));
-        const localOnly = prev.filter((a) => !propIds.has(a.id));
-        return [...accounts, ...localOnly];
-      });
+  // Once the parent/server snapshot includes an inline-created account, stop
+  // treating the local copy as authoritative so later server removals stay removed.
+  const acknowledgedIds = new Set(
+    localAccountAdditions
+      .filter((account) => parentAccounts.some((parent) => parent.id === account.id))
+      .map((account) => account.id),
+  );
+  if (acknowledgedIds.size > 0) {
+    setLocalAccountAdditions((previous) =>
+      previous.filter((account) => !acknowledgedIds.has(account.id)),
+    );
+  }
+  const accountById = new Map(parentAccounts.map((account) => [account.id, account]));
+  for (const account of localAccountAdditions) {
+    if (!acknowledgedIds.has(account.id) && !accountById.has(account.id)) {
+      accountById.set(account.id, account);
     }
-  }, [accounts]);
+  }
+  const localAccounts = [...accountById.values()];
 
   const handleAccountCreated = useCallback((newAccount) => {
-    setLocalAccounts((prev) => [...prev, newAccount]);
+    setLocalAccountAdditions((prev) =>
+      prev.some((account) => account.id === newAccount.id)
+        ? prev
+        : [...prev, newAccount],
+    );
   }, []);
 
   // File data

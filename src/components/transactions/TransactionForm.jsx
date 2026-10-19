@@ -1,6 +1,87 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
+
+function getInitialFormValues({
+  initialValues,
+  isEditing,
+  defaultAccountId,
+  transferCompanionAccountId,
+  transferCompanionAmount,
+  initialLinkedAccountId,
+  hasSplit,
+}) {
+  const values = {
+    accountId: isEditing ? '' : defaultAccountId || '',
+    categoryId: '',
+    amount: '',
+    description: '',
+    payee: '',
+    transactionDate: isEditing ? '' : getTodayString(),
+    transactionType: 'expense',
+    toAccountId: '',
+    gainOrLoss: 'gain',
+    toAmountForAccount: '',
+    linkedAccountId: '',
+    isPlanned: false,
+    isSplit: false,
+  };
+  if (!initialValues) return values;
+
+  values.categoryId = initialValues.category_id || '';
+  values.description = initialValues.description || '';
+  values.payee = initialValues.payee || '';
+  values.transactionDate = initialValues.transaction_date || '';
+  values.isPlanned = ['pending', 'projected'].includes(initialValues.status);
+
+  if (initialValues.categories?.type === 'transfer') {
+    values.transactionType = 'transfer';
+    if (transferCompanionAccountId) {
+      if (initialValues.is_income) {
+        values.accountId = transferCompanionAccountId;
+        values.toAccountId = initialValues.account_id || '';
+        if (transferCompanionAmount != null) {
+          values.amount = String(toDollars(Math.abs(transferCompanionAmount)));
+          const destinationAmount = Math.abs(initialValues.amount);
+          if (destinationAmount !== Math.abs(transferCompanionAmount)) {
+            values.toAmountForAccount = String(toDollars(destinationAmount));
+          }
+        } else {
+          values.amount = String(toDollars(Math.abs(initialValues.amount)));
+        }
+      } else {
+        values.accountId = initialValues.account_id || '';
+        values.toAccountId = transferCompanionAccountId;
+        values.amount = String(toDollars(Math.abs(initialValues.amount)));
+        if (
+          transferCompanionAmount != null &&
+          Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)
+        ) {
+          values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount)));
+        }
+      }
+    } else {
+      values.accountId = initialValues.account_id || '';
+      values.amount = String(toDollars(Math.abs(initialValues.amount)));
+      values.gainOrLoss = initialValues.is_income ? 'gain' : 'loss';
+    }
+  } else {
+    values.accountId = initialValues.account_id || '';
+    values.amount = String(toDollars(Math.abs(initialValues.amount)));
+    values.transactionType = initialValues.is_income ? 'income' : 'expense';
+    if (initialLinkedAccountId) {
+      values.linkedAccountId = initialLinkedAccountId;
+      if (
+        transferCompanionAmount != null &&
+        Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)
+      ) {
+        values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount)));
+      }
+    }
+    values.isSplit = hasSplit ?? false;
+  }
+  return values;
+}
 
 /**
  * TransactionForm — add or edit a transaction.
@@ -19,31 +100,41 @@ import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
  *  - linkedAccountId: pre-resolved linked account ID when editing a linked transfer
  */
 export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onSubmitAsymmetricTransfer, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, transferCompanionAmount, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
-  const [accountId, setAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [payee, setPayee] = useState('');
-  const [transactionDate, setTransactionDate] = useState('');
-  const [transactionType, setTransactionType] = useState('expense'); // 'expense' | 'income' | 'transfer'
+  const [initialFormValues] = useState(() => getInitialFormValues({
+    initialValues,
+    isEditing,
+    defaultAccountId,
+    transferCompanionAccountId,
+    transferCompanionAmount,
+    initialLinkedAccountId,
+    hasSplit,
+  }));
+  const [accountId, setAccountId] = useState(initialFormValues.accountId);
+  const [categoryId, setCategoryId] = useState(initialFormValues.categoryId);
+  const [amount, setAmount] = useState(initialFormValues.amount);
+  const [description, setDescription] = useState(initialFormValues.description);
+  const [payee, setPayee] = useState(initialFormValues.payee);
+  const [payeeManuallyEdited, setPayeeManuallyEdited] = useState(false);
+  const [transactionDate, setTransactionDate] = useState(initialFormValues.transactionDate);
+  const [transactionType, setTransactionType] = useState(initialFormValues.transactionType); // 'expense' | 'income' | 'transfer'
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
   // Transfer fields
-  const [toAccountId, setToAccountId] = useState('');
-  const [gainOrLoss, setGainOrLoss] = useState('gain'); // 'gain' | 'loss' — used for single-account adjustments
+  const [toAccountId, setToAccountId] = useState(initialFormValues.toAccountId);
+  const [gainOrLoss, setGainOrLoss] = useState(initialFormValues.gainOrLoss); // 'gain' | 'loss' — used for single-account adjustments
   // Optional "amount applied to account" for asymmetric transfers (leave blank for symmetric)
-  const [toAmountForAccount, setToAmountForAccount] = useState('');
+  const [toAmountForAccount, setToAmountForAccount] = useState(initialFormValues.toAmountForAccount);
 
   // Linked account — optional companion for expense/income transactions
-  const [linkedAccountId, setLinkedAccountId] = useState('');
+  const [linkedAccountId, setLinkedAccountId] = useState(initialFormValues.linkedAccountId);
 
   // Planned/future transaction toggle
-  const [isPlanned, setIsPlanned] = useState(false);
+  const [isPlanned, setIsPlanned] = useState(initialFormValues.isPlanned);
 
   // Split with partner toggle
-  const [isSplit, setIsSplit] = useState(false);
+  const [isSplit, setIsSplit] = useState(initialFormValues.isSplit);
 
   // Derived flags
   const isTransfer = transactionType === 'transfer';
@@ -60,6 +151,13 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   const filteredCategories = isTransfer
     ? categories.filter((c) => c.type === 'transfer')
     : categories.filter((c) => c.type !== 'transfer');
+  const effectiveCategoryId = filteredCategories.some((c) => c.id === categoryId)
+    ? categoryId
+    : filteredCategories[0]?.id || '';
+  const effectivePayee =
+    !isEditing && isTransfer && !payeeManuallyEdited
+      ? categories.find((c) => c.id === effectiveCategoryId)?.name || payee
+      : payee;
 
   // Group filtered categories by type for <optgroup>
   const groupedCategories = CATEGORY_TYPE_ORDER
@@ -70,130 +168,38 @@ export default function TransactionForm({ categories = [], accounts = [], initia
     }))
     .filter((g) => g.items.length > 0);
 
-  // Populate form when editing
-  useEffect(() => {
-    if (initialValues) {
-      setCategoryId(initialValues.category_id || '');
-      setDescription(initialValues.description || '');
-      setPayee(initialValues.payee || '');
-      setTransactionDate(initialValues.transaction_date || '');
-
-      // Set planned status from transaction status
-      const txStatus = initialValues.status || 'posted';
-      if (txStatus === 'pending' || txStatus === 'projected') {
-        setIsPlanned(true);
-      }
-
-      // Derive transaction type from existing data
-      if (initialValues.categories?.type === 'transfer') {
-        setTransactionType('transfer');
-        // Orient from/to correctly for transfer editing
-        if (transferCompanionAccountId) {
-          if (initialValues.is_income) {
-            // User clicked the "to" leg — companion is the "from" account
-            // amount state = from amount (companion), toAmountForAccount = this leg's amount
-            setAccountId(transferCompanionAccountId);
-            setToAccountId(initialValues.account_id || '');
-            if (transferCompanionAmount != null) {
-              setAmount(String(toDollars(Math.abs(transferCompanionAmount))));
-              const toAmt = Math.abs(initialValues.amount);
-              if (toAmt !== Math.abs(transferCompanionAmount)) {
-                setToAmountForAccount(String(toDollars(toAmt)));
-              }
-            } else {
-              setAmount(String(toDollars(Math.abs(initialValues.amount))));
-            }
-          } else {
-            // User clicked the "from" leg
-            // amount state = this leg's amount (from), toAmountForAccount = companion amount (to)
-            setAccountId(initialValues.account_id || '');
-            setToAccountId(transferCompanionAccountId);
-            setAmount(String(toDollars(Math.abs(initialValues.amount))));
-            if (transferCompanionAmount != null && Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)) {
-              setToAmountForAccount(String(toDollars(Math.abs(transferCompanionAmount))));
-            }
-          }
-        } else {
-          setAccountId(initialValues.account_id || '');
-          setAmount(String(toDollars(Math.abs(initialValues.amount))));
-          // No companion — this is a single-account adjustment; restore gain/loss direction
-          setGainOrLoss(initialValues.is_income ? 'gain' : 'loss');
-        }
-      } else {
-        setAccountId(initialValues.account_id || '');
-        setAmount(String(toDollars(Math.abs(initialValues.amount))));
-        setTransactionType(initialValues.is_income ? 'income' : 'expense');
-        // Populate linked account if editing a linked transfer
-        if (initialLinkedAccountId) {
-          setLinkedAccountId(initialLinkedAccountId);
-          // Pre-populate asymmetric amount if companion differs from main leg
-          if (transferCompanionAmount != null && Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)) {
-            setToAmountForAccount(String(toDollars(Math.abs(transferCompanionAmount))));
-          } else {
-            setToAmountForAccount('');
-          }
-        }
-        setIsSplit(hasSplit ?? false);
-      }
-    }
-  }, [initialValues, transferCompanionAccountId, transferCompanionAmount, initialLinkedAccountId, hasSplit]);
-
-  // Set default account
-  useEffect(() => {
-    if (!isEditing && !accountId && defaultAccountId) {
-      setAccountId(defaultAccountId);
-    }
-  }, [isEditing, accountId, defaultAccountId]);
-
-  // Default date to today for new transactions
-  useEffect(() => {
-    if (!isEditing && !transactionDate) {
-      setTransactionDate(getTodayString());
-    }
-  }, [isEditing, transactionDate]);
-
-  // When switching transaction type (new transactions only), auto-select first matching category
-  useEffect(() => {
-    if (isEditing) return;
-    const matching = isTransfer
+  function handleTransactionTypeChange(nextType) {
+    setTransactionType(nextType);
+    const nextCategories = nextType === 'transfer'
       ? categories.filter((c) => c.type === 'transfer')
       : categories.filter((c) => c.type !== 'transfer');
-    const firstMatch = matching[0];
-    if (firstMatch) {
-      setCategoryId(firstMatch.id);
-      if (isTransfer) {
-        setPayee(firstMatch.name);
-      }
-    } else {
-      setCategoryId('');
-    }
-    // Clear toAccountId when leaving transfer mode
-    if (!isTransfer) {
-      setToAccountId('');
-    }
-    // Clear linked account and split when entering transfer mode
-    if (isTransfer) {
+    const firstCategory = nextCategories[0];
+    setCategoryId(firstCategory?.id || '');
+    if (nextType === 'transfer') {
+      setPayee(firstCategory?.name || '');
+      setPayeeManuallyEdited(false);
       setLinkedAccountId('');
       setIsSplit(false);
+    } else {
+      setToAccountId('');
     }
-  }, [transactionType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
-  // Auto-fill payee when transfer category changes (new transactions only)
-  useEffect(() => {
-    if (!isTransfer || isEditing) return;
-    const cat = categories.find((c) => c.id === categoryId);
-    if (cat) {
-      setPayee(cat.name);
+  function handleCategoryChange(nextCategoryId) {
+    setCategoryId(nextCategoryId);
+    if (!isEditing && isTransfer) {
+      setPayee(categories.find((c) => c.id === nextCategoryId)?.name || '');
+      setPayeeManuallyEdited(false);
     }
-  }, [categoryId, isTransfer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
 
   function validate() {
     const errs = {};
     if (!accountId) errs.accountId = 'Please select an account.';
-    if (!categoryId) errs.categoryId = 'Please select a category.';
+    if (!effectiveCategoryId) errs.categoryId = 'Please select a category.';
     const numAmount = parseFloat(amount);
     if (!amount || isNaN(numAmount) || numAmount <= 0) errs.amount = 'Amount must be greater than 0.';
-    if (!payee.trim()) errs.payee = 'Payee is required.';
+    if (!effectivePayee.trim()) errs.payee = 'Payee is required.';
     if (!transactionDate) errs.transactionDate = 'Date is required.';
     if (isTransfer && !isAdjustment && !toAccountId) errs.toAccountId = 'Please select a destination account.';
     if (isTransfer && !isAdjustment && toAccountId === accountId) errs.toAccountId = 'Destination must be different from source.';
@@ -220,10 +226,10 @@ export default function TransactionForm({ categories = [], accounts = [], initia
       if (isTransfer && isAdjustment && onSubmitAdjustment) {
         await onSubmitAdjustment({
           account_id: accountId,
-          category_id: categoryId,
+          category_id: effectiveCategoryId,
           amount: toCents(parseFloat(amount)),
           description,
-          payee,
+          payee: effectivePayee,
           transaction_date: transactionDate,
           is_income: gainOrLoss === 'gain',
           ...(statusValue && { status: statusValue }),
@@ -235,9 +241,9 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           from_amount: toCents(parseFloat(amount)),
           to_amount: toCents(parseFloat(toAmountForAccount)),
           description,
-          payee,
+          payee: effectivePayee,
           transaction_date: transactionDate,
-          category_id: categoryId,
+          category_id: effectiveCategoryId,
           ...(statusValue && { status: statusValue }),
         });
       } else if (isTransfer && onSubmitTransfer) {
@@ -246,19 +252,19 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           to_account_id: toAccountId,
           amount: toCents(parseFloat(amount)),
           description,
-          payee,
+          payee: effectivePayee,
           transaction_date: transactionDate,
-          category_id: categoryId,
+          category_id: effectiveCategoryId,
           ...(statusValue && { status: statusValue }),
         });
       } else if (!isTransfer && linkedAccountId && onSubmitLinkedTransfer) {
         await onSubmitLinkedTransfer({
           account_id: accountId,
           linked_account_id: linkedAccountId,
-          category_id: categoryId,
+          category_id: effectiveCategoryId,
           amount: toCents(parseFloat(amount)),
           description,
-          payee,
+          payee: effectivePayee,
           transaction_date: transactionDate,
           is_income: isIncome,
           isSplit,
@@ -268,10 +274,10 @@ export default function TransactionForm({ categories = [], accounts = [], initia
       } else {
         await onSubmit({
           account_id: accountId,
-          category_id: categoryId,
+          category_id: effectiveCategoryId,
           amount: toCents(parseFloat(amount)),
           description,
-          payee,
+          payee: effectivePayee,
           transaction_date: transactionDate,
           is_income: isIncome,
           isSplit,
@@ -291,25 +297,6 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   const assetAccounts = openAccounts.filter((a) => isAssetAccount(a.type));
   const liabilityAccounts = openAccounts.filter((a) => !isAssetAccount(a.type));
   const acctLabel = (a) => maskAccountName(a.name) + (a.closed_at ? ' (Closed)' : '');
-
-  function InfoTip({ text }) {
-    return (
-      <span className="group/tip relative ml-1 inline-flex">
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="More info"
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-stone-200 text-[10px] font-bold text-stone-500 hover:bg-stone-300 dark:bg-stone-700 dark:text-stone-400 dark:hover:bg-stone-600"
-        >
-          ?
-        </button>
-        <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-52 -translate-x-1/2 rounded-lg bg-stone-800 px-2.5 py-1.5 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100 dark:bg-stone-900">
-          {text}
-          <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-stone-800 dark:border-t-stone-900" />
-        </span>
-      </span>
-    );
-  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -332,7 +319,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         <div className="flex overflow-hidden rounded-xl border border-stone-200 dark:border-stone-700">
           <button
             type="button"
-            onClick={() => !(isEditing && isTransfer) && setTransactionType('expense')}
+            onClick={() => !(isEditing && isTransfer) && handleTransactionTypeChange('expense')}
             disabled={isEditing && isTransfer}
             className={`flex-1 border-r border-stone-200 px-4 py-2.5 text-sm font-semibold transition-colors dark:border-stone-700 ${
               transactionType === 'expense'
@@ -344,7 +331,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           </button>
           <button
             type="button"
-            onClick={() => !(isEditing && isTransfer) && setTransactionType('income')}
+            onClick={() => !(isEditing && isTransfer) && handleTransactionTypeChange('income')}
             disabled={isEditing && isTransfer}
             className={`flex-1 border-r border-stone-200 px-4 py-2.5 text-sm font-semibold transition-colors dark:border-stone-700 ${
               transactionType === 'income'
@@ -356,7 +343,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
           </button>
           <button
             type="button"
-            onClick={() => !isEditing && setTransactionType('transfer')}
+            onClick={() => !isEditing && handleTransactionTypeChange('transfer')}
             disabled={isEditing}
             className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-colors ${
               transactionType === 'transfer'
@@ -552,8 +539,8 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         <div className="space-y-1.5">
           <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">Category</label>
           <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
+            value={effectiveCategoryId}
+            onChange={(e) => handleCategoryChange(e.target.value)}
             className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
           >
             <option value="">Category…</option>
@@ -616,8 +603,11 @@ export default function TransactionForm({ categories = [], accounts = [], initia
         <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">Payee</label>
         <input
           type="text"
-          value={payee}
-          onChange={(e) => setPayee(e.target.value)}
+          value={effectivePayee}
+          onChange={(e) => {
+            setPayee(e.target.value);
+            setPayeeManuallyEdited(true);
+          }}
           className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
           placeholder="Who is this to/from?"
         />
