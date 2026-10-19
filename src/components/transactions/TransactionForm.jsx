@@ -2,6 +2,25 @@ import { useState } from 'react';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
 
+function InfoTip({ text }) {
+  return (
+    <span className="group/tip relative ml-1 inline-flex">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="More info"
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-stone-200 text-[10px] font-bold text-stone-500 hover:bg-stone-300 dark:bg-stone-700 dark:text-stone-400 dark:hover:bg-stone-600"
+      >
+        ?
+      </button>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 w-52 -translate-x-1/2 rounded-lg bg-stone-800 px-2.5 py-1.5 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100 dark:bg-stone-900">
+        {text}
+        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-stone-800 dark:border-t-stone-900" />
+      </span>
+    </span>
+  );
+}
+
 function getInitialFormValues({
   initialValues,
   isEditing,
