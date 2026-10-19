@@ -77,10 +77,10 @@ npx cap sync android
 
 1. Open native project:
 
-```bash
-cd /workspaces/budget-app
-npx cap open android
-```
+    ```bash
+    cd /workspaces/budget-app
+    npx cap open android
+    ```
 
 2. In Android Studio:
    - Let Gradle sync finish

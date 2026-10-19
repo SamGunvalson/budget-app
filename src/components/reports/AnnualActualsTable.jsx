@@ -1,13 +1,15 @@
-import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
-import { getTransactionsForYear } from '../../services/transactions';
-import { getCategoriesOffline as getCategories } from '../../services/offlineAware';
-import { getUserPreference } from '../../services/categories';
-import { getBudgetPlansForYear, getBudgetItems } from '../../services/budgets';
+import { useMemo, Fragment } from 'react';
 import { formatCurrency, isTrueIncome, isSpendingCredit } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
 import useAvailableYears from '../../hooks/useAvailableYears';
+import {
+  useAnnualBudgetData,
+  useCategories,
+  useTransactionsForYear,
+  useUserPreference,
+} from '../../hooks/queries';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const SHORT_MONTHS = MONTHS.map((m) =>
@@ -95,97 +97,57 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
  */
 export default function AnnualActualsTable({ year: yearProp }) {
   const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
-  const [year, setYear] = useState(yearProp || ctxYear);
-  const [categories, setCategories] = useState([]);
-  const [typeOrder, setTypeOrder] = useState(DEFAULT_TYPE_ORDER);
-  const [actualData, setActualData] = useState({}); // { [month]: { [categoryId]: cents } }
-  const [budgetData, setBudgetData] = useState({}); // { [month]: { [categoryId]: cents } }
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-
+  const year = yearProp ?? ctxYear;
   const { thresholds } = useThresholds();
-
   const { years } = useAvailableYears();
+  const transactionsQuery = useTransactionsForYear(year);
+  const categoriesQuery = useCategories();
+  const typeOrderQuery = useUserPreference('type_group_order');
+  const budgetQuery = useAnnualBudgetData(year);
+  const categories = useMemo(
+    () => categoriesQuery.data ?? [],
+    [categoriesQuery.data],
+  );
+  const savedTypeOrder = typeOrderQuery.data;
+  const typeOrder = useMemo(() => {
+    if (!Array.isArray(savedTypeOrder)) return DEFAULT_TYPE_ORDER;
+    const validTypes = new Set(DEFAULT_TYPE_ORDER);
+    const filtered = savedTypeOrder.filter((type) => validTypes.has(type));
+    return [
+      ...filtered,
+      ...DEFAULT_TYPE_ORDER.filter((type) => !filtered.includes(type)),
+    ];
+  }, [savedTypeOrder]);
+  const actualData = useMemo(() => {
+    const actuals = Object.fromEntries(MONTHS.map((month) => [month, {}]));
+    for (const tx of transactionsQuery.data ?? []) {
+      if (tx.categories?.type === 'transfer') continue;
 
-  // Sync with parent prop when it changes
-  useEffect(() => {
-    if (yearProp && yearProp !== year) setYear(yearProp);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yearProp]);
+      const date = new Date(`${tx.transaction_date}T00:00:00`);
+      const month = date.getMonth() + 1;
+      const categoryId = tx.category_id;
+      if (!categoryId || !actuals[month]) continue;
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      const [transactions, cats, plans, savedTypeOrder] = await Promise.all([
-        getTransactionsForYear({ year }),
-        getCategories(),
-        getBudgetPlansForYear(year),
-        getUserPreference('type_group_order').catch(() => null),
-      ]);
-
-      setCategories(cats);
-
-      // Restore saved type order
-      if (savedTypeOrder && Array.isArray(savedTypeOrder)) {
-        const validTypes = new Set(DEFAULT_TYPE_ORDER);
-        const filtered = savedTypeOrder.filter((t) => validTypes.has(t));
-        const missing = DEFAULT_TYPE_ORDER.filter((t) => !filtered.includes(t));
-        setTypeOrder([...filtered, ...missing]);
-      }
-
-      // ── Aggregate transactions into { [month]: { [categoryId]: cents } } ──
-      const actuals = {};
-      MONTHS.forEach((m) => { actuals[m] = {}; });
-
-      for (const tx of transactions) {
-        if (tx.categories?.type === 'transfer') continue;
-
-        const d = new Date(tx.transaction_date);
-        const m = d.getUTCMonth() + 1;
-        const catId = tx.category_id;
-        if (!catId || !actuals[m]) continue;
-
-        if (!actuals[m][catId]) actuals[m][catId] = 0;
-
-        if (isTrueIncome(tx)) {
-          // True income: add as positive
-          actuals[m][catId] += Math.abs(tx.amount);
-        } else if (isSpendingCredit(tx)) {
-          // Spending credit: reduce that category's expense total
-          actuals[m][catId] -= Math.abs(tx.amount);
-        } else {
-          // Normal expense
-          actuals[m][catId] += Math.abs(tx.amount);
-        }
-      }
-
-      setActualData(actuals);
-
-      // ── Build budget lookup { [month]: { [categoryId]: plannedCents } } ──
-      const budgets = {};
-      const planItems = await Promise.all(
-        plans.map(async (p) => {
-          const items = await getBudgetItems(p.id);
-          return { month: p.month, items };
-        }),
-      );
-      planItems.forEach(({ month: m, items }) => {
-        budgets[m] = {};
-        items.forEach((item) => {
-          budgets[m][item.category_id] = item.planned_amount;
-        });
-      });
-
-      setBudgetData(budgets);
-    } catch (err) {
-      setError(err.message || 'Failed to load annual actuals data');
-    } finally {
-      setIsLoading(false);
+      if (!actuals[month][categoryId]) actuals[month][categoryId] = 0;
+      if (isTrueIncome(tx)) actuals[month][categoryId] += Math.abs(tx.amount);
+      else if (isSpendingCredit(tx)) actuals[month][categoryId] -= Math.abs(tx.amount);
+      else actuals[month][categoryId] += Math.abs(tx.amount);
     }
-  }, [year]);
-
-  useEffect(() => { loadData(); }, [loadData]);
+    return actuals;
+  }, [transactionsQuery.data]);
+  const budgetData = budgetQuery.data ?? {};
+  const isLoading = [
+    transactionsQuery,
+    categoriesQuery,
+    typeOrderQuery,
+    budgetQuery,
+  ].some((query) => query.isLoading);
+  const error = [
+    transactionsQuery.error,
+    categoriesQuery.error,
+    typeOrderQuery.error,
+    budgetQuery.error,
+  ].find(Boolean)?.message || '';
 
   // ── Group categories by type (exclude transfers) ──
   const budgetableCategories = categories.filter((c) => c.type !== 'transfer');
@@ -261,7 +223,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => { const ny = year - 1; setYear(ny); setMonthYear(ctxMonth, ny); }}
+          onClick={() => { const ny = year - 1; setMonthYear(ctxMonth, ny); }}
           className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
           aria-label="Previous year"
         >
@@ -272,7 +234,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
 
         <select
           value={year}
-          onChange={(e) => { const ny = Number(e.target.value); setYear(ny); setMonthYear(ctxMonth, ny); }}
+          onChange={(e) => { const ny = Number(e.target.value); setMonthYear(ctxMonth, ny); }}
           className="rounded-xl border border-violet-300 bg-stone-50/50 px-4 py-2 text-sm font-semibold text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-violet-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
         >
           {years.map((y) => (
@@ -282,7 +244,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
 
         <button
           type="button"
-          onClick={() => { const ny = year + 1; setYear(ny); setMonthYear(ctxMonth, ny); }}
+          onClick={() => { const ny = year + 1; setMonthYear(ctxMonth, ny); }}
           className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
           aria-label="Next year"
         >

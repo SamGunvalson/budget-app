@@ -181,6 +181,7 @@ export default function CategoryDrillDown({
       {mgr.editingTransaction && (
         <Modal title="Edit Transaction" onClose={() => mgr.setEditingTransaction(null)}>
           <TransactionForm
+            key={mgr.editingTransaction.id}
             categories={categories}
             initialValues={mgr.editingTransaction}
             onSubmit={mgr.handleUpdate}

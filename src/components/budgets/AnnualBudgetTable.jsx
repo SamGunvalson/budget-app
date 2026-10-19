@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, Fragment, useMemo } from 'react';
+import { useState, Fragment, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   closestCenter,
@@ -16,12 +17,9 @@ import {
 } from '@dnd-kit/sortable';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
-import { getCategoriesOffline as getCategories } from '../../services/offlineAware';
-import { updateCategory, bulkUpdateSortOrder, getUserPreference, setUserPreference } from '../../services/categories';
+import { updateCategory, bulkUpdateSortOrder, setUserPreference } from '../../services/categories';
 import {
-  getBudgetPlansForYear,
   createBudgetPlan,
-  getBudgetItems,
   upsertBudgetItems,
   updateBudgetPlan,
   copyBudgetFromYear,
@@ -33,6 +31,7 @@ import {
 } from '../../utils/helpers';
 import useAvailableYears from '../../hooks/useAvailableYears';
 import useMonthYear from '../../hooks/useMonthYear';
+import { useAnnualBudgetData, useCategories, useUserPreference } from '../../hooks/queries';
 import CategoryForm from './CategoryForm';
 import Modal from '../common/Modal';
 
@@ -307,14 +306,60 @@ function SortableTypeGroup({ type, groupId, isEditMode, categories: cats, months
  */
 export default function AnnualBudgetTable() {
   const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
+  const queryClient = useQueryClient();
 
   const [year, setYear] = useState(ctxYear);
-  const [categories, setCategories] = useState([]);
-  const [typeOrder, setTypeOrder] = useState(DEFAULT_TYPE_ORDER);
-  const [monthData, setMonthData] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
+  const categoriesQuery = useCategories();
+  const typeOrderQuery = useUserPreference('type_group_order');
+  const annualBudgetQuery = useAnnualBudgetData(year);
+  const categories = useMemo(
+    () => categoriesQuery.data ?? [],
+    [categoriesQuery.data],
+  );
+  const savedTypeOrder = useMemo(() => {
+    const savedTypeOrder = typeOrderQuery.data;
+    if (!Array.isArray(savedTypeOrder)) return DEFAULT_TYPE_ORDER;
+    const validTypes = new Set(DEFAULT_TYPE_ORDER);
+    const filtered = savedTypeOrder.filter((type) => validTypes.has(type));
+    return [
+      ...filtered,
+      ...DEFAULT_TYPE_ORDER.filter((type) => !filtered.includes(type)),
+    ];
+  }, [typeOrderQuery.data]);
+  const [typeOrderDraft, setTypeOrderDraft] = useState(null);
+  const typeOrder = typeOrderDraft ?? savedTypeOrder;
+  const [draftsByYear, setDraftsByYear] = useState({});
+  const yearDrafts = useMemo(
+    () => draftsByYear[year] ?? {},
+    [draftsByYear, year],
+  );
+  const monthData = useMemo(() => {
+    const base = annualBudgetQuery.data ?? {};
+    return Object.fromEntries(MONTHS.map((month) => {
+      const allocations = {};
+      categories.forEach((category) => {
+        allocations[category.id] = 0;
+      });
+      Object.assign(allocations, base[month]?.allocations ?? {});
+      Object.assign(allocations, yearDrafts[month] ?? {});
+      return [
+        month,
+        { planId: base[month]?.planId ?? null, allocations },
+      ];
+    }));
+  }, [annualBudgetQuery.data, categories, yearDrafts]);
+  const isLoading =
+    categoriesQuery.isLoading ||
+    typeOrderQuery.isLoading ||
+    annualBudgetQuery.isLoading;
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [operationError, setError] = useState('');
+  const error =
+    operationError ||
+    categoriesQuery.error?.message ||
+    typeOrderQuery.error?.message ||
+    annualBudgetQuery.error?.message ||
+    '';
   const [success, setSuccess] = useState('');
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
@@ -366,60 +411,6 @@ export default function AnnualBudgetTable() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // ---------- load data ----------
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const [cats, plans, savedTypeOrder] = await Promise.all([
-        getCategories(),
-        getBudgetPlansForYear(year),
-        getUserPreference('type_group_order').catch(() => null),
-      ]);
-      setCategories(cats);
-
-      if (savedTypeOrder && Array.isArray(savedTypeOrder)) {
-        const validTypes = new Set(DEFAULT_TYPE_ORDER);
-        const filtered = savedTypeOrder.filter((t) => validTypes.has(t));
-        const missing = DEFAULT_TYPE_ORDER.filter((t) => !filtered.includes(t));
-        setTypeOrder([...filtered, ...missing]);
-      }
-
-      const entries = await Promise.all(
-        plans.map(async (p) => {
-          const items = await getBudgetItems(p.id);
-          const alloc = {};
-          items.forEach((item) => {
-            alloc[item.category_id] = item.planned_amount;
-          });
-          return [p.month, { planId: p.id, allocations: alloc }];
-        }),
-      );
-
-      const md = {};
-      MONTHS.forEach((m) => {
-        const alloc = {};
-        cats.forEach((c) => { alloc[c.id] = 0; });
-        md[m] = { planId: null, allocations: alloc };
-      });
-      entries.forEach(([m, data]) => {
-        md[m] = {
-          planId: data.planId,
-          allocations: { ...md[m].allocations, ...data.allocations },
-        };
-      });
-
-      setMonthData(md);
-    } catch (err) {
-      setError(err.message || 'Failed to load annual budget data');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [year]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
   // ---------- handlers ----------
   const handleCellChange = (month, categoryId, value) => {
     const raw = value;
@@ -429,12 +420,12 @@ export default function AnnualBudgetTable() {
       if (Number.isNaN(parsed) || parsed < 0) return;
       cents = Math.round(parsed * 100);
     }
-    setMonthData((prev) => ({
-      ...prev,
-      [month]: {
-        ...prev[month],
-        allocations: {
-          ...prev[month].allocations,
+    setDraftsByYear((prevByYear) => ({
+      ...prevByYear,
+      [year]: {
+        ...(prevByYear[year] ?? {}),
+        [month]: {
+          ...(prevByYear[year]?.[month] ?? {}),
           [categoryId]: cents,
         },
       },
@@ -467,10 +458,6 @@ export default function AnnualBudgetTable() {
         if (!planId) {
           const newPlan = await createBudgetPlan({ month: m, year, total_income: totalIncome });
           planId = newPlan.id;
-          setMonthData((prev) => ({
-            ...prev,
-            [m]: { ...prev[m], planId },
-          }));
         } else {
           await updateBudgetPlan(planId, { total_income: totalIncome });
         }
@@ -483,9 +470,22 @@ export default function AnnualBudgetTable() {
         await upsertBudgetItems(items);
       }
 
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['budget_plans', 'annual'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget_items'] }),
+      ]);
+      setDraftsByYear((prev) => {
+        const next = { ...prev };
+        delete next[year];
+        return next;
+      });
       setSuccess('All budgets saved successfully!');
     } catch (err) {
       setError(err.message || 'Failed to save budgets');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['budget_plans', 'annual'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget_items'] }),
+      ]);
     } finally {
       setIsSaving(false);
     }
@@ -509,7 +509,15 @@ export default function AnnualBudgetTable() {
       }
       setShowCopyModal(false);
       setCopyOverwrite(false);
-      await loadData();
+      setDraftsByYear((prev) => {
+        const next = { ...prev };
+        delete next[year];
+        return next;
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['budget_plans', 'annual'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget_items'] }),
+      ]);
     } catch (err) {
       setError(err.message || 'Copy failed.');
       setShowCopyModal(false);
@@ -523,7 +531,9 @@ export default function AnnualBudgetTable() {
 
   const handleUpdateCategory = async (values) => {
     const updated = await updateCategory(editingCategory.id, values);
-    setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    queryClient.setQueryData(['categories', 'list'], (previous = []) =>
+      previous.map((category) => category.id === updated.id ? updated : category),
+    );
     setEditingCategory(null);
   };
 
@@ -543,8 +553,11 @@ export default function AnnualBudgetTable() {
       const newIndex = typeOrder.indexOf(overType);
       if (oldIndex !== -1 && newIndex !== -1) {
         const newOrder = arrayMove(typeOrder, oldIndex, newIndex);
-        setTypeOrder(newOrder);
-        try { await setUserPreference('type_group_order', newOrder); }
+        setTypeOrderDraft(newOrder);
+        try {
+          await setUserPreference('type_group_order', newOrder);
+          queryClient.setQueryData(['user_preferences', 'type_group_order'], newOrder);
+        }
         catch (err) { console.error('Failed to save type order:', err); }
       }
       return;
@@ -564,9 +577,12 @@ export default function AnnualBudgetTable() {
     const reordered = arrayMove(typeCats, oldIndex, newIndex);
     const updates = reordered.map((c, i) => ({ id: c.id, sort_order: i }));
 
-    setCategories((prev) => {
-      const otherCats = prev.filter((c) => c.type !== type);
-      const updatedTypeCats = reordered.map((c, i) => ({ ...c, sort_order: i }));
+    queryClient.setQueryData(['categories', 'list'], (previous = []) => {
+      const otherCats = previous.filter((category) => category.type !== type);
+      const updatedTypeCats = reordered.map((category, index) => ({
+        ...category,
+        sort_order: index,
+      }));
       return [...otherCats, ...updatedTypeCats];
     });
 

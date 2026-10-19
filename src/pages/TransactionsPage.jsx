@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import TransactionForm from '../components/transactions/TransactionForm';
@@ -621,7 +621,9 @@ export default function TransactionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, mgr.handleConfirm, partnership, currentUser]);
   // Keep ref in sync so handleConfirmAll always invokes the latest closure.
-  handleConfirmWithSplitRef.current = handleConfirmWithSplit;
+  useLayoutEffect(() => {
+    handleConfirmWithSplitRef.current = handleConfirmWithSplit;
+  }, [handleConfirmWithSplit]);
 
   // Stable wrapper for onSplit so memoized rows don't re-render when other
   // page state changes.
@@ -902,6 +904,7 @@ export default function TransactionsPage() {
       {showCreateModal && (
         <Modal title="New Transaction" onClose={() => setShowCreateModal(false)}>
           <TransactionForm
+            key={mgr.editingTransaction.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreate}
@@ -1086,6 +1089,7 @@ export default function TransactionsPage() {
       {showRecurringForm && (
         <Modal title="New Recurring Transaction" onClose={() => setShowRecurringForm(false)}>
           <RecurringForm
+            key={editingTemplate.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreateRecurring}
@@ -1116,6 +1120,7 @@ export default function TransactionsPage() {
       {showGroupForm && (
         <Modal title="New Recurring Group" onClose={() => setShowGroupForm(false)} wide>
           <RecurringGroupForm
+            key={editingGroup.id}
             categories={categories}
             accounts={accounts}
             onSubmit={handleCreateGroup}

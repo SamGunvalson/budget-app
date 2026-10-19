@@ -1,7 +1,71 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
+
+function getInitialFormValues(initialValues, isEditing) {
+  if (!initialValues) {
+    return {
+      txType: 'expense',
+      accountId: '',
+      toAccountId: '',
+      linkedAccountId: '',
+      categoryId: '',
+      amount: '',
+      description: '',
+      payee: '',
+      frequency: 'monthly',
+      dayOfMonth: '1',
+      dayOfMonth2: '15',
+      dayOfWeek: '0',
+      customInterval: 2,
+      customUnit: 'days',
+      startDate: isEditing ? '' : getTodayString(),
+      endDate: '',
+      autoConfirm: true,
+      isSplit: false,
+      splitMethod: 'equal',
+      splitPayer: 'me',
+      splitPartnerSharePct: 50,
+      toAmountForAccount: '',
+    };
+  }
+
+  return {
+    txType: initialValues.is_transfer
+      ? 'transfer'
+      : initialValues.is_income
+        ? 'income'
+        : 'expense',
+    accountId: initialValues.account_id || '',
+    toAccountId: initialValues.to_account_id || '',
+    linkedAccountId:
+      !initialValues.is_transfer && initialValues.to_account_id
+        ? initialValues.to_account_id
+        : '',
+    categoryId: initialValues.category_id || '',
+    amount: String(toDollars(Math.abs(initialValues.amount))),
+    description: initialValues.description || '',
+    payee: initialValues.payee || '',
+    frequency: initialValues.frequency || 'monthly',
+    dayOfMonth: String(initialValues.day_of_month || 1),
+    dayOfMonth2: String(initialValues.day_of_month_2 || 15),
+    dayOfWeek: String(initialValues.day_of_week ?? 0),
+    customInterval: initialValues.custom_interval || 2,
+    customUnit: initialValues.custom_unit || 'months',
+    startDate: initialValues.start_date || '',
+    endDate: initialValues.end_date || '',
+    autoConfirm: initialValues.auto_confirm ?? true,
+    isSplit: initialValues.is_split || false,
+    splitMethod: initialValues.split_method || 'equal',
+    splitPayer: initialValues.split_payer || 'me',
+    splitPartnerSharePct: initialValues.split_partner_share_pct ?? 50,
+    toAmountForAccount:
+      initialValues.to_amount != null
+        ? String(toDollars(Math.abs(initialValues.to_amount)))
+        : '',
+  };
+}
 
 /**
  * RecurringForm — create or edit a recurring transaction template.
@@ -25,31 +89,34 @@ export default function RecurringForm({
   partnership = null,
   partnerEmail = '',
 }) {
+  const [initialFormValues] = useState(() =>
+    getInitialFormValues(initialValues, isEditing),
+  );
   // 'expense' | 'income' | 'transfer'
-  const [txType, setTxType] = useState('expense');
-  const [accountId, setAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
-  const [linkedAccountId, setLinkedAccountId] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [payee, setPayee] = useState('');
-  const [frequency, setFrequency] = useState('monthly');
-  const [dayOfMonth, setDayOfMonth] = useState('1');
-  const [dayOfMonth2, setDayOfMonth2] = useState('15');
-  const [dayOfWeek, setDayOfWeek] = useState('0');
-  const [customInterval, setCustomInterval] = useState(2);
-  const [customUnit, setCustomUnit] = useState('days');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [autoConfirm, setAutoConfirm] = useState(true);
+  const [txType, setTxType] = useState(initialFormValues.txType);
+  const [accountId, setAccountId] = useState(initialFormValues.accountId);
+  const [toAccountId, setToAccountId] = useState(initialFormValues.toAccountId);
+  const [linkedAccountId, setLinkedAccountId] = useState(initialFormValues.linkedAccountId);
+  const [categoryId, setCategoryId] = useState(initialFormValues.categoryId);
+  const [amount, setAmount] = useState(initialFormValues.amount);
+  const [description, setDescription] = useState(initialFormValues.description);
+  const [payee, setPayee] = useState(initialFormValues.payee);
+  const [frequency, setFrequency] = useState(initialFormValues.frequency);
+  const [dayOfMonth, setDayOfMonth] = useState(initialFormValues.dayOfMonth);
+  const [dayOfMonth2, setDayOfMonth2] = useState(initialFormValues.dayOfMonth2);
+  const [dayOfWeek, setDayOfWeek] = useState(initialFormValues.dayOfWeek);
+  const [customInterval, setCustomInterval] = useState(initialFormValues.customInterval);
+  const [customUnit, setCustomUnit] = useState(initialFormValues.customUnit);
+  const [startDate, setStartDate] = useState(initialFormValues.startDate);
+  const [endDate, setEndDate] = useState(initialFormValues.endDate);
+  const [autoConfirm, setAutoConfirm] = useState(initialFormValues.autoConfirm);
   // Split expense configuration
-  const [isSplit, setIsSplit] = useState(false);
-  const [splitMethod, setSplitMethod] = useState('equal');
-  const [splitPayer, setSplitPayer] = useState('me');
-  const [splitPartnerSharePct, setSplitPartnerSharePct] = useState(50);
+  const [isSplit, setIsSplit] = useState(initialFormValues.isSplit);
+  const [splitMethod, setSplitMethod] = useState(initialFormValues.splitMethod);
+  const [splitPayer, setSplitPayer] = useState(initialFormValues.splitPayer);
+  const [splitPartnerSharePct, setSplitPartnerSharePct] = useState(initialFormValues.splitPartnerSharePct);
   // Asymmetric transfer: amount credited to destination account (null/blank = symmetric)
-  const [toAmountForAccount, setToAmountForAccount] = useState('');
+  const [toAmountForAccount, setToAmountForAccount] = useState(initialFormValues.toAmountForAccount);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -63,6 +130,9 @@ export default function RecurringForm({
   const filteredCategories = isTransfer
     ? categories.filter((c) => c.type === 'transfer')
     : categories.filter((c) => c.type !== 'transfer');
+  const effectiveCategoryId = filteredCategories.some((c) => c.id === categoryId)
+    ? categoryId
+    : filteredCategories[0]?.id || '';
 
   // Group filtered categories by type
   const groupedCategories = CATEGORY_TYPE_ORDER
@@ -90,75 +160,13 @@ export default function RecurringForm({
   const needsDayOfMonth2 = frequency === 'semi_monthly';
   const needsDayOfWeek = ['weekly', 'biweekly'].includes(frequency);
 
-  // Populate form when editing
-  useEffect(() => {
-    if (initialValues) {
-      // Determine type from flags
-      if (initialValues.is_transfer) {
-        setTxType('transfer');
-      } else if (initialValues.is_income) {
-        setTxType('income');
-      } else {
-        setTxType('expense');
-      }
-      setAccountId(initialValues.account_id || '');
-      setToAccountId(initialValues.to_account_id || '');
-      // Populate linked account for non-transfer templates that have to_account_id
-      if (!initialValues.is_transfer && initialValues.to_account_id) {
-        setLinkedAccountId(initialValues.to_account_id || '');
-      }
-      setCategoryId(initialValues.category_id || '');
-      setAmount(String(toDollars(Math.abs(initialValues.amount))));
-      setDescription(initialValues.description || '');
-      setPayee(initialValues.payee || '');
-      setFrequency(initialValues.frequency || 'monthly');
-      setDayOfMonth(String(initialValues.day_of_month || 1));
-      setDayOfMonth2(String(initialValues.day_of_month_2 || 15));
-      setDayOfWeek(String(initialValues.day_of_week ?? 0));
-      setCustomInterval(initialValues.custom_interval || 2);
-      setCustomUnit(initialValues.custom_unit || 'months');
-      setStartDate(initialValues.start_date || '');
-      setEndDate(initialValues.end_date || '');
-      if (initialValues.auto_confirm !== undefined) setAutoConfirm(initialValues.auto_confirm);
-      setIsSplit(initialValues.is_split || false);
-      setSplitMethod(initialValues.split_method || 'equal');
-      setSplitPayer(initialValues.split_payer || 'me');
-      setSplitPartnerSharePct(initialValues.split_partner_share_pct ?? 50);
-      if (initialValues.to_amount != null) {
-        setToAmountForAccount(String(toDollars(Math.abs(initialValues.to_amount))));
-      } else {
-        setToAmountForAccount('');
-      }
-    }
-  }, [initialValues]);
-
-  // Default start date to today for new templates
-  useEffect(() => {
-    if (!isEditing && !startDate) {
-      setStartDate(getTodayString());
-    }
-  }, [isEditing, startDate]);
-
-  // Auto-select first category if none selected (or when type changes)
-  useEffect(() => {
-    if (filteredCategories.length > 0) {
-      const currentValid = filteredCategories.some((c) => c.id === categoryId);
-      if (!currentValid) {
-        setCategoryId(filteredCategories[0].id);
-      }
-    } else {
-      // No categories available for this type — clear stale selection
-      setCategoryId('');
-    }
-  }, [txType, filteredCategories, categoryId]);
-
   const validate = () => {
     const errs = {};
     if (!accountId) errs.accountId = 'Account is required';
     if (isTransfer && !toAccountId) errs.toAccountId = 'Destination account is required';
     if (isTransfer && toAccountId === accountId) errs.toAccountId = 'From and To accounts must be different';
     if (!isTransfer && linkedAccountId && linkedAccountId === accountId) errs.linkedAccountId = 'Linked account must be different from the main account';
-    if (!categoryId) errs.categoryId = 'Category is required';
+    if (!effectiveCategoryId) errs.categoryId = 'Category is required';
     if (!description.trim()) errs.description = 'Description is required';
     const amtNum = parseFloat(amount);
     if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
@@ -207,7 +215,7 @@ export default function RecurringForm({
     try {
       await onSubmit({
         account_id: accountId,
-        category_id: categoryId,
+        category_id: effectiveCategoryId,
         description: description.trim(),
         payee: payee.trim() || null,
         amount: Math.abs(amountCents),
@@ -336,7 +344,7 @@ export default function RecurringForm({
         </div>
         <div>
           <label className={labelClass}>Category *</label>
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
+          <select value={effectiveCategoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
             <option value="">Select…</option>
             {groupedCategories.map((g) => (
               <optgroup key={g.type} label={g.label}>

@@ -1544,18 +1544,9 @@ export async function getBudgetPlanOffline(month, year) {
   return swrRead({
     key: `budget_plans:${year}-${month}`,
     table: "budget_plans",
-    // A user can legitimately have no plan for a given month — `null` is a
-    // valid cached answer. Treat only `undefined` as "cache miss".
-    isEmpty: (v) => v === undefined,
     readCache: async () => {
       const row = await db.budget_plans.where({ month, year }).first();
-      // Disambiguate "never fetched" from "fetched, none exists".
-      // We can't easily tell those apart from Dexie alone, so use the
-      // table's row count as a proxy: if there are no plans cached at all,
-      // treat it as cold so we await the network the first time.
-      if (row) return row;
-      const anyPlans = await db.budget_plans.count();
-      return anyPlans > 0 ? null : undefined;
+      return row ?? null;
     },
     fetchFresh: () => _getBudgetPlan(month, year),
     writeCache: async (plan) => {

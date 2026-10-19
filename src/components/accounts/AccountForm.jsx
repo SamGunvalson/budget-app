@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toCents, toDollars, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAccountClosed } from '../../services/accounts';
 
@@ -42,26 +42,32 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
   const selectedAccount = isEditing ? accounts.find((a) => a.id === selectedId) : null;
   const isClosed = isAccountClosed(selectedAccount);
 
-  // Populate or clear form when account selection changes
-  useEffect(() => {
+  function handleAccountSelectionChange(nextSelectedId) {
+    setSelectedId(nextSelectedId);
     setErrors({});
     setSubmitError('');
     setShowDeleteConfirm(false);
     setShowCloseConfirm(false);
     setClosureDate('');
-    if (!selectedId) {
+    setIsDeleting(false);
+    setIsClosing(false);
+    if (!nextSelectedId) {
       setName('');
       setType('checking');
       setStartingBalance('');
     } else {
-      const acct = accounts.find((a) => a.id === selectedId);
+      const acct = accounts.find((a) => a.id === nextSelectedId);
       if (acct) {
         setName(acct.name || '');
         setType(acct.type || 'checking');
         setStartingBalance(String(toDollars(acct.starting_balance || 0)));
+      } else {
+        setName('');
+        setType('checking');
+        setStartingBalance('');
       }
     }
-  }, [selectedId, accounts]);
+  }
 
   function validate() {
     const errs = {};
@@ -133,7 +139,7 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
         <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">Account</label>
         <select
           value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
+          onChange={(e) => handleAccountSelectionChange(e.target.value)}
           className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
         >
           <option value="">── New Account ──</option>
