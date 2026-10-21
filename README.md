@@ -5,7 +5,14 @@
 
 # Budget App
 
-A personal budget tracking app built with React and Supabase. Features full offline support, recurring transactions, split expense tracking, CSV import/export, multi-account net worth tracking, and a plan-vs-actual reports page.
+A personal budget tracking app built with React and Vite, with a choice of Supabase or a self-hosted local PostgreSQL backend. Features full offline support, recurring transactions, split expense tracking, CSV import/export, multi-account net worth tracking, and a plan-vs-actual reports page.
+
+## Backend Modes
+
+- **Supabase** — Supabase Auth and PostgreSQL with Row-Level Security (RLS); the default for existing deployments.
+- **Self-hosted local** — PostgreSQL 16, PostgREST, and the Fastify auth service, deployed together with Docker Compose. Existing app SQL and RLS policies are reused through a local `auth` compatibility shim.
+
+The selected backend is provided by `BACKEND_MODE` in the runtime `env-config.js` (or `VITE_BACKEND_MODE` during Vite development). Local mode sends data requests to `/rest/v1` and auth requests to `/auth/v1` on the configured server origin.
 
 ## Features
 
@@ -19,16 +26,17 @@ A personal budget tracking app built with React and Supabase. Features full offl
 - **Export** — Excel workbook with transactions, budgets, and accounts sheets
 - **Categories** — Custom categories with drag-and-drop sort, type groups (income/needs/wants/savings/transfer)
 - **Offline Support** — Full offline-first with Dexie.js (IndexedDB) sync queue and last-write-wins conflict resolution
-- **Auth** — Supabase email/password auth with per-user Row-Level Security on all data
+- **Auth** — Supabase or self-hosted email/password auth, with per-user Row-Level Security on all data
 - **Theme** — Persistent dark/light mode; dark is the default
 
 ## Tech Stack
 
-| Layer       | Technology                  |
-| ----------- | --------------------------- |
+| Layer            | Technology                                                        |
+| ---------------- | ----------------------------------------------------------------- |
 | Frontend    | React 19.2 + Vite 7         |
 | Styling     | Tailwind CSS 4.2            |
-| Database    | Supabase (PostgreSQL + RLS) |
+| Database / API | Supabase PostgreSQL + RLS, or self-hosted PostgreSQL 16 + PostgREST |
+| Authentication | Supabase Auth, or Fastify auth service (bcrypt + JWT) |
 | Offline DB  | Dexie.js (IndexedDB)        |
 | Charts      | Recharts 3.7                |
 | Export      | ExcelJS 4.4                 |
@@ -59,7 +67,9 @@ src/
 ├── hooks/                ← Month/year, theme, safe mode, session, sync, swipe, threshold, and transaction hooks
 ├── pages/                ← ReportsPage, TransactionsPage, BudgetPage, SplitExpensesPage, AccountsPage, CategoriesPage, SettingsPage, AuthPage
 ├── services/
-│   ├── supabase.js       ← Client init
+│   ├── backend.js        ← Backend selection and data client
+│   ├── auth/             ← Supabase/local auth adapters
+│   ├── supabase.js       ← Supabase client init
 │   ├── transactions.js   ← CRUD + pagination
 │   ├── budgets.js        ← Plans, items, plan-vs-actual
 │   ├── accounts.js       ← Account CRUD + balance calc
@@ -81,12 +91,21 @@ src/
 │   └── syncQueue.js
 ```
 
+Additional backend and database setup:
+
+```
+server/auth/                   ← Self-hosted Fastify auth service and CLI
+sql_scripts/local/             ← Local Postgres compatibility shim and init order
+scripts/migrate-from-supabase/ ← Supabase-to-local database migration
+nginx/                         ← Local API proxy, CORS and security snippets
+```
+
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js v18+
-- Supabase account (free tier works)
+- Supabase account (free tier works) for the default Supabase mode; Docker Compose for self-hosted mode
 
 ### Local Development
 
@@ -108,6 +127,40 @@ npm run dev
 The app will be available at `http://localhost:5173`.
 
 See [docs/SETUP_GUIDE.md](./docs/SETUP_GUIDE.md) for detailed Supabase setup instructions.
+
+### Self-hosted Local Postgres (Docker)
+
+```bash
+cp .env.selfhost.example .env.selfhost
+# Fill in generated POSTGRES_PASSWORD, AUTHENTICATOR_PASSWORD,
+# AUTH_ADMIN_PASSWORD and JWT_SECRET values in .env.selfhost.
+docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+```
+
+The Nginx frontend serves plain HTTP at `http://localhost:8085` by default.
+Expose it only over a trusted encrypted network such as Tailscale, or set
+`APP_BIND=127.0.0.1` in `.env.selfhost` and put a TLS-terminating reverse proxy
+in front of it. Create your first account, then set `ALLOW_SIGNUP=false` in
+`.env.selfhost` and recreate the stack. See the
+[self-hosted setup guide](./docs/SETUP_GUIDE.md#self-hosted-local-postgres) for
+secret generation, backups, upgrades, and migration details. Keep `.env.selfhost`
+private and out of version control.
+
+#### Vite development against the self-hosted stack
+
+Start the Compose stack as above, then run Vite in local mode with its same-origin
+proxy pointed at the stack's web/nginx service:
+
+```bash
+VITE_BACKEND_MODE=local DEV_API_PROXY_TARGET=http://localhost:8085 npm run dev
+```
+
+With this setup the browser uses Vite's `/rest/v1` and `/auth/v1` paths, and Vite
+proxies them to the stack. Alternatively, `VITE_API_ORIGIN` sets the API server
+origin used directly by the client; use it when the server's CORS policy permits
+the browser origin. `vite.config.js` enables its proxy only when
+`DEV_API_PROXY_TARGET` is set (and uses `VITE_API_ORIGIN` as the proxy target if
+both are supplied).
 
 ### Android SDK path setup (for release builds)
 
@@ -149,7 +202,7 @@ docs/
 ├── DATA_MODEL.md           ← Complete database schema (reference while coding)
 ├── SECURITY.md             ← Security model and invariants
 ├── SECURITY_CHECKLIST.md   ← Pre-merge security review checklist
-├── SETUP_GUIDE.md          ← Supabase setup walkthrough
+├── SETUP_GUIDE.md          ← Supabase and self-hosted setup walkthrough
 ├── STYLE_GUIDE.md          ← Design system, component patterns, dark mode
 ├── QUICK_REFERENCE.md      ← Navigation index for all docs
 └── archive/                ← Completed phase build guides (historical)
@@ -181,7 +234,7 @@ This project includes a dev container configuration for a portable, reproducible
 
 The container automatically installs ESLint, Prettier, Tailwind CSS IntelliSense, GitLens, and React snippet extensions.
 
-## Self-Hosted Deployment (Unraid / Docker)
+## Docker Deployment with Supabase (Unraid / Docker)
 
 The app ships as a lightweight Docker image (~30 MB) — a multi-stage build compiles the React SPA and serves it with Nginx.
 

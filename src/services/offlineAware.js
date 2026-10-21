@@ -42,7 +42,9 @@ async function tryOnline(fn) {
       err?.message?.includes("Failed to fetch") ||
       err?.message?.includes("NetworkError") ||
       err?.message?.includes("network") ||
-      err?.code === "PGRST301" // JWT expired — treat as offline-ish
+      err?.code === "PGRST301" ||
+      err?.status === 401 ||
+      /jwt expired|invalid token/i.test(err?.message || "") // expired auth can use the local cache
     ) {
       return { offline: true, error: err };
     }

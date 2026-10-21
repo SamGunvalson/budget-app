@@ -3,7 +3,7 @@ import useAuth from '../../hooks/useAuth';
 
 /**
  * Phase 6: ProtectedRoute now reads from the shared AuthProvider context
- * instead of calling supabase.auth.getSession() on every mount.
+ * instead of calling the auth adapter on every mount.
  * This eliminates a per-route JWT validation round-trip.
  */
 function ProtectedRoute({ children, serverReady = true }) {

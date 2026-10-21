@@ -42,6 +42,15 @@ VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<your-anon-key>
 ```
 
+For the self-hosted local backend, the generic app build can be configured on
+the device instead of baking in Supabase credentials. When first launched, use
+**Connect to your server**, enter the self-hosted server's root URL (for example
+`https://budget.<tailnet>.ts.net`), and test the connection. The app reads
+`BACKEND_MODE` from that server's `/env-config.js`; when it is `local`, setup
+checks `/auth/v1/health` before saving the server. The server must be reachable
+from the phone, and its CORS policy allows the Capacitor WebView origins. See
+[Self-hosted setup](./SETUP_GUIDE.md#self-hosted-local-postgres).
+
 ---
 
 ## 2) Add Capacitor to this repo (first-time setup)
@@ -88,7 +97,7 @@ npx cap sync android
    - Click **Run**
 
 3. Smoke test in app:
-   - Login/signup (Supabase auth)
+   - Login/signup (the configured backend auth adapter)
    - Add/edit/delete transaction
    - Go offline, create data, go online, confirm sync
    - Restart app, confirm session persistence and data load
@@ -239,7 +248,7 @@ Upload the new `.aab` to Play Console.
 
 ## 10) Repo-specific gotchas to remember
 
-- This app uses Dexie + sync queue + Supabase auth: always test offline/online and auth state transitions on a real device before release.
+- This app uses Dexie + sync queue + the configured backend auth adapter: always test offline/online and auth state transitions on a real device before release.
 - Supabase values for mobile are baked at web build time here; always confirm `.env.production` is correct before `npm run build`.
 - Keep `applicationId` stable once published (do not change after first Play release).
 - Any web code change requires rebuild + `npx cap sync android` before Android run/release.

@@ -8,9 +8,9 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 
 - [ ] Does every `UPDATE` or `DELETE` query include **both** `.eq("id", id)` and `.eq("user_id", user.id)`?
 - [ ] Does every `INSERT` set `user_id: user.id` explicitly?
-- [ ] Is `user.id` obtained from `getCurrentUser()` or `supabase.auth.getUser()` — not from client-supplied input?
-- [ ] Are there any raw SQL strings (template literals passed to `supabase.rpc` or similar)? If yes, are all parameters passed as bound arguments, never interpolated into the SQL string?
-- [ ] Does any new service function need a corresponding RLS policy in `supabase_rls_complete.sql`?
+- [ ] Is `user.id` obtained from the selected auth adapter/session — not from client-supplied input?
+- [ ] Are there any raw SQL strings (template literals passed to `.rpc()` or similar)? If yes, are all parameters passed as bound arguments, never interpolated into the SQL string?
+- [ ] Does any new service function need a corresponding RLS policy in `supabase_rls_complete.sql` (used by both backend modes)?
 
 ## File Import / Upload (`src/utils/csvParser.js`, `src/services/import.js`)
 
@@ -31,13 +31,34 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 
 ## Logout & Session Cleanup
 
-- [ ] If a new sign-out code path is introduced, does it go through the `signOut()` wrapper in `src/services/supabase.js` (which calls `clearAllOfflineData()` and `sessionStorage.clear()`)?
+- [ ] If a new sign-out code path is introduced, does it go through `signOut()` in `src/services/backend.js` (which clears offline data and session storage) and then use the selected auth adapter?
 
 ## Infrastructure (`nginx.conf`, `Dockerfile`, `docker-compose.yml`)
 
 - [ ] Are all six security headers still present in `nginx.conf` after any changes?
-- [ ] Does the `Content-Security-Policy` still restrict `connect-src` to `'self'` and `*.supabase.co`?
+- [ ] Does the `Content-Security-Policy` still restrict `connect-src` to the origins required by the selected backend mode?
 - [ ] Are any new environment variables that are secrets excluded from `VITE_*` prefixes (which would expose them in the browser bundle)?
+
+
+## Self-hosted local backend
+
+- [ ] Is `JWT_SECRET` strong and identical for PostgREST and auth? Are both
+      services updated together if it is rotated, with active access-token
+      invalidation and refresh-token recovery understood?
+- [ ] Are refresh tokens rotated, hashed at rest, and protected by reuse
+      detection? Are passwords bcrypt-hashed?
+- [ ] Are auth per-IP rate limits and per-email failed-login lockout enabled?
+- [ ] Does the `anon` role have no public table, sequence, or function grants?
+      Are authenticated grants still protected by RLS?
+- [ ] Does Compose publish only the Nginx/app port, leaving Postgres, PostgREST,
+      and auth on the internal network? Is CORS restricted to configured
+      Capacitor/local origins rather than `*`?
+- [ ] Is `ALLOW_SIGNUP=false` set after initial account creation?
+- [ ] Since Nginx serves plain HTTP, is it exposed only over a trusted encrypted
+      network such as Tailscale, or bound with `APP_BIND=127.0.0.1` behind a TLS
+      reverse proxy?
+- [ ] Is `.env.selfhost` ignored by Git, and are database backups protected and
+      restore-tested?
 
 ## Dependencies (`package.json`)
 

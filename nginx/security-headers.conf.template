@@ -1,0 +1,9 @@
+add_header X-Content-Type-Options        "nosniff"                          always;
+add_header X-Frame-Options               "DENY"                             always;
+add_header X-XSS-Protection              "1; mode=block"                    always;
+add_header Referrer-Policy               "strict-origin-when-cross-origin"  always;
+add_header Permissions-Policy            "geolocation=(), microphone=(), camera=()" always;
+# HSTS — only meaningful when served over TLS (ensure your reverse proxy / CDN enforces HTTPS)
+add_header Strict-Transport-Security     "max-age=31536000; includeSubDomains" always;
+# CSP — connect-src depends on BACKEND_MODE (rendered by docker-entrypoint.sh)
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src __CSP_CONNECT_SRC__; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;

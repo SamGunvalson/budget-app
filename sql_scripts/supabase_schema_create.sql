@@ -178,21 +178,36 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
 -- Split policies so soft-delete UPDATEs (setting deleted_at) are allowed.
 CREATE POLICY "Users can view their own active transactions"
-  ON transactions FOR SELECT
+  ON transactions FOR SELECT TO authenticated
   USING (auth.uid() = user_id AND deleted_at IS NULL);
 
 CREATE POLICY "Users can insert their own transactions"
-  ON transactions FOR INSERT
+  ON transactions FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update their own transactions"
-  ON transactions FOR UPDATE
+  ON transactions FOR UPDATE TO authenticated
   USING  (auth.uid() = user_id AND deleted_at IS NULL)
   WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own transactions"
-  ON transactions FOR DELETE
+  ON transactions FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
+
+-- Definer access avoids SELECT RLS rejecting the soft-deleted result.
+-- Ownership and live-row checks must remain explicit because this bypasses RLS.
+CREATE OR REPLACE FUNCTION public.soft_delete_transaction(txn_id uuid)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE public.transactions
+  SET deleted_at = now(), updated_at = now()
+  WHERE id = txn_id AND user_id = auth.uid() AND deleted_at IS NULL;
+$$;
+REVOKE EXECUTE ON FUNCTION public.soft_delete_transaction(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.soft_delete_transaction(uuid) TO authenticated;
 
 CREATE INDEX idx_transactions_user_date
   ON transactions(user_id, transaction_date DESC) WHERE deleted_at IS NULL;

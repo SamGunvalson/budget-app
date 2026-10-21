@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/common/LoginForm';
 import SignupForm from '../components/common/SignupForm';
-import { supabase } from '../services/supabase';
+import { getSession, onAuthStateChange } from '../services/auth';
 import { getConnectionErrorMessage, isLikelyConnectionError } from '../utils/connectionErrors';
 
 const features = [
@@ -45,7 +45,7 @@ function AuthPage() {
 
     const checkSession = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        const { session, error } = await getSession();
         if (!isMounted) return;
 
         if (error) {
@@ -56,7 +56,7 @@ function AuthPage() {
           }
         }
 
-        if (data?.session) {
+        if (session) {
           navigate('/app', { replace: true });
           return;
         }
@@ -71,7 +71,7 @@ function AuthPage() {
 
     checkSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
+    const unsubscribe = onAuthStateChange(
       (_event, session) => {
         if (!isMounted) return;
 
@@ -83,7 +83,7 @@ function AuthPage() {
 
     return () => {
       isMounted = false;
-      authListener?.subscription?.unsubscribe();
+      unsubscribe?.();
     };
   }, [navigate]);
 

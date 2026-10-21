@@ -1,0 +1,69 @@
+# Fully self-hosted stack: Postgres + PostgREST + auth service + SPA/nginx.
+# Usage: cp .env.selfhost.example .env.selfhost && docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?Set AUTHENTICATOR_PASSWORD}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:?Set AUTH_ADMIN_PASSWORD}
+      SQL_DIR: /sql_scripts
+    volumes:
+      - budget-db-data:/var/lib/postgresql/data
+      - ./sql_scripts:/sql_scripts:ro
+      - ./sql_scripts/local/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (>= 32 chars)}
+      PGRST_JWT_AUD: authenticated
+      PGRST_DB_MAX_ROWS: "1000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth:
+    build: ./server/auth
+    environment:
+      DATABASE_URL: postgres://auth_admin:${AUTH_ADMIN_PASSWORD}@db:5432/postgres
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (>= 32 chars)}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+      TRUST_PROXY: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  budget-app:
+    build: .
+    image: thewarguy/budget-app:latest
+    environment:
+      BACKEND_MODE: local
+    ports:
+      # Plain HTTP: terminate TLS in front (reverse proxy / Tailscale). Set APP_BIND=127.0.0.1 when a local proxy fronts it.
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8085}:8085"
+    depends_on:
+      - postgrest
+      - auth
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  budget-db-data:

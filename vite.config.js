@@ -1,9 +1,31 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+// The client uses VITE_API_ORIGIN directly when configured. This proxy is
+// for same-origin development and is enabled by DEV_API_PROXY_TARGET.
+const getDevProxy = (mode) => {
+  const env = loadEnv(mode, ".", "");
+  const proxyTarget = env.VITE_API_ORIGIN || env.DEV_API_PROXY_TARGET;
+  return env.DEV_API_PROXY_TARGET && proxyTarget
+    ? {
+        proxy: {
+          "/rest/v1": {
+            target: proxyTarget,
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/rest\/v1/, ""),
+          },
+          "/auth/v1": {
+            target: proxyTarget,
+            changeOrigin: true,
+          },
+        },
+      }
+    : {};
+};
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     VitePWA({
@@ -61,7 +83,7 @@ export default defineConfig({
         // would not propagate to clients with an active service worker.
         globIgnores: ["**/env-config.js"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/env-config\.js$/],
+        navigateFallbackDenylist: [/^\/api/, /^\/rest\//, /^\/auth\//, /^\/env-config\.js$/],
         runtimeCaching: [
           {
             // Always go to network for env-config.js; never cache it.
@@ -85,6 +107,45 @@ export default defineConfig({
             },
           },
           {
+            // Cached REST responses are per-user; signOut purges both cache
+            // names before another account can use them.
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /^\/rest\/v1\/(accounts|categories|user_preferences)\b/.test(url.pathname),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "supabase-reference-tables",
+              expiration: {
+                maxEntries: 30,
+                maxAgeSeconds: 60 * 60 * 24, // 1 day
+              },
+            },
+          },
+          {
+            // Auth requests must always reach the live same-origin server.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/auth\/v1\//.test(url.pathname),
+            handler: "NetworkOnly",
+          },
+          {
+            // Never cache Supabase auth endpoints — tokens must always come
+            // from the live server to avoid stale-session foot-guns.
+            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/v1\/.*/i,
+            handler: "NetworkOnly",
+          },
+          {
+            // Cache same-origin local PostgREST API calls (network-first so
+            // offline falls through to our Dexie layer naturally).
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/rest\/v1\/.*/.test(url.pathname),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "supabase-api",
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60, // 1 hour
+              },
+              networkTimeoutSeconds: 1,
+            },
+          },
+          {
             // Cache Supabase REST API calls (network-first so offline
             // falls through to our Dexie layer naturally)
             urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
@@ -100,12 +161,6 @@ export default defineConfig({
               // hang on mobile.
               networkTimeoutSeconds: 1,
             },
-          },
-          {
-            // Never cache Supabase auth endpoints — tokens must always come
-            // from the live server to avoid stale-session foot-guns.
-            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/v1\/.*/i,
-            handler: "NetworkOnly",
           },
           {
             // Cache Google Fonts (if ever used)
@@ -126,7 +181,7 @@ export default defineConfig({
           vendor: ["react", "react-dom", "react-router-dom"],
           charts: ["recharts"],
           excel: ["exceljs"],
-          supabase: ["@supabase/supabase-js"],
+          supabase: ["@supabase/supabase-js", "@supabase/postgrest-js"],
           dnd: [
             "@dnd-kit/core",
             "@dnd-kit/sortable",
@@ -161,6 +216,7 @@ export default defineConfig({
       usePolling: true, // required for bind-mounted dev containers to detect file changes
       interval: 300, // poll every 300ms
     },
+    ...getDevProxy(mode),
     fs: {
       // Allow serving files from the project root
       cachedChecks: false,
@@ -174,10 +230,11 @@ export default defineConfig({
       "react-router-dom",
       "recharts",
       "@supabase/supabase-js",
+      "@supabase/postgrest-js",
     ],
     esbuildOptions: {
       // Use faster target
       target: "es2018",
     },
   },
-});
+}));

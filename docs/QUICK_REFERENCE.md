@@ -11,7 +11,7 @@ CONTEXT_GUIDE.md        ← How to work with AI effectively
 DATA_MODEL.md           ← Database schema (reference while coding)
 SECURITY.md             ← Security model and invariants
 SECURITY_CHECKLIST.md   ← Pre-merge security review checklist
-SETUP_GUIDE.md          ← Supabase setup walkthrough
+SETUP_GUIDE.md          ← Supabase and self-hosted setup walkthrough
 STYLE_GUIDE.md          ← Design system, component patterns, dark mode
 QUICK_REFERENCE.md      ← This file
 archive/                ← Completed phase build guides (historical)
@@ -93,7 +93,7 @@ CONTEXT_GUIDE.md        ← How to work with AI effectively
 DATA_MODEL.md           ← Database schema and TypeScript types
 SECURITY.md             ← Security model and invariants
 SECURITY_CHECKLIST.md   ← Pre-merge security review checklist
-SETUP_GUIDE.md          ← Supabase setup walkthrough
+SETUP_GUIDE.md          ← Supabase and self-hosted setup walkthrough
 STYLE_GUIDE.md          ← Design system, component patterns, dark mode
 QUICK_REFERENCE.md      ← This file
 archive/                ← Completed phase build guides (historical)
@@ -191,7 +191,7 @@ package.json        ← Dependencies
 **Authentication code?**
 
 - Components: `src/components/common/LoginForm.jsx`, `SignupForm.jsx`
-- Auth model: Supabase Auth (`auth.users`)
+- Auth model: Supabase Auth or the self-hosted auth service (`auth.users`); see `src/services/auth/` for the client adapter
 - App-owned schema: [DATA_MODEL.md](./DATA_MODEL.md) → `user_preferences`, user-owned domain tables
 
 **Transaction logic?**
@@ -287,7 +287,7 @@ package.json        ← Dependencies
 
 1. **Know the schema**: [DATA_MODEL.md](./DATA_MODEL.md)
 2. **Test the query**: Write SQL in Supabase SQL Editor first
-3. **Convert to JavaScript**: Use Supabase client in `src/services/`
+3. **Convert to JavaScript**: Use the selected backend client in `src/services/`
 4. **Paginate if needed**: Any `transactions` query must use the 1000-row pagination loop (see DATA_MODEL.md → Design Decision #6)
 
 ### "I'm stuck and confused"

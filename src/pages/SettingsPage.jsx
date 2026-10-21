@@ -16,6 +16,7 @@ import {
   saveQuickTransactionTemplates,
 } from '../services/quickTransactions';
 import { getPartnership } from '../services/partnerships';
+import { updatePassword } from '../services/auth';
 
 export default function SettingsPage() {
   const {
@@ -66,6 +67,12 @@ export default function SettingsPage() {
   const [quickFormError, setQuickFormError] = useState('');
   const [quickSaving, setQuickSaving] = useState(false);
   const [partnership, setPartnership] = useState(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +287,60 @@ export default function SettingsPage() {
             Customise appearance, budget alerts, and app preferences.
           </p>
         </div>
+
+        <section className="animate-fade-in-up mb-6 rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
+          <h2 className="mb-1 text-lg font-semibold text-stone-900 dark:text-stone-100">Change password</h2>
+          <p className="mb-5 text-sm text-stone-500 dark:text-stone-400">Update the password for your account.</p>
+          <form
+            className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setPasswordStatus('');
+              setPasswordError('');
+              if (newPassword.length < 8) { setPasswordError('New password must be at least 8 characters.'); return; }
+              if (newPassword !== confirmPassword) { setPasswordError('New password and confirmation do not match.'); return; }
+              setIsChangingPassword(true);
+              try {
+                const result = await updatePassword({ currentPassword, newPassword });
+                if (result.error) throw result.error;
+                setPasswordStatus('Password updated successfully.');
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+              } catch (error) {
+                setPasswordError(error?.message || 'Could not update password. Please try again.');
+              } finally {
+                setIsChangingPassword(false);
+              }
+            }}
+          >
+            {[['current-password', 'Current password', currentPassword, setCurrentPassword, 'current-password'], ['new-password', 'New password', newPassword, setNewPassword, 'new-password'], ['confirm-new-password', 'Confirm new password', confirmPassword, setConfirmPassword, 'new-password']].map(([id, label, value, setter, autoComplete]) => (
+              <div key={id} className="space-y-1.5">
+                <label htmlFor={id} className="block text-sm font-medium text-stone-700 dark:text-stone-300">{label}</label>
+                <input
+                  id={id}
+                  type="password"
+                  value={value}
+                  onChange={(event) => setter(event.target.value)}
+                  autoComplete={autoComplete}
+                  minLength={id === 'current-password' ? undefined : 8}
+                  required
+                  className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
+                />
+              </div>
+            ))}
+            {(passwordError || passwordStatus) && (
+              <p role="status" className={`sm:col-span-3 rounded-xl border p-3 text-sm font-medium ${passwordError ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400' : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400'}`}>
+                {passwordError || passwordStatus}
+              </p>
+            )}
+            <div className="sm:col-span-3">
+              <button type="submit" disabled={isChangingPassword} className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-colors hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-amber-900/30">
+                {isChangingPassword ? 'Updating…' : 'Update password'}
+              </button>
+            </div>
+          </form>
+        </section>
 
         {/* ── Row 1: Appearance + Safe Mode ────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

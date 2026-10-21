@@ -14,6 +14,7 @@ dist-ssr
 
 # Environment variables
 .env
+.env.selfhost
 .env.local
 .env.*.local
 

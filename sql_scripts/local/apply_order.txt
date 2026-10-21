@@ -1,0 +1,25 @@
+# Paths are relative to sql_scripts/. Fresh databases only (base CREATEs are not idempotent).
+local/00_roles.sql
+local/01_auth_schema.sql
+supabase_schema_create.sql
+# Creates partnerships, split_expenses, and get_partner_email; depends on base tables.
+supabase_split_expenses.sql
+# Adds missing sync columns and update triggers; not folded into schema_create.
+supabase_add_updated_at.sql
+# Column/index replacement is folded in, but this also adds the occurrence lookup index.
+supabase_recurring_occurrence_date.sql
+# All referenced columns now exist; aggregation RPCs precede batched mutation RPCs.
+supabase_phase3_aggregations.sql
+supabase_phase4_mutations.sql
+# Reapply the complete policies only after partnerships/split_expenses exist.
+supabase_rls_complete.sql
+local/98_local_fixes.sql
+local/99_grants.sql
+# Skipped as redundant on fresh installs (their complete effects are already folded in):
+# supabase_accounts_closed.sql: closed_at/is_paused in schema_create.
+# supabase_asymmetric_transfer.sql: to_amount and CHECK in schema_create.
+# supabase_custom_interval.sql: custom frequency/columns/CHECKs in schema_create.
+# supabase_split_recurring.sql: split configuration columns/CHECKs in schema_create.
+# supabase_partnership_seen.sql: seen timestamps in split_expenses creation script.
+# supabase_split_dedup.sql: unique active transaction index in split_expenses creation script.
+# supabase_split_fix_rls.sql: corrected policies in split_expenses and rls_complete.

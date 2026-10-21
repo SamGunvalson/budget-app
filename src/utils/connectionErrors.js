@@ -25,7 +25,7 @@ export const getConnectionErrorMessage = (error, fallbackMessage) => {
   }
 
   if (code === 'INCOMPLETE_SERVER_CONFIG') {
-    return 'Server is missing runtime SUPABASE_URL/SUPABASE_ANON_KEY values.';
+    return 'Server is missing required runtime backend configuration values.';
   }
 
   if (code === 'INVALID_SERVER_CONFIG') {
@@ -34,6 +34,10 @@ export const getConnectionErrorMessage = (error, fallbackMessage) => {
 
   if (code === 'CONNECTION_TIMEOUT') {
     return 'Connection timed out. Confirm the device is on your Tailscale network and try again.';
+  }
+
+  if (code === 'LOCAL_HANDSHAKE_FAILED') {
+    return 'Server config loaded, but the local auth service health check failed.';
   }
 
   if (code === 'SUPABASE_HANDSHAKE_FAILED') {
