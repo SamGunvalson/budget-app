@@ -1,8 +1,10 @@
 -- =============================================================================
 -- RLS Policy Audit & Enforcement Script
 -- Run in the Supabase SQL Editor to verify and (re-)apply all Row-Level
--- Security policies.  Every statement uses CREATE POLICY IF NOT EXISTS so
--- it is safe to re-run at any time without error.
+-- Security policies. Policies are dropped and recreated so re-running also
+-- corrects existing definitions. All replacements are applied atomically.
+-- Existing databases must first apply supabase_transactions_soft_delete_rls.sql
+-- to ensure the soft-delete RPC exists before tightening transaction visibility.
 --
 -- Security invariant this script enforces:
 --   Every table that holds user data must:
@@ -12,24 +14,35 @@
 -- After running, verify all policies with the diagnostic query at the bottom.
 -- =============================================================================
 
+BEGIN;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- transactions
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'transactions'
-      AND policyname = 'Users can manage their own transactions'
-  ) THEN
-    CREATE POLICY "Users can manage their own transactions"
-      ON transactions
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own transactions" ON transactions;
+
+DROP POLICY IF EXISTS "Users can view their own active transactions" ON transactions;
+CREATE POLICY "Users can view their own active transactions"
+  ON transactions FOR SELECT TO authenticated
+  USING (auth.uid() = user_id AND deleted_at IS NULL);
+
+DROP POLICY IF EXISTS "Users can insert their own transactions" ON transactions;
+CREATE POLICY "Users can insert their own transactions"
+  ON transactions FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own transactions" ON transactions;
+CREATE POLICY "Users can update their own transactions"
+  ON transactions FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id AND deleted_at IS NULL)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own transactions" ON transactions;
+CREATE POLICY "Users can delete their own transactions"
+  ON transactions FOR DELETE TO authenticated
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -38,18 +51,10 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'accounts'
-      AND policyname = 'Users can manage their own accounts'
-  ) THEN
-    CREATE POLICY "Users can manage their own accounts"
-      ON accounts
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own accounts" ON accounts;
+CREATE POLICY "Users can manage their own accounts"
+  ON accounts FOR ALL
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -57,18 +62,10 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'categories'
-      AND policyname = 'Users can manage their own categories'
-  ) THEN
-    CREATE POLICY "Users can manage their own categories"
-      ON categories
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own categories" ON categories;
+CREATE POLICY "Users can manage their own categories"
+  ON categories FOR ALL
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -76,18 +73,10 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE budget_plans ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'budget_plans'
-      AND policyname = 'Users can manage their own budget plans'
-  ) THEN
-    CREATE POLICY "Users can manage their own budget plans"
-      ON budget_plans
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own budget plans" ON budget_plans;
+CREATE POLICY "Users can manage their own budget plans"
+  ON budget_plans FOR ALL
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -95,22 +84,14 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE budget_items ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'budget_items'
-      AND policyname = 'Users can manage their own budget items'
-  ) THEN
-    CREATE POLICY "Users can manage their own budget items"
-      ON budget_items
-      FOR ALL
-      USING (
-        budget_plan_id IN (
-          SELECT id FROM budget_plans WHERE user_id = auth.uid()
-        )
-      );
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own budget items" ON budget_items;
+CREATE POLICY "Users can manage their own budget items"
+  ON budget_items FOR ALL
+  USING (
+    budget_plan_id IN (
+      SELECT id FROM budget_plans WHERE user_id = auth.uid()
+    )
+  );
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -118,18 +99,10 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE recurring_templates ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'recurring_templates'
-      AND policyname = 'Users can manage their own recurring templates'
-  ) THEN
-    CREATE POLICY "Users can manage their own recurring templates"
-      ON recurring_templates
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own recurring templates" ON recurring_templates;
+CREATE POLICY "Users can manage their own recurring templates"
+  ON recurring_templates FOR ALL
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -137,18 +110,10 @@ END $$;
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'user_preferences'
-      AND policyname = 'Users can manage their own preferences'
-  ) THEN
-    CREATE POLICY "Users can manage their own preferences"
-      ON user_preferences
-      FOR ALL
-      USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can manage their own preferences" ON user_preferences;
+CREATE POLICY "Users can manage their own preferences"
+  ON user_preferences FOR ALL
+  USING (auth.uid() = user_id);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -169,17 +134,10 @@ CREATE POLICY "Members can view their partnerships"
     OR (status = 'pending' AND invited_email = (current_setting('request.jwt.claims', true)::jsonb ->> 'email'))
   );
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'partnerships'
-      AND policyname = 'Users can create partnership invites'
-  ) THEN
-    CREATE POLICY "Users can create partnership invites"
-      ON partnerships FOR INSERT
-      WITH CHECK (auth.uid() = user_a_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Users can create partnership invites" ON partnerships;
+CREATE POLICY "Users can create partnership invites"
+  ON partnerships FOR INSERT
+  WITH CHECK (auth.uid() = user_a_id);
 
 DROP POLICY IF EXISTS "Members can update their partnerships" ON partnerships;
 CREATE POLICY "Members can update their partnerships"
@@ -222,23 +180,16 @@ CREATE POLICY "Members can view split expenses"
     AND deleted_at IS NULL
   );
 
-DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'split_expenses'
-      AND policyname = 'Members can insert split expenses'
-  ) THEN
-    CREATE POLICY "Members can insert split expenses"
-      ON split_expenses FOR INSERT
-      WITH CHECK (
-        partnership_id IN (
-          SELECT id FROM partnerships
-          WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-            AND status = 'active'
-        )
-      );
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Members can insert split expenses" ON split_expenses;
+CREATE POLICY "Members can insert split expenses"
+  ON split_expenses FOR INSERT
+  WITH CHECK (
+    partnership_id IN (
+      SELECT id FROM partnerships
+      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+        AND status = 'active'
+    )
+  );
 
 -- DROP + CREATE (not IF NOT EXISTS) so that re-running this script also fixes
 -- an incorrect policy that already exists on the database.
@@ -275,6 +226,8 @@ CREATE POLICY "Members can delete split expenses"
     )
   );
 
+
+COMMIT;
 
 -- =============================================================================
 -- Diagnostic query — run this after the script to confirm all tables are

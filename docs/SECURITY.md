@@ -14,6 +14,18 @@ Every table that holds user data has RLS enabled with a `USING (auth.uid() = use
 
 Verify at any time by running the diagnostic query at the bottom of `supabase_rls_complete.sql` in the Supabase SQL Editor.
 
+Transaction SELECT/UPDATE policies must also require `deleted_at IS NULL` in
+USING, while UPDATE WITH CHECK checks ownership without that condition.
+A permissive transactions FOR ALL policy defeats the live-row filter even when
+the narrower policies exist. For existing Supabase databases, run
+[supabase_transactions_soft_delete_rls.sql](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+as the database owner before reapplying the complete RLS script. It atomically
+replaces the legacy policy and installs the authenticated-only soft-delete RPC.
+The RPC uses SECURITY DEFINER with explicit ownership/live-row predicates and a
+fixed search path. The migration's final query must show four authenticated
+transaction policies (SELECT, INSERT, UPDATE, DELETE), no ALL or extra permissive
+policies. This preserves existing owner-only hard deletes; it does not purge data.
+
 ### 2. All mutations also filter by user_id in application code
 
 Even though RLS enforces data isolation at the database level, every `UPDATE` and `DELETE` query in [src/services/transactions.js](../src/services/transactions.js) and [src/services/accounts.js](../src/services/accounts.js) also includes `.eq("user_id", user.id)`.  

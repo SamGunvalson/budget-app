@@ -18,7 +18,7 @@ This document defines the complete data schema for the budget app. **Reference t
 ### Local-mode `auth` compatibility schema
 
 Vanilla PostgreSQL deployments apply `sql_scripts/local/` before/after the
-unchanged Supabase scripts, in `local/apply_order.txt` order. Supabase deployments
+shared Supabase scripts, in `local/apply_order.txt` order. Supabase deployments
 continue using Supabase-managed Auth; this shim is **local-only**.
 
 - `auth.users`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, lowercase-only
@@ -45,12 +45,9 @@ only); access is isolated by database grants rather than auth-table RLS. Public
 financial tables retain their existing RLS, with authenticated CRUD/RPC grants.
 `authenticator` is LOGIN NOINHERIT with membership in the two API roles.
 
-The local-only `soft_delete_transaction(txn_id UUID)` RPC, defined in
-[`sql_scripts/local/98_local_fixes.sql`](../sql_scripts/local/98_local_fixes.sql), returns VOID and
-soft-deletes only the calling user's live transaction. Its SECURITY DEFINER
-implementation explicitly checks `user_id = auth.uid()`; execution is restricted
-to `authenticated`. The local shim removes the legacy RLS audit's permissive
-transactions policy so live-row SELECT/UPDATE policies remain effective.
+The local initializer uses the shared `soft_delete_transaction(txn_id UUID)` RPC
+and transaction policies documented below. The legacy local-fix entry point
+delegates to the shared migration, keeping existing local deployments compatible.
 
 ---
 
@@ -267,7 +264,29 @@ const defaultCategories = [
 - Index on `(recurring_template_id, transaction_date)` where `recurring_template_id IS NOT NULL`
 - **Unique** index on `(recurring_template_id, recurring_occurrence_date, account_id)` where `recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL` — prevents duplicate projected/pending/posted transactions for the same template+occurrence+account while allowing transfer dual-leg entries
 
-**RLS**: Users can only access their own transactions
+**RLS**: Four policies restricted to `authenticated` scope access to the user's
+own transactions. SELECT and UPDATE USING also require `deleted_at IS NULL`.
+UPDATE WITH CHECK verifies ownership only, allowing soft-delete writes. INSERT
+checks ownership; DELETE retains the existing owner-only hard-delete permission.
+No permissive FOR ALL policy may coexist with these policies, because it would
+override the live-row filtering.
+
+**Soft-delete RPC**: `public.soft_delete_transaction(txn_id UUID) RETURNS VOID`
+sets `deleted_at` and `updated_at` to `now()` only for a live transaction owned
+by `auth.uid()`. It uses SECURITY DEFINER with a fixed `search_path = public`
+and a schema-qualified table, with explicit ownership/live-row checks because it
+bypasses RLS. Execution is granted to `authenticated`, revoked from PUBLIC and
+`anon`. Missing, already-deleted, and other users' IDs have no effect. The
+existing service passes `txn_id` and deletes transfer companions separately.
+
+Fresh installs include this RPC in
+[`supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql).
+Existing Supabase databases must run
+[`supabase_transactions_soft_delete_rls.sql`](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+as the database owner. It atomically installs the RPC, removes the legacy broad
+policy, and recreates all four policies; it is safe to rerun. Its final diagnostic
+query should return exactly four policies, with no ALL command. Investigate any
+additional custom policies, as permissive policies are combined with OR.
 
 ---
 
@@ -1184,6 +1203,7 @@ All tables are fully implemented and live.
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `sql_scripts/supabase_schema_create.sql`    | Creates all tables, indexes, and RLS policies from scratch on a new project                          |
 | `sql_scripts/supabase_rls_complete.sql`     | Idempotently re-applies RLS policies to an existing database (safe to re-run)                        |
+| `sql_scripts/supabase_transactions_soft_delete_rls.sql` | Migration — installs soft-delete RPC and replaces broad transaction policy with authenticated per-operation policies |
 | `sql_scripts/supabase_split_expenses.sql`   | Creates partnerships, split_expenses tables, **and** `get_partner_email` RPC (run after main schema) |
 | `sql_scripts/supabase_split_dedup.sql`      | Migration — soft-deletes duplicate split rows by `transaction_id` and adds unique active-row index      |
 | `sql_scripts/supabase_partner_email_fn.sql` | Standalone migration — adds `get_partner_email` RPC to an **existing** database                      |
@@ -1204,7 +1224,7 @@ All tables are fully implemented and live.
 
 ---
 
-**Document version**: 2.1
+**Document version**: 2.2
 
 **Last updated**: 2026-10-21
 

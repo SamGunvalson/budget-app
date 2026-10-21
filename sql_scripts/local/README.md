@@ -1,7 +1,7 @@
 # Local PostgreSQL compatibility shim
 
-Only for vanilla PostgreSQL 16 + PostgREST, **not Supabase**. Existing Supabase
-SQL remains unchanged. `apply_order.txt` is the canonical fresh-database order;
+Only for vanilla PostgreSQL 16 + PostgREST, **not Supabase**.
+`apply_order.txt` is the canonical fresh-database order;
 it documents migrations already folded into the base scripts. The base scripts
 create tables without IF NOT EXISTS, so the full initializer is not re-runnable.
 The role, auth-schema, grants, and local-fix scripts are individually idempotent.
@@ -29,9 +29,22 @@ missing/empty claim settings. No API role can read passwords or refresh hashes.
 `get_partner_email` keeps its authenticated-only, invitee-membership-scoped
 SECURITY DEFINER behavior.
 
-`98_local_fixes.sql` supplies the client RPC `soft_delete_transaction(txn_id uuid)`
-missing from the repository's Supabase scripts. It uses explicit ownership checks
-under SECURITY DEFINER to permit soft deletes without widening access. It also
-removes the legacy audit script's permissive transactions FOR ALL policy, which
-would otherwise override the base schema's live-row SELECT/UPDATE filtering.
-The existing split policies are preserved.
+`98_local_fixes.sql` delegates to the shared
+[`supabase_transactions_soft_delete_rls.sql`](../supabase_transactions_soft_delete_rls.sql)
+migration. The base schema now includes its `soft_delete_transaction(txn_id uuid)`
+RPC and authenticated-only, per-operation transaction policies. The migration
+also repairs existing databases by removing the legacy permissive FOR ALL
+policy. The RPC uses explicit ownership checks under SECURITY DEFINER to permit
+soft deletes without widening access. The existing split policies are preserved.
+
+After initializing a disposable local database, run the transaction RLS
+regression checks as its owner (never against live Supabase):
+
+```bash
+psql -X -v ON_ERROR_STOP=1 -U postgres -d budget_test \
+  -f sql_scripts/local/tests/transactions_rls.sql
+```
+
+The checks use two test users and roll back all fixtures. They cover live-row
+visibility, ownership enforcement, authenticated RPC grants, soft deletes,
+repeat/missing-ID calls, and preservation of existing owner-only hard deletes.
