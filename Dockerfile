@@ -28,6 +28,7 @@ RUN apk upgrade --no-cache libpng zlib expat
 
 # Copy custom config and built assets
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx/ /opt/nginx-templates/
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Entrypoint script replaces placeholder tokens in env-config.js with real runtime env vars

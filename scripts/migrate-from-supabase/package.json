@@ -1,0 +1,15 @@
+{
+  "name": "migrate-from-supabase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-shot copy of a Supabase project (auth.users + public tables) into the self-hosted Postgres",
+  "scripts": {
+    "migrate": "node migrate.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "pg-copy-streams": "^6.0.6"
+  }
+}

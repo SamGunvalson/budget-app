@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { supabase } from '../../services/supabase';
+import { useEffect, useState } from 'react';
+import { getSignupHealth, signUp } from '../../services/auth';
 import { getConnectionErrorMessage, isLikelyConnectionError } from '../../utils/connectionErrors';
 
 function SignupForm({ onSuccess }) {
@@ -8,6 +8,16 @@ function SignupForm({ onSuccess }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [signupEnabled, setSignupEnabled] = useState(true);
+  const [healthChecked, setHealthChecked] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getSignupHealth().then((health) => {
+      if (active) { setSignupEnabled(health.signupEnabled !== false); setHealthChecked(true); }
+    });
+    return () => { active = false; };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -16,7 +26,7 @@ function SignupForm({ onSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      const { session, error: signUpError, needsConfirmation } = await signUp({
         email,
         password
       });
@@ -30,12 +40,12 @@ function SignupForm({ onSuccess }) {
         return;
       }
 
-      if (data?.session) {
-        onSuccess?.(data.session);
+      if (session) {
+        onSuccess?.(session);
         return;
       }
 
-      setMessage('Check your email to confirm your account, then sign in.');
+      if (needsConfirmation) setMessage('Check your email to confirm your account, then sign in.');
     } catch (submitError) {
       setError(
         isLikelyConnectionError(submitError)
@@ -46,6 +56,9 @@ function SignupForm({ onSuccess }) {
       setIsSubmitting(false);
     }
   };
+
+  if (!healthChecked) return <p className="text-sm text-stone-500 dark:text-stone-400">Checking whether account creation is available…</p>;
+  if (!signupEnabled) return <p className="rounded-xl border border-stone-200/60 bg-stone-50 p-4 text-sm text-stone-600 dark:border-stone-700 dark:bg-stone-700/50 dark:text-stone-300">Account creation is disabled on this server. Contact your server administrator to request an account.</p>;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -75,12 +88,12 @@ function SignupForm({ onSuccess }) {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           autoComplete="new-password"
-          minLength={6}
+          minLength={8}
           required
           className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
-          placeholder="Create a password (6+ characters)"
+          placeholder="Create a password (8+ characters)"
         />
-        <p className="text-xs text-stone-400 dark:text-stone-500">Use at least 6 characters for a stronger account.</p>
+        <p className="text-xs text-stone-400 dark:text-stone-500">Use at least 8 characters for a stronger account.</p>
       </div>
 
       {error && (

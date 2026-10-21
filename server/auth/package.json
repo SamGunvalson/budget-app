@@ -1,0 +1,21 @@
+{
+  "name": "budget-auth",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "cli": "node src/cli.js",
+    "test": "node --test --test-concurrency=1 test/"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.1",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.12.7",
+    "jose": "^6.2.13",
+    "pg": "^8.23.1"
+  }
+}

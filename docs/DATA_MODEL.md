@@ -15,6 +15,45 @@ This document defines the complete data schema for the budget app. **Reference t
 
 ## Database Schema (Supabase/PostgreSQL)
 
+### Local-mode `auth` compatibility schema
+
+Vanilla PostgreSQL deployments apply `sql_scripts/local/` before/after the
+unchanged Supabase scripts, in `local/apply_order.txt` order. Supabase deployments
+continue using Supabase-managed Auth; this shim is **local-only**.
+
+- `auth.users`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, lowercase-only
+  `email TEXT NOT NULL UNIQUE` (`CHECK (email = lower(email))`),
+  `encrypted_password TEXT NOT NULL`, `created_at` and `updated_at TIMESTAMPTZ
+  NOT NULL DEFAULT now()`, and nullable `last_sign_in_at TIMESTAMPTZ`.
+  Existing public `user_id` foreign keys reference this table.
+- `auth.refresh_tokens`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`,
+  `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`,
+  `token_hash TEXT NOT NULL UNIQUE`, `family_id UUID NOT NULL`, nullable
+  `parent_id UUID`, `revoked_at TIMESTAMPTZ`, and `user_agent TEXT`,
+  `expires_at TIMESTAMPTZ NOT NULL`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`.
+  Indexed by `user_id` and `family_id`; only hashes of opaque refresh tokens are
+  persisted, with family/parent fields supporting rotation and reuse detection.
+- `auth.uid()` is STABLE and returns the JWT subject UUID, from the legacy
+  individual claim setting or PostgREST's `request.jwt.claims` JSON. Missing or
+  empty settings yield NULL. `auth.jwt()`, `auth.email()`, and `auth.role()` are
+  STABLE compatibility helpers for the same claims.
+
+**Access/RLS**: `auth_admin` alone receives auth-table CRUD (besides the owner);
+`anon` and `authenticated` receive auth-schema USAGE and helper EXECUTE, not
+any auth-table grants. Auth tables are not exposed by PostgREST (public schema
+only); access is isolated by database grants rather than auth-table RLS. Public
+financial tables retain their existing RLS, with authenticated CRUD/RPC grants.
+`authenticator` is LOGIN NOINHERIT with membership in the two API roles.
+
+The local-only `soft_delete_transaction(txn_id UUID)` RPC, defined in
+[`sql_scripts/local/98_local_fixes.sql`](../sql_scripts/local/98_local_fixes.sql), returns VOID and
+soft-deletes only the calling user's live transaction. Its SECURITY DEFINER
+implementation explicitly checks `user_id = auth.uid()`; execution is restricted
+to `authenticated`. The local shim removes the legacy RLS audit's permissive
+transactions policy so live-row SELECT/UPDATE policies remain effective.
+
+---
+
 ### Table: `users`
 
 **Purpose**: Store user accounts (handled by Supabase Auth, extended here for preferences)
@@ -1165,6 +1204,8 @@ All tables are fully implemented and live.
 
 ---
 
-**Document version**: 2.0  
-**Last updated**: June 1, 2026  
+**Document version**: 2.1
+
+**Last updated**: 2026-10-21
+
 **Owner**: @SamGunvalson

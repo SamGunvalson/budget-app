@@ -1,7 +1,7 @@
 /**
  * AuthProvider — Phase 6
  *
- * Hoists `supabase.auth.getSession()` + `onAuthStateChange` into a single
+ * Hoists adapter `getSession()` + `onAuthStateChange` into a single
  * shared context so ProtectedRoute (and anything else that needs the session)
  * can read it without redundant per-route JWT validation round-trips.
  *
@@ -14,7 +14,8 @@
  * not on every protected route mount or App re-render.
  */
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { supabase, isSupabaseReady } from '../services/supabase';
+import { isSupabaseReady } from '../services/supabase';
+import { getSession, onAuthStateChange } from '../services/auth';
 import { pullAll, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import AuthContext from './authContextValue';
@@ -50,12 +51,11 @@ export function AuthProvider({ children, enabled = true }) {
     };
 
     // 1. Check the current session once on mount.
-    supabase.auth
-      .getSession()
-      .then(({ data, error }) => {
+    getSession()
+      .then(({ session: nextSession, error }) => {
         if (!mounted) return;
         if (error) console.error('AuthProvider: unable to check session', error);
-        const s = data?.session ?? null;
+        const s = nextSession ?? null;
         setSession(s);
         setIsChecking(false);
         if (s) doWarmUp();
@@ -68,7 +68,7 @@ export function AuthProvider({ children, enabled = true }) {
       });
 
     // 2. Subscribe to auth state changes (sign-in / sign-out / token refresh).
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+    const unsubscribe = onAuthStateChange((_event, next) => {
       if (!mounted) return;
       setSession(next);
       setIsChecking(false);
@@ -77,7 +77,7 @@ export function AuthProvider({ children, enabled = true }) {
 
     return () => {
       mounted = false;
-      listener?.subscription?.unsubscribe();
+      unsubscribe?.();
     };
   }, [enabled]);
 

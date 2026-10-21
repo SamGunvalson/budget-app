@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../../services/supabase';
+import { signInWithPassword } from '../../services/auth';
 import { getConnectionErrorMessage, isLikelyConnectionError } from '../../utils/connectionErrors';
 
 function LoginForm({ onSuccess }) {
@@ -14,7 +14,7 @@ function LoginForm({ onSuccess }) {
     setIsSubmitting(true);
 
     try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const { session, error: signInError } = await signInWithPassword({
         email,
         password
       });
@@ -28,7 +28,7 @@ function LoginForm({ onSuccess }) {
         return;
       }
 
-      onSuccess?.(data?.session);
+      onSuccess?.(session);
     } catch (submitError) {
       setError(
         isLikelyConnectionError(submitError)

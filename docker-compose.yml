@@ -2,6 +2,7 @@ services:
   budget-app:
     image: thewarguy/budget-app:latest   # pull from Docker Hub
     environment:
+      - BACKEND_MODE=supabase
       - SUPABASE_URL=${VITE_SUPABASE_URL}
       - SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
     container_name: budget-app

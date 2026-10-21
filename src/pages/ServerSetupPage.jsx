@@ -65,7 +65,7 @@ export default function ServerSetupPage({ serverState, onConfigured }) {
           <div className="mb-5">
             <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Connect to your server</h1>
             <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
-              Enter the Budget App server URL before signing in. This should be reachable from this device
+              Enter the server URL before signing in. This should be reachable from this device
               (for example over Tailscale).
             </p>
           </div>

@@ -8,6 +8,77 @@ This guide walks you through setting up the Budget App from scratch.
 - ✅ Git installed
 - ✅ Code editor (VS Code recommended)
 
+## Self-hosted (local Postgres)
+
+This option runs PostgreSQL 16, PostgREST, the Fastify auth service, and the app's
+Nginx frontend in Docker Compose. It does not require Supabase. Nginx serves plain
+HTTP; do not expose it to an untrusted network without TLS.
+
+1. Copy the example environment file and generate unique secrets:
+
+   ```bash
+   cp .env.selfhost.example .env.selfhost
+   openssl rand -hex 32  # generate each of POSTGRES_PASSWORD, AUTHENTICATOR_PASSWORD, AUTH_ADMIN_PASSWORD
+   openssl rand -base64 48  # generate JWT_SECRET (shared by PostgREST and auth)
+   ```
+
+   Put each generated value in `.env.selfhost`; do not commit that file. The
+   database passwords are embedded in connection strings, so use the hex output
+   for those values. `JWT_SECRET` must be at least 32 bytes. `APP_BIND` defaults
+   to `0.0.0.0`; expose the plain-HTTP app only over a trusted encrypted network
+   such as Tailscale, or set `APP_BIND=127.0.0.1` and place a TLS-terminating
+   reverse proxy on the same host.
+
+2. Build and start the stack:
+
+   ```bash
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+   ```
+
+3. Open `http://localhost:8085` (or the configured `APP_PORT`) and sign up for
+   the first account. Then set `ALLOW_SIGNUP=false` in `.env.selfhost` and apply
+   the setting by recreating the stack:
+
+   ```bash
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d
+   ```
+
+   The auth service CLI can create accounts or reset passwords. It reads a new
+   password from stdin when `--password` is omitted; reset-password also revokes
+   existing refresh-token sessions:
+
+   ```bash
+   printf 'New password: '
+   IFS= read -r -s NEW_PASSWORD
+   printf '\n'
+   printf '%s\n' "$NEW_PASSWORD" | docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T auth node src/cli.js reset-password user@example.com
+   unset NEW_PASSWORD
+   ```
+
+4. Back up the database from the host. Treat the resulting SQL file as sensitive:
+
+   ```bash
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db pg_dump -U postgres -d postgres > budget-app-backup.sql
+   ```
+
+   Store backups securely and verify that you can restore them. The migration
+   and cutover procedure from Supabase is documented in
+   [`scripts/migrate-from-supabase/README.md`](../scripts/migrate-from-supabase/README.md).
+
+5. **Upgrading schema:** Postgres init scripts run only when the database volume
+   is first created. They do not automatically apply new schema changes to an
+   existing volume. Apply each future SQL migration manually with `psql`, in the
+   documented order, for example:
+
+   ```bash
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -U postgres -d postgres < sql_scripts/supabase_feature_migration.sql
+   ```
+
+   Keep the SQL file under version control; this command sends its contents to
+   the existing database. See [`sql_scripts/local/apply_order.txt`](../sql_scripts/local/apply_order.txt)
+   for the fresh-install order and [`sql_scripts/local/README.md`](../sql_scripts/local/README.md)
+   for the local compatibility-shim details.
+
 ## Step 1: Supabase Setup (5-10 minutes)
 
 ### 1.1 Create Supabase Account

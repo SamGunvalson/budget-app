@@ -1,6 +1,6 @@
 # Copilot Instructions — Budget App
 
-A personal budget tracking PWA built with React 19 + Vite, backed by Supabase (PostgreSQL + RLS), with full offline support via Dexie.js (IndexedDB).
+A personal budget tracking PWA built with React 19 + Vite, with a selectable Supabase or self-hosted local PostgreSQL backend (PostgreSQL + RLS), and full offline support via Dexie.js (IndexedDB).
 
 ## Commands
 
@@ -14,20 +14,20 @@ npm run lint      # ESLint (no tests exist)
 
 ### Data flow (reads)
 
-All reads go through React Query hooks in `src/hooks/queries.js`. Each hook wraps a corresponding `*Offline` function from `src/services/offlineAware.js`, which serves Dexie (IndexedDB) immediately and revalidates from Supabase in the background (SWR pattern). **Do not call Supabase service functions directly from components** — go through the hooks.
+All reads go through React Query hooks in `src/hooks/queries.js`. Each hook wraps a corresponding `*Offline` function from `src/services/offlineAware.js`, which serves Dexie (IndexedDB) immediately and revalidates from the selected backend in the background (SWR pattern). **Do not call backend service functions directly from components** — go through the hooks.
 
 ### Data flow (writes)
 
 Mutations may be called directly from components via the `*Offline` wrappers in `src/services/offlineAware.js` — no hook layer is required for writes. Each wrapper:
 
-1. Online: calls the underlying Supabase service, then updates Dexie.
+1. Online: calls the underlying service through the selected backend, then updates Dexie.
 2. Offline: writes to Dexie with `_offline` flags and enqueues the mutation for sync.
 
 After any mutation, `notifyTable(tableName)` is called internally, which triggers React Query to invalidate matching queries via `src/services/queryBridge.js`.
 
 ### Offline sync
 
-`src/services/sync.js` pushes queued mutations to Supabase on reconnect using a last-write-wins strategy. The sync queue lives in `src/utils/syncQueue.js`.
+`src/services/sync.js` pushes queued mutations to the selected backend on reconnect using a last-write-wins strategy. The sync queue lives in `src/utils/syncQueue.js`.
 
 ### Cache invalidation
 
@@ -35,7 +35,7 @@ Query keys follow `[tableName, ...specifics]`. The bridge in `src/services/query
 
 ### Auth & RLS
 
-Auth state is managed by `src/contexts/AuthContext.jsx`. Supabase Row-Level Security scopes all DB queries to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The auth client is initialized in `src/services/supabase.js`.
+Auth state is managed by `src/contexts/AuthContext.jsx`. All client auth calls go through the adapter in `src/services/auth/`, selected by `src/services/backend.js`; do not call `supabase.auth` directly from components. Supabase Row-Level Security or the local Postgres compatibility shim scopes database access to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The backend client and mode are selected in `src/services/backend.js`; `src/services/supabase.js` retains Supabase client setup.
 
 ### Routing
 
@@ -51,7 +51,7 @@ All monetary values are stored and passed around as **integer cents**. Use the h
 - `toDollars(cents)` — convert for math (pass `{ raw: true }` to bypass safe-mode masking)
 - `formatCurrency(cents)` — format for display (applies safe-mode masking)
 
-Never store or compute with floats. Never pass dollar amounts to Supabase.
+Never store or compute with floats. Never pass dollar amounts to either backend.
 
 ### Transaction classification
 
@@ -108,7 +108,8 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
 - **`docs/DATA_MODEL.md`** — authoritative DB schema with all table/column names and types. Always check this before writing queries or defining data shapes.
 - **`docs/STYLE_GUIDE.md`** — full design system including color tokens, typography scale, and component patterns.
 - **`docs/SECURITY.md`** — security invariants (RLS, input validation, etc.).
-- **`sql_scripts/supabase_schema_create.sql`** — base schema; other files in `sql_scripts/` are incremental migrations.
+- **`sql_scripts/supabase_schema_create.sql`** — shared base schema; other files in `sql_scripts/` are incremental migrations.
+- **`sql_scripts/local/`** — self-hosted Postgres compatibility shim, initialization order, and grants.
 
 ## Database Change Workflow
 
@@ -124,6 +125,8 @@ Whenever you add, rename, or remove a column, table, function, or RLS policy, yo
 
 3. **The service layer** — if a column or table name changed, update the corresponding file in `src/services/`.
 
+For any new table or function, also keep self-hosted mode working: add its SQL migration to `sql_scripts/local/` and append the filename to `sql_scripts/local/apply_order.txt` in dependency order. `99_grants.sql` supplies default grants to future public objects created by the database owner. Init scripts run only on a fresh volume; apply new migrations manually to existing self-hosted databases with `psql`.
+
 ### RLS authoring rules
 
 - For tables with soft deletes (`deleted_at`), always split `USING` and `WITH CHECK` on UPDATE policies:
@@ -136,7 +139,8 @@ Whenever you add, rename, or remove a column, table, function, or RLS policy, yo
 When adding, renaming, or removing any column, table, function, or RLS policy:
 
 1. ☐ `docs/DATA_MODEL.md` updated (table definition, constraints, RLS note, version/date)
-2. ☐ SQL script created/updated (`supabase_schema_create.sql` + migration file)
+2. ☐ SQL script created/updated (`supabase_schema_create.sql` + migration file); for local mode, add to `sql_scripts/local/` and append to `apply_order.txt`
 3. ☐ Service layer updated (`src/services/` file for the affected table)
 4. ☐ RLS policies use `DROP POLICY IF EXISTS` + `CREATE POLICY` (no `IF NOT EXISTS`)
 5. ☐ Soft-delete tables (`transactions`, `split_expenses`): UPDATE policy `USING` includes `deleted_at IS NULL`; `WITH CHECK` does **not**
+6. ☐ New self-hosted migrations are manually applied with `psql` to existing database volumes
