@@ -1,0 +1,12 @@
+# Optional source-build override for development and release smoke tests.
+# docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml --env-file .env.selfhost up -d --build
+services:
+  db:
+    build: ./sql_scripts
+    pull_policy: build
+  auth:
+    build: ./server/auth
+    pull_policy: build
+  budget-app:
+    build: .
+    pull_policy: build
