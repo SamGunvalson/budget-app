@@ -1,18 +1,16 @@
 # Fully self-hosted stack: Postgres + PostgREST + auth service + SPA/nginx.
-# Usage: cp .env.selfhost.example .env.selfhost && docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+# Image-only deployment; no repository checkout or local SQL mounts required.
+# Usage: docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
 services:
   db:
-    image: postgres:16-alpine
+    image: thewarguy/budget-app-db:${BUDGET_IMAGE_TAG:-latest}
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
       AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?Set AUTHENTICATOR_PASSWORD}
       AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:?Set AUTH_ADMIN_PASSWORD}
-      SQL_DIR: /sql_scripts
     volumes:
       - budget-db-data:/var/lib/postgresql/data
-      - ./sql_scripts:/sql_scripts:ro
-      - ./sql_scripts/local/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -35,7 +33,7 @@ services:
     restart: unless-stopped
 
   auth:
-    build: ./server/auth
+    image: thewarguy/budget-app-auth:${BUDGET_IMAGE_TAG:-latest}
     environment:
       DATABASE_URL: postgres://auth_admin:${AUTH_ADMIN_PASSWORD}@db:5432/postgres
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (>= 32 chars)}
@@ -47,8 +45,7 @@ services:
     restart: unless-stopped
 
   budget-app:
-    build: .
-    image: thewarguy/budget-app:latest
+    image: thewarguy/budget-app:${BUDGET_IMAGE_TAG:-latest}
     environment:
       BACKEND_MODE: local
     ports:
@@ -59,7 +56,7 @@ services:
       - auth
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8085/"]
       interval: 30s
       timeout: 10s
       retries: 3

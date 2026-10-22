@@ -36,17 +36,69 @@ jobs:
       - run: npm run lint
 
   # ── 2. Build & push ────────────────────────────────────────────────────────
-  build-push:
-    name: Docker Build & Push
+  selfhost-smoke:
+    name: Self-hosted Deployment Smoke Test
     runs-on: ubuntu-latest
     needs: audit
     permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: docker/setup-buildx-action@v4
+      - name: Build test images
+        run: |
+          docker buildx build --load -t thewarguy/budget-app-db:selfhost-test ./sql_scripts
+          docker buildx build --load -t thewarguy/budget-app-auth:selfhost-test ./server/auth
+          docker buildx build --load -t thewarguy/budget-app:selfhost-test .
+      - name: Test image-only deployment and persistence
+        run: node --test scripts/test-selfhost.test.js
+
+  release:
+    name: Prepare Release Version
+    runs-on: ubuntu-latest
+    needs: [audit, selfhost-smoke]
+    permissions:
       contents: write   # required to create the version tag
+    outputs:
+      version: ${{ steps.bump.outputs.new_tag }}
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0   # full history required for version calculation
+
+      # On main pushes: calculate and create the next patch tag (e.g. v0.0.1 → v0.0.2).
+      # The output is consumed directly below — no re-trigger needed, no GITHUB_TOKEN loop issue.
+      - name: Auto-bump version tag
+        id: bump
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+
+  build-push:
+    name: Build & Push (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: budget-app
+            context: .
+          - image: budget-app-auth
+            context: ./server/auth
+          - image: budget-app-db
+            context: ./sql_scripts
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -61,16 +113,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # On main pushes: calculate and create the next patch tag (e.g. v0.0.1 → v0.0.2).
-      # The output is consumed directly below — no re-trigger needed, no GITHUB_TOKEN loop issue.
-      - name: Auto-bump version tag
-        id: bump
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
-
       # Derive image tags:
       #   main push   →  edge  +  v0.0.2  +  latest  +  sha-abc1234
       #   tag push    →  1.2.3  +  1.2  +  1  +  latest  +  sha-abc1234
@@ -79,12 +121,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ secrets.DOCKERHUB_USERNAME || 'thewarguy' }}/${{ matrix.image }}
           tags: |
             type=sha,format=short
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ steps.bump.outputs.new_tag }},enable=${{ steps.bump.outputs.new_tag != '' }}
-            type=raw,value=latest,enable=${{ steps.bump.outputs.new_tag != '' || startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ needs.release.outputs.version }},enable=${{ needs.release.outputs.version != '' }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.version != '' || startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
@@ -96,7 +138,7 @@ jobs:
       - name: Build (and push if not a PR)
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.context }}
           # PRs only need amd64 for a smoke test; full multi-arch only on real pushes.
           platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           # Credentials are NOT baked in — injected at runtime by docker-entrypoint.sh
@@ -105,8 +147,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # Provenance attestations add ~30-60s overhead with no benefit for this image.
           provenance: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   # ── 3. Docker Scout CVE scan ───────────────────────────────────────────────
   scout:
@@ -145,4 +187,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: scout-results.sarif
-

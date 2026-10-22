@@ -134,7 +134,7 @@ See [docs/SETUP_GUIDE.md](./docs/SETUP_GUIDE.md) for detailed Supabase setup ins
 cp .env.selfhost.example .env.selfhost
 # Fill in generated POSTGRES_PASSWORD, AUTHENTICATOR_PASSWORD,
 # AUTH_ADMIN_PASSWORD and JWT_SECRET values in .env.selfhost.
-docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
 ```
 
 The Nginx frontend serves plain HTTP at `http://localhost:8085` by default.
@@ -145,6 +145,13 @@ in front of it. Create your first account, then set `ALLOW_SIGNUP=false` in
 [self-hosted setup guide](./docs/SETUP_GUIDE.md#self-hosted-local-postgres) for
 secret generation, backups, upgrades, and migration details. Keep `.env.selfhost`
 private and out of version control.
+
+This pulls prebuilt app, auth, and PostgreSQL images; the server needs only the
+Compose and environment files, not a repository checkout or SQL bind mounts.
+Set `BUDGET_IMAGE_TAG` to pin all three to a matching published release.
+For Unraid Compose Manager/Caddy, explicit schema upgrades, and optional local
+source builds, see the setup guide linked above. Image updates preserve the
+database volume but do not automatically apply schema migrations.
 
 #### Vite development against the self-hosted stack
 

@@ -6,13 +6,18 @@ it documents migrations already folded into the base scripts. The base scripts
 create tables without IF NOT EXISTS, so the full initializer is not re-runnable.
 The role, auth-schema, grants, and local-fix scripts are individually idempotent.
 
-Mount `sql_scripts/` read-only at `/sql_scripts` and executable `local/init.sh`
-at `/docker-entrypoint-initdb.d/00-budget.sh` in the official Postgres image.
+The self-hosted database image builds from [`../Dockerfile`](../Dockerfile),
+bundling the SQL files at `/sql_scripts` and executable `local/init.sh` at
+`/docker-entrypoint-initdb.d/00-budget.sh` on top of PostgreSQL 16. The deployment
+Compose file needs no source checkout or SQL mounts.
 Set `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD`,
 `AUTHENTICATOR_PASSWORD`, and `AUTH_ADMIN_PASSWORD`. `SQL_DIR` optionally changes
-the SQL mount path. Passwords are passed as quoted psql variables, not SQL text
+the SQL directory path. Passwords are passed as quoted psql variables, not SQL text
 substitution inside DO blocks. Initialization only runs for an empty data volume;
 changing password environment variables alone does not rotate existing roles.
+Existing volumes are preserved on image updates; apply only the release's
+required migrations explicitly using `psql -X -v ON_ERROR_STOP=1 -f /sql_scripts/<migration>.sql`
+inside the updated database container. Do not rerun the fresh-install initializer.
 
 - `authenticator`: LOGIN NOINHERIT; PostgREST connection role, may SET ROLE
   `anon` or `authenticated` according to verified JWTs.

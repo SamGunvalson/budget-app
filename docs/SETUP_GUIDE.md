@@ -14,6 +14,13 @@ This option runs PostgreSQL 16, PostgREST, the Fastify auth service, and the app
 Nginx frontend in Docker Compose. It does not require Supabase. Nginx serves plain
 HTTP; do not expose it to an untrusted network without TLS.
 
+Deployment requires only Docker Compose, `docker-compose.selfhost.yml`, and an
+environment file. Download the Compose file and `.env.selfhost.example` from the
+same repository release; no Node.js, Git checkout, source build, or SQL bind mounts
+are needed on the server. The app, auth service, and initialized PostgreSQL image
+are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
+`thewarguy/budget-app-db`. PostgREST uses its official image.
+
 1. Copy the example environment file and generate unique secrets:
 
    ```bash
@@ -29,10 +36,10 @@ HTTP; do not expose it to an untrusted network without TLS.
    such as Tailscale, or set `APP_BIND=127.0.0.1` and place a TLS-terminating
    reverse proxy on the same host.
 
-2. Build and start the stack:
+2. Pull the published images and start the stack:
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --build
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
    ```
 
 3. Open `http://localhost:8085` (or the configured `APP_PORT`) and sign up for
@@ -65,19 +72,104 @@ HTTP; do not expose it to an untrusted network without TLS.
    and cutover procedure from Supabase is documented in
    [`scripts/migrate-from-supabase/README.md`](../scripts/migrate-from-supabase/README.md).
 
-5. **Upgrading schema:** Postgres init scripts run only when the database volume
-   is first created. They do not automatically apply new schema changes to an
-   existing volume. Apply each future SQL migration manually with `psql`, in the
-   documented order, for example:
+5. **Updates:** Back up first and read the release's migration instructions.
+   Set `BUDGET_IMAGE_TAG` to a matching published tag for all three Budget App
+   images, or leave it at `latest` for the newest published build. Main-branch
+   releases use tags such as `v1.2.3`; manually pushed semver tags also publish
+   tags such as `1.2.3`. Use a tag present on all three images.
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -U postgres -d postgres < sql_scripts/supabase_feature_migration.sql
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost pull
    ```
 
-   Keep the SQL file under version control; this command sends its contents to
-   the existing database. See [`sql_scripts/local/apply_order.txt`](../sql_scripts/local/apply_order.txt)
+   **Upgrading schema:** Postgres init scripts run only when the database volume
+   is first created. They do not automatically apply new schema changes to an
+   existing volume. Apply each future SQL migration manually with `psql`, in the
+   documented order. The new database image includes the release's SQL files.
+   Recreate only the database service to make those files available, keeping
+   PostgreSQL 16 and the existing volume:
+
+   ```bash
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --no-deps --wait db
+   # Example only: replace with the migration filename specified by the release.
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_feature_migration.sql
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d
+   ```
+
+   Follow release-specific maintenance/downtime instructions; do not apply the
+   entire fresh-install initializer to an existing database. Pulling images
+   alone does not migrate the schema, rotate database passwords, or upgrade
+   PostgreSQL across major versions. Never use `down -v` on a database you want
+   to keep. Preserve the Compose project name so the same data volume is used.
+   See [`sql_scripts/local/apply_order.txt`](../sql_scripts/local/apply_order.txt)
    for the fresh-install order and [`sql_scripts/local/README.md`](../sql_scripts/local/README.md)
    for the local compatibility-shim details.
+
+### Unraid Compose Manager and Caddy
+
+Paste `docker-compose.selfhost.yml` into your Compose Manager project and supply
+the environment variables through its environment-file/settings support.
+Compose automatically reads `.env`; `.env.selfhost` requires an explicit
+`--env-file .env.selfhost` argument or equivalent manager configuration.
+Do not add `build:` entries or local SQL mounts.
+
+If Caddy runs in Docker on an existing external network named `proxynet`, add
+this to the `budget-app` service:
+
+```yaml
+    networks: [proxynet, default]
+```
+
+Also add this top-level section:
+
+```yaml
+networks:
+  proxynet:
+    external: true
+```
+
+Keep Caddy on `proxynet` and use this upstream:
+
+```caddyfile
+budget.example.com {
+    reverse_proxy budget-app:8085
+}
+```
+
+Only the app joins the proxy network; auth, PostgREST, and the database stay on
+the default network. If Caddy is the only entry point, remove the app's `ports:`
+section; Caddy connects over Docker networking without publishing a host port.
+Use the manager's pull/update and recreate operations for updates, with the
+same backup and explicit schema-migration precautions described above.
+
+### Building self-hosted images from source
+
+For development or testing unpublished changes, use the optional build override
+from a repository checkout:
+
+```bash
+docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml --env-file .env.selfhost up -d --build
+```
+
+To run the deployment smoke test locally (requires Node.js 22+ and Docker),
+build disposable test tags, then run:
+
+```bash
+BUDGET_IMAGE_TAG=selfhost-test docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml --env-file .env.selfhost build
+node --test scripts/test-selfhost.test.js
+```
+
+The test copies only the deployment Compose file into a temporary directory,
+generates its own credentials, and uses an isolated project/volume. It checks
+fresh initialization, transaction RLS, signup, authenticated writes, and login
+and data persistence after container recreation, then removes its own resources.
+It never uses the development or production database volume.
+
+The release workflow builds all three images for amd64 and arm64 with matching
+tags. Before the first image-only deployment, a successful main/tag publish must
+have pushed all three images. The Docker Hub publishing token must have push
+access to all three repositories; create the additional repositories if needed
+and make them public for unauthenticated pulls.
 
 ## Step 1: Supabase Setup (5-10 minutes)
 
