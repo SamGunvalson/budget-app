@@ -105,6 +105,17 @@ export function startSyncListener() {
     console.log("[sync] Online — starting sync");
     requestSync();
   });
+
+  // Native apps stay alive in the background, so pull changes made on other
+  // devices whenever the app returns to the foreground (throttled).
+  let lastResumeSync = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !navigator.onLine) return;
+    const now = Date.now();
+    if (now - lastResumeSync < 30_000) return;
+    lastResumeSync = now;
+    requestSync({ skipPull: isDataSaver() });
+  });
 }
 
 // ── Tables we sync, with their soft-delete / activation flag conventions ──

@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "audit:security": "npm audit --audit-level=high"
+    "audit:security": "npm audit --audit-level=high",
+    "build:android": "vite build --mode android && cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

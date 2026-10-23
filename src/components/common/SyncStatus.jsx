@@ -109,8 +109,14 @@ export default function SyncStatus() {
   }
 
   return (
-    <div className="flex items-center gap-1.5 rounded-lg px-1.5 py-1.5" title="All synced">
+    <button
+      type="button"
+      onClick={() => requestSync()}
+      title="All synced · tap to refresh"
+      aria-label="All synced. Refresh from server"
+      className="flex items-center gap-1.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-stone-100 dark:hover:bg-stone-800"
+    >
       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-    </div>
+    </button>
   );
 }

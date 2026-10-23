@@ -218,9 +218,14 @@ From repo root:
 ```bash
 cd /workspaces/budget-app
 npm run lint
-npm run build
-npx cap sync android
+npm run build:android   # vite build --mode android && cap sync android
 ```
+
+`build:android` loads [`.env.android`](../.env.android), which forces
+`VITE_BACKEND_MODE=local` and blanks the Supabase values. Do **not** use plain
+`npm run build` for the APK: it reads `.env`, and if that contains Supabase
+credentials the app silently connects to Supabase, never shows **Connect to
+your server**, and shows different data than your self-hosted web app.
 
 Bump the versionCode and versionName in `android/app/build.gradle` as needed.
 
@@ -261,7 +266,8 @@ in steps 5 and 6; keep using the same key to update an existing installation.
 ## 10) Repo-specific gotchas to remember
 
 - This app uses Dexie + sync queue + the configured backend auth adapter: always test offline/online and auth state transitions on a real device before release.
-- Supabase values for mobile are baked at web build time here; always confirm `.env.production` is correct before `npm run build`.
+- Backend values for mobile are baked at web build time. Use `npm run build:android` for self-hosted builds; to check which backend an APK uses, look for **Connect to your server** on first launch (self-hosted) vs. going straight to login (Supabase baked in).
+- The app pulls fresh data on launch, on reconnect, when brought back to the foreground, and when you tap the sync status dot in the top bar.
 - Keep `applicationId` stable once published (do not change after first Play release).
 - Any web code change requires rebuild + `npx cap sync android` before Android run/release.
 - If you ship a generic app build (no fixed env values), first launch now opens a **Connect to your server** screen before login. Enter your server root URL (for example `https://budget.<tailnet>.ts.net`) and run **Test connection**.
