@@ -192,12 +192,19 @@ Examples:
   sdk.dir=C:\\Users\\<your-user>\\AppData\\Local\\Android\\Sdk
   ```
 
-Then run:
+After building the web app and syncing Capacitor, build the release APK for
+direct installation on your phone:
 
 ```bash
+npm run build
+npx cap sync android
 cd android
-./gradlew bundleRelease
+./gradlew assembleRelease
 ```
+
+The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
+For Play Store uploads, use `./gradlew bundleRelease` to generate an `.aab`
+instead. That command does **not** update the APK.
 
 For full Android/Capacitor setup and publishing steps, see [android-app.md](./docs/android-app.md).
 

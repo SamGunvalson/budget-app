@@ -391,6 +391,7 @@ async function fetchAll(
       .from(tableName)
       .select(select)
       .order("updated_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
     if (!includeDeleted && tableName === "transactions") {

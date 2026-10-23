@@ -89,6 +89,7 @@ async function fetchAllTransactions() {
       .eq("user_id", user.id)
       .is("deleted_at", null)
       .order("transaction_date", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     all = all.concat(data);

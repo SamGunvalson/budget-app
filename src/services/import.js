@@ -407,6 +407,7 @@ export async function checkDuplicates(transactions) {
       .is("deleted_at", null)
       .gte("transaction_date", minDate)
       .lte("transaction_date", maxDate)
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (error) return [];
     existing = existing.concat(data);
