@@ -390,6 +390,7 @@ export async function getUpcomingTransactions({ accountIds, endDate }) {
       .or("status.eq.pending,status.eq.projected")
       .gte("transaction_date", todayStr)
       .order("transaction_date", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
     if (endDate) query = query.lte("transaction_date", endDate);
     const { data, error } = await query;

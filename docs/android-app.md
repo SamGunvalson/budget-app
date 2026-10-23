@@ -229,20 +229,32 @@ versionCode 2
 versionName "1.0.1"
 ```
 
-Then build release (outside of dev container):
+Then build the signed APK for direct installation on your phone (outside of dev container):
 
 ```bash
 cd /workspaces/budget-app/android
-./gradlew bundleRelease
+./gradlew assembleRelease
 ```
 
-Then you can sideload the app:
+The updated APK is at `android/app/build/outputs/apk/release/app-release.apk`
+(relative to the repo root). Copy this file to your phone to install it, or
+sideload it from the `android/` directory:
 
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Upload the new `.aab` to Play Console.
+For a Play Store update, run `./gradlew bundleRelease` instead and upload
+`android/app/build/outputs/bundle/release/app-release.aab` to Play Console.
+`bundleRelease` only creates the `.aab`; it does **not** update an existing
+`app-release.apk`. To generate both formats, run
+`./gradlew assembleRelease bundleRelease`.
+
+If the APK appears unchanged, check its modification time and confirm you ran
+`assembleRelease`, not just `bundleRelease` or `npm run build`. Always run the
+web build and Capacitor sync above first so the APK contains your latest app
+changes. Direct installation also requires the release signing key configured
+in steps 5 and 6; keep using the same key to update an existing installation.
 
 ---
 

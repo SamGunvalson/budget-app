@@ -24,6 +24,7 @@ export async function getTransactions({ month, year, status } = {}) {
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .is("deleted_at", null)
       .order("transaction_date", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
     if (month && year) {
@@ -427,6 +428,7 @@ export async function getTransactionsYTD({ year, throughMonth }) {
       .gte("transaction_date", startDate)
       .lt("transaction_date", endDate)
       .order("transaction_date", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
@@ -464,6 +466,7 @@ export async function getTransactionsForYear({ year }) {
       .gte("transaction_date", startDate)
       .lt("transaction_date", endDate)
       .order("transaction_date", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;

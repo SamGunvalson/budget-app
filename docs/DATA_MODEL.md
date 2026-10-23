@@ -1052,6 +1052,7 @@ while (hasMore) {
     .select("...")
     // ...filters...
     .order("transaction_date", { ascending: false })
+    .order("id", { ascending: true }) // unique tiebreaker — required
     .range(from, from + PAGE_SIZE - 1);
 
   if (error) throw error;
@@ -1067,9 +1068,10 @@ while (hasMore) {
 **Paginated functions** (all in `src/services/`):
 
 - `transactions.js` → `getTransactions`, `getTransactionsYTD`, `getTransactionsForYear`
-- `analytics.js` → `getTrendTransactions`, `getYearlyTrendTransactions`
-- `budgets.js` → `getPlanVsActual` (txn sub-query), `getPlanVsActualYTD` (txn sub-query)
-- `import.js` → `checkDuplicates`
+- `sync.js` → `fetchAll` (full and incremental Dexie pulls)
+- `accounts.js`, `export.js`, `import.js` → transaction fetches/duplicate checks
+
+**Always end the ORDER BY with a unique column (`id`).** Ordering only by a non-unique column such as `transaction_date` or `updated_at` lets Postgres return tied rows in a different order on each page, so `.range()` paging silently skips some rows and duplicates others once a result exceeds one page.
 
 **When adding new queries:** If fetching from `transactions` (or any table that may exceed 1000 rows), always use the pagination loop above. Queries scoped to small result sets (e.g., `categories`, `budget_plans` with max 12 rows/year) do not need pagination.
 
