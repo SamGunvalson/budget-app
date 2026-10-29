@@ -1,6 +1,8 @@
 import { useState, useRef, useMemo } from 'react';
+import { categoryLabel } from '../../utils/categoryArchive';
 import { parseBudgetCSV, formatCurrency, toCents } from '../../utils/helpers';
-import { getCategories, createCategory } from '../../services/categories';
+import { useCategories } from '../../hooks/queries';
+import { createCategoryOffline as createCategory } from '../../services/offlineAware';
 import {
   getBudgetPlan,
   createBudgetPlan,
@@ -26,6 +28,7 @@ const GROUPED_TYPE_LABELS = { income: 'Income', needs: 'Needs', wants: 'Wants', 
  *   onImportComplete – callback after a successful import (triggers data reload)
  */
 export default function BudgetImportModal({ initialYear, categories, onClose, onImportComplete }) {
+  const categoriesQuery = useCategories();
   const fileRef = useRef(null);
   const [year, setYear] = useState(initialYear ?? new Date().getFullYear());
 
@@ -107,8 +110,9 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
     setImportError('');
 
     try {
-      // 1. Re-fetch live categories to avoid stale data / duplicate key errors
-      const freshCats = await getCategories();
+      const refreshed = await categoriesQuery.refetch();
+      if (refreshed.error) throw refreshed.error;
+      const freshCats = refreshed.data;
       const liveCatByName = {};
       freshCats.forEach((c) => {
         liveCatByName[c.name.toLowerCase()] = c;
@@ -355,7 +359,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
                             {groupedCategories.map((group) => (
                               <optgroup key={group.type} label={group.label}>
                                 {group.items.map((cat) => (
-                                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                  <option key={cat.id} value={cat.id}>{categoryLabel(cat)}</option>
                                 ))}
                               </optgroup>
                             ))}
@@ -400,7 +404,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
                       >
                         <td className="sticky left-0 z-10 bg-white px-4 py-2 dark:bg-stone-800">
                           <span className="font-medium text-stone-800 dark:text-stone-200">
-                            {r.categoryName}
+                            {r.categoryName}{catByName[r.categoryName.toLowerCase()]?.is_archived ? ' (Archived)' : ''}
                           </span>
                           {isNew && (() => {
                             const res = catResolutions[r.categoryName];

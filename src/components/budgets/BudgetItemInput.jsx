@@ -62,7 +62,7 @@ export default function BudgetItemInput({ category, plannedAmount, onChange, dis
       {/* Name + type */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="truncate text-sm font-medium text-stone-900 dark:text-stone-100">
-          {category.name}
+          {category.name}{category.is_archived ? ' (Archived)' : ''}
         </span>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${typeBadge}`}>
           {category.type}

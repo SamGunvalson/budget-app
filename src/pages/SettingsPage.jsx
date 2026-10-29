@@ -10,6 +10,7 @@ import useTheme from '../hooks/useTheme';
 import useSafeMode from '../hooks/useSafeMode';
 import { DEFAULT_THRESHOLDS } from '../utils/budgetCalculations';
 import { maskAccountName } from '../utils/helpers';
+import { isAvailableCategory } from '../utils/categoryArchive';
 import {
   QUICK_TRANSACTION_TEMPLATES_KEY,
   normalizeQuickTransactionTemplates,
@@ -155,7 +156,7 @@ export default function SettingsPage() {
 
   useEffect(() => { document.title = 'Budget App | Settings'; }, []);
 
-  const nonTransferCategories = categories.filter((c) => c.type !== 'transfer');
+  const nonTransferCategories = categories.filter((c) => c.type !== 'transfer' && isAvailableCategory(c));
   const groupedQuickCategories = {
     income: nonTransferCategories.filter((c) => c.type === 'income'),
     needs: nonTransferCategories.filter((c) => c.type === 'needs'),
@@ -224,8 +225,8 @@ export default function SettingsPage() {
       setQuickFormError('Account is required.');
       return;
     }
-    if (!quickForm.category_id) {
-      setQuickFormError('Category is required.');
+    if (!nonTransferCategories.some((c) => c.id === quickForm.category_id)) {
+      setQuickFormError('Choose an available category. Restore archived categories before using them.');
       return;
     }
     if (quickForm.is_split && quickForm.split_method === 'custom') {

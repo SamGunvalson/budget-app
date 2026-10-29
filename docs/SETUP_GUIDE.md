@@ -221,6 +221,31 @@ This creates the core app tables and their initial RLS policies:
 - `transactions`
 - `recurring_templates`
 
+#### Category archiving upgrade
+
+For both fresh and existing Supabase installations, run
+[`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
+if not already applied, then
+[`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
+in the SQL Editor before deploying the updated frontend. The latter is
+idempotent: it adds `is_archived` for existing categories (default false),
+installs the archive/restore RPC and reference guards, and notifies PostgREST
+to reload its schema. Ownership RLS and historical records remain unchanged.
+
+Fresh self-hosted databases apply it automatically through
+[`local/apply_order.txt`](../sql_scripts/local/apply_order.txt).
+Existing self-hosted volumes do **not** rerun initialization scripts. Back up
+first, then apply the migration explicitly using the updated database image:
+
+```bash
+docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_category_archiving.sql
+```
+
+Existing volumes must already have the base schema and updated-at migration.
+Do not rerun the base CREATE script on an existing database. The shared
+archive migration also supplies the authenticated RPC EXECUTE grant; no new
+local-only function or duplicate migration is necessary.
+
 #### Optional: Split expenses schema
 
 If you want the shared expense / partnership features, run [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) after the main schema script.

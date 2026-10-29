@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { isAvailableCategory } from '../utils/categoryArchive';
 import { useQueryClient } from '@tanstack/react-query';
 import TransactionForm from '../components/transactions/TransactionForm';
 import TransactionList from '../components/transactions/TransactionList';
@@ -396,6 +397,10 @@ export default function TransactionsPage() {
   const handleQuickSubmit = async (e) => {
     e.preventDefault();
     if (!selectedQuickTemplate) return;
+    if (!categories.some((c) => c.id === selectedQuickTemplate.category_id && isAvailableCategory(c))) {
+      setQuickError('This template uses an unavailable category. Change it in Settings or restore the category.');
+      return;
+    }
     const amountNum = Number(quickAmount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setQuickError('Amount must be greater than 0.');

@@ -24,10 +24,35 @@ The selected backend is provided by `BACKEND_MODE` in the runtime `env-config.js
 - **Split Expenses** — Partner-style shared expense tracking with paid-by attribution, split methods, and settlement visibility
 - **CSV Import** — Column mapping, duplicate detection, account & category assignment, up to 5,000 rows
 - **Export** — Excel workbook with transactions, budgets, and accounts sheets
-- **Categories** — Custom categories with drag-and-drop sort, type groups (income/needs/wants/savings/transfer)
+- **Categories** — Custom categories with drag-and-drop sort, type groups (income/needs/wants/savings/transfer), and reversible archiving
 - **Offline Support** — Full offline-first with Dexie.js (IndexedDB) sync queue and last-write-wins conflict resolution
 - **Auth** — Supabase or self-hosted email/password auth, with per-user Row-Level Security on all data
 - **Theme** — Persistent dark/light mode; dark is the default
+
+### Archiving categories
+
+Use **Categories → Archive** to hide an unused category from new-entry lists
+without changing its historical transactions, budgets, or totals. All category
+types are supported. Enable **Show archived** to find and **Restore** one.
+Archiving is separate from Delete; archived category names remain reserved.
+
+Archiving requires a connection. First change or pause recurring schedules using
+the category, and change or remove any quick-entry templates referencing it.
+The error message identifies blockers. Linked recurring transfers also require
+the `Account Transfer` companion category. Paused schedules cannot resume with
+archived categories until those categories are restored or replaced.
+
+Historical filters include archived categories with an Archived label. Existing
+transactions can retain their archived category while being edited. Saved budget
+allocations remain editable, including filling other months of that year.
+Budget copy/import can explicitly carry archived categories forward; transaction
+CSV imports and other new-entry choices exclude them. Archived history works
+offline, and restoration can queue for sync.
+
+**Database upgrade required:** apply
+[`sql_scripts/supabase_category_archiving.sql`](./sql_scripts/supabase_category_archiving.sql)
+before deploying this frontend. See the [setup guide](./docs/SETUP_GUIDE.md#category-archiving-upgrade).
+Focused category-rule checks run with `node --test scripts/category-archive.test.js`.
 
 ## Tech Stack
 

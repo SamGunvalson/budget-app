@@ -150,7 +150,13 @@ export default function AnnualActualsTable({ year: yearProp }) {
   ].find(Boolean)?.message || '';
 
   // ── Group categories by type (exclude transfers) ──
-  const budgetableCategories = categories.filter((c) => c.type !== 'transfer');
+  const activityIds = new Set([
+    ...(transactionsQuery.data ?? []).map((tx) => tx.category_id),
+    ...Object.values(budgetData).flatMap((data) => Object.keys(data.allocations ?? {})),
+  ]);
+  const budgetableCategories = categories.filter((c) =>
+    c.type !== 'transfer' && (!c.is_archived || activityIds.has(c.id)),
+  );
 
   const grouped = useMemo(() => {
     const g = {};
@@ -379,7 +385,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
                                 style={{ backgroundColor: cat.color }}
                               />
                               <span className="max-w-[120px] truncate text-xs font-medium text-stone-800 dark:text-stone-200">
-                                {cat.name}
+                                {cat.name}{cat.is_archived ? ' (Archived)' : ''}
                               </span>
                             </div>
                           </td>

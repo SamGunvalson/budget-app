@@ -1,7 +1,9 @@
 import {
   getUserPreferenceOffline,
   setUserPreferenceOffline,
+  getCategoriesOffline,
 } from "./offlineAware";
+import { isAvailableCategory } from "../utils/categoryArchive";
 
 export const QUICK_TRANSACTION_TEMPLATES_KEY = "quick_transaction_templates";
 
@@ -50,5 +52,10 @@ export async function getQuickTransactionTemplates() {
 
 export async function saveQuickTransactionTemplates(templates) {
   const normalized = normalizeQuickTransactionTemplates(templates);
+  const categories = await getCategoriesOffline();
+  const availableIds = new Set(categories.filter(isAvailableCategory).map((c) => c.id));
+  if (normalized.some((template) => !availableIds.has(template.category_id))) {
+    throw new Error("Quick templates cannot use archived or unavailable categories. Restore the category or choose another.");
+  }
   await setUserPreferenceOffline(QUICK_TRANSACTION_TEMPLATES_KEY, normalized);
 }

@@ -11,6 +11,7 @@
 import db, { putOffline, readRpcCache, writeRpcCache } from "./offlineDb";
 import { enqueue } from "../utils/syncQueue";
 import { swrRead, notifyTable } from "./cache";
+import { isAvailableCategory } from "../utils/categoryArchive";
 
 // ── SWR helpers ──
 //
@@ -24,6 +25,13 @@ import { swrRead, notifyTable } from "./cache";
 
 export function isOnline() {
   return navigator.onLine;
+}
+
+async function assertCachedCategoryAvailable(categoryId) {
+  const category = await db.categories.get(categoryId);
+  if (category && !isAvailableCategory(category)) {
+    throw new Error("Restore the archived category or choose another before using it.");
+  }
 }
 
 /**
@@ -197,6 +205,7 @@ async function cacheTransactions(data, filters = {}) {
  * Create a transaction — dual-write when online, IndexedDB-only when offline.
  */
 export async function createTransactionOffline(txData) {
+  await assertCachedCategoryAvailable(txData.category_id);
   const result = await tryOnline(() => _createTransaction(txData));
 
   if (!result.offline) {
@@ -255,6 +264,12 @@ export async function createTransactionOffline(txData) {
  * Update a transaction — dual-write when online, IndexedDB-only when offline.
  */
 export async function updateTransactionOffline(id, updates) {
+  if (updates.category_id) {
+    const existing = await db.transactions.get(id);
+    if (existing?.category_id !== updates.category_id) {
+      await assertCachedCategoryAvailable(updates.category_id);
+    }
+  }
   const result = await tryOnline(() => _updateTransaction(id, updates));
 
   if (!result.offline) {
@@ -320,6 +335,7 @@ export async function deleteTransactionOffline(id) {
  * @returns {Promise<Object[]>} [outgoing, incoming]
  */
 export async function createAsymmetricTransferOffline(params) {
+  await assertCachedCategoryAvailable(params.category_id);
   const result = await tryOnline(() => _createAsymmetricTransfer(params));
 
   if (!result.offline) {
@@ -1284,6 +1300,14 @@ export async function pauseRecurringTemplateOffline(id) {
 }
 
 export async function resumeRecurringTemplateOffline(id) {
+  const templates = await db.recurring_templates.toArray();
+  const template = templates.find((row) => row.id === id);
+  if (template) {
+    await assertCachedCategoryAvailable(template.category_id);
+    for (const child of templates.filter((row) => row.group_id === id && row.is_active !== false && !row.is_paused)) {
+      await assertCachedCategoryAvailable(child.category_id);
+    }
+  }
   const result = await tryOnline(() => _resumeRecurringTemplate(id));
   if (!result.offline) {
     await db.recurring_templates.update(id, { is_paused: false });
@@ -1328,6 +1352,7 @@ import {
   createCategory as _createCategory,
   updateCategory as _updateCategory,
   deleteCategory as _deleteCategory,
+  setCategoryArchived as _setCategoryArchived,
   getUserPreference as _getUserPreference,
   setUserPreference as _setUserPreference,
 } from "./categories";
@@ -1377,6 +1402,7 @@ export async function createCategoryOffline(catData) {
     type: catData.type,
     color: catData.color,
     is_active: true,
+    is_archived: false,
     sort_order: 0,
     created_at: now,
   };
@@ -1423,6 +1449,39 @@ export async function deleteCategoryOffline(id) {
     await putOffline("categories", { ...existing, is_active: false }, "delete");
     await enqueue("categories", id, "delete");
   }
+}
+
+export async function archiveCategoryOffline(id) {
+  if (!isOnline()) throw new Error("Connect to the internet to archive a category.");
+  const existing = await db.categories.get(id);
+  if (existing?._offline) {
+    throw new Error("Sync this category's pending changes before archiving it.");
+  }
+  const row = await _setCategoryArchived(id, true);
+  await db.categories.put(row);
+  notifyTable("categories");
+  return row;
+}
+
+export async function restoreCategoryOffline(id) {
+  const existing = await db.categories.get(id);
+  if (existing?.is_active === false || existing?._action === "delete") {
+    throw new Error("Category not found or deleted.");
+  }
+  if (!existing?._offline) {
+    const result = await tryOnline(() => _setCategoryArchived(id, false));
+    if (!result.offline) {
+      await db.categories.put(result.data);
+      notifyTable("categories");
+      return result.data;
+    }
+  }
+  if (!existing) throw new Error("Category not found locally.");
+  const row = { ...existing, is_archived: false, _archiveRestore: true };
+  const action = existing._offline ? existing._action : "update";
+  await putOffline("categories", row, action);
+  await enqueue("categories", id, action);
+  return row;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

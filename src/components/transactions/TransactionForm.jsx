@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
 
@@ -118,7 +119,8 @@ function getInitialFormValues({
  *  - defaultAccountId: optional pre-selected account
  *  - linkedAccountId: pre-resolved linked account ID when editing a linked transfer
  */
-export default function TransactionForm({ categories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onSubmitAsymmetricTransfer, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, transferCompanionAmount, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
+export default function TransactionForm({ categories: allCategories = [], accounts = [], initialValues, onSubmit, onSubmitTransfer, onSubmitLinkedTransfer, onSubmitAdjustment, onSubmitAsymmetricTransfer, onCancel, isEditing = false, defaultAccountId, transferCompanionAccountId, transferCompanionAmount, linkedAccountId: initialLinkedAccountId, partnership, hasSplit, favoriteAccountIds = [] }) {
+  const categories = selectableCategories(allCategories, isEditing ? [initialValues?.category_id] : []);
   const [initialFormValues] = useState(() => getInitialFormValues({
     initialValues,
     isEditing,
@@ -170,9 +172,7 @@ export default function TransactionForm({ categories = [], accounts = [], initia
   const filteredCategories = isTransfer
     ? categories.filter((c) => c.type === 'transfer')
     : categories.filter((c) => c.type !== 'transfer');
-  const effectiveCategoryId = filteredCategories.some((c) => c.id === categoryId)
-    ? categoryId
-    : filteredCategories[0]?.id || '';
+  const effectiveCategoryId = resolveCategoryId(filteredCategories, categoryId);
   const effectivePayee =
     !isEditing && isTransfer && !payeeManuallyEdited
       ? categories.find((c) => c.id === effectiveCategoryId)?.name || payee
@@ -562,12 +562,12 @@ export default function TransactionForm({ categories = [], accounts = [], initia
             onChange={(e) => handleCategoryChange(e.target.value)}
             className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
           >
-            <option value="">Category…</option>
+            <option value="">{filteredCategories.length ? 'Category…' : 'No available categories — create or restore one'}</option>
             {groupedCategories.map((group) => (
               <optgroup key={group.type} label={group.label}>
                 {group.items.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.name}
+                    {categoryLabel(cat)}
                   </option>
                 ))}
               </optgroup>

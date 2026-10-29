@@ -17,7 +17,7 @@ const TYPE_ORDER = ['income', 'needs', 'wants', 'savings', 'transfer'];
  *  - onDelete: (category) => void
  *  - deletingId: string | null  (id currently being soft-deleted)
  */
-function CategoryList({ categories = [], onEdit, onDelete, deletingId }) {
+function CategoryList({ categories = [], onEdit, onDelete, deletingId, onArchive, archiveBusy }) {
   if (categories.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-12 text-center dark:border-stone-600 dark:bg-stone-800">
@@ -41,9 +41,9 @@ function CategoryList({ categories = [], onEdit, onDelete, deletingId }) {
             />
           </svg>
         </div>
-        <p className="text-base font-semibold text-stone-900 dark:text-stone-100">No categories yet</p>
+        <p className="text-base font-semibold text-stone-900 dark:text-stone-100">No visible categories</p>
         <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-          Create your first category to start budgeting.
+          Create a category or enable Show archived to restore one.
         </p>
       </div>
     );
@@ -90,6 +90,9 @@ function CategoryList({ categories = [], onEdit, onDelete, deletingId }) {
                         <p className="truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
                           {category.name}
                         </p>
+                        {category.is_archived && (
+                          <span className="text-xs text-stone-500 dark:text-stone-400">Archived</span>
+                        )}
                         {category.type === 'transfer' && (
                           <span className="inline-flex items-center rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-700 dark:text-stone-400">
                             Non-budgeting
@@ -102,6 +105,15 @@ function CategoryList({ categories = [], onEdit, onDelete, deletingId }) {
 
                   {/* Right: action buttons */}
                   <div className="ml-3 flex flex-shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onArchive(category)}
+                      disabled={archiveBusy}
+                      aria-label={`${category.is_archived ? 'Restore' : 'Archive'} ${category.name}`}
+                      className="rounded-lg px-2 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                    >
+                      {category.is_archived ? 'Restore' : 'Archive'}
+                    </button>
                     {/* Edit */}
                     <button
                       type="button"

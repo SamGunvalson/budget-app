@@ -109,8 +109,16 @@ export default function PlanVsActual({
 
   // Derived summary stats — split income vs expense categories, hiding empty rows
   const categories = useMemo(
-    () => (data.categories || []).filter((c) => c.planned > 0 || c.actual !== 0),
-    [data.categories],
+    () => {
+      const activityIds = new Set(rawTransactions.map((tx) => tx.category_id));
+      const archivedIds = new Set(allCategories.filter((c) => c.is_archived).map((c) => c.id));
+      return (data.categories || [])
+        .filter((c) => c.planned > 0 || c.actual !== 0 ||
+          activityIds.has(c.categoryId) || archivedIds.has(c.categoryId))
+        .map((c) => archivedIds.has(c.categoryId)
+          ? { ...c, categoryName: `${c.categoryName} (Archived)` } : c);
+    },
+    [data.categories, rawTransactions, allCategories],
   );
   const expenseCategories = useMemo(
     () => categories.filter((c) => c.categoryType !== 'income'),

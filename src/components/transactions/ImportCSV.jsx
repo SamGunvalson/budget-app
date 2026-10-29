@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { isAvailableCategory } from '../../utils/categoryArchive';
 import FileUploader from './FileUploader';
 import ColumnMapper from './ColumnMapper';
 import AccountMatcher from './AccountMatcher';
@@ -30,7 +31,8 @@ const STEPS = {
  *  - onComplete(): called after successful import to refresh parent data
  *  - onClose(): close the import modal
  */
-export default function ImportCSV({ categories, accounts, onComplete, onClose }) {
+export default function ImportCSV({ categories: allCategories, accounts, onComplete, onClose }) {
+  const categories = useMemo(() => (allCategories ?? []).filter(isAvailableCategory), [allCategories]);
   const [step, setStep] = useState(STEPS.UPLOAD);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
