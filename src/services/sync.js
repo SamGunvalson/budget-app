@@ -334,6 +334,10 @@ async function pushRow(tableName, row) {
   delete clean.categories;
   delete clean.accounts;
   delete clean.to_accounts;
+  delete clean._archiveRestore;
+  if (tableName === "categories" && row._action === "update" && !row._archiveRestore) {
+    delete clean.is_archived;
+  }
 
   const action = row._action;
 

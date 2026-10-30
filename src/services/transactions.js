@@ -182,23 +182,16 @@ export async function createTransfer({
     transfer_group_id,
   };
 
-  // Outgoing (from source account) — always expense side
-  const { data: outgoing, error: outErr } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
-    .insert({ ...baseTx, account_id: from_account_id, is_income: false })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (outErr) throw outErr;
+    .insert([
+      { ...baseTx, account_id: from_account_id, is_income: false },
+      { ...baseTx, account_id: to_account_id, is_income: true },
+    ])
+    .select("*, categories(id, name, color, type), accounts(id, name, type)");
+  if (error) throw error;
 
-  // Incoming (to destination account) — always income side
-  const { data: incoming, error: inErr } = await supabase
-    .from("transactions")
-    .insert({ ...baseTx, account_id: to_account_id, is_income: true })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (inErr) throw inErr;
-
-  return [outgoing, incoming];
+  return [data.find((row) => !row.is_income), data.find((row) => row.is_income)];
 }
 
 /**
@@ -235,11 +228,13 @@ export async function createLinkedTransfer({
     .select("id")
     .eq("user_id", user.id)
     .eq("type", "transfer")
+    .eq("is_active", true)
+    .eq("is_archived", false)
     .ilike("name", "Account Transfer")
     .limit(1);
   if (catErr) throw catErr;
   if (!transferCats?.length)
-    throw new Error('No "Account Transfer" category found. Please create one.');
+    throw new Error('No available "Account Transfer" category found. Create or restore it in Categories.');
   const companionCategoryId = transferCats[0].id;
 
   const sharedFields = {
@@ -250,14 +245,6 @@ export async function createLinkedTransfer({
     transfer_group_id,
   };
 
-  // Main leg — budget-impacting (user's real category)
-  const { data: mainLeg, error: mainErr } = await supabase
-    .from("transactions")
-    .insert({ ...sharedFields, account_id, category_id, is_income, amount })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (mainErr) throw mainErr;
-
   // Companion leg — neutral (transfer category), opposite is_income.
   // If companion_amount is provided and differs from amount, the companion leg
   // uses that amount instead (asymmetric linked transfer).
@@ -265,20 +252,22 @@ export async function createLinkedTransfer({
     companion_amount != null && companion_amount !== amount
       ? companion_amount
       : amount;
-  const { data: companionLeg, error: compErr } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
-    .insert({
-      ...sharedFields,
-      amount: companionAmt,
-      account_id: linked_account_id,
-      category_id: companionCategoryId,
-      is_income: !is_income,
-    })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (compErr) throw compErr;
+    .insert([
+      { ...sharedFields, account_id, category_id, is_income, amount },
+      {
+        ...sharedFields,
+        amount: companionAmt,
+        account_id: linked_account_id,
+        category_id: companionCategoryId,
+        is_income: !is_income,
+      },
+    ])
+    .select("*, categories(id, name, color, type), accounts(id, name, type)");
+  if (error) throw error;
 
-  return [mainLeg, companionLeg];
+  return [data.find((row) => row.account_id === account_id), data.find((row) => row.account_id === linked_account_id)];
 }
 
 /**
@@ -516,21 +505,16 @@ export async function createAsymmetricTransfer({
   };
   if (status) base.status = status;
 
-  const { data: outgoing, error: outErr } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
-    .insert({ ...base, account_id: from_account_id, amount: from_amount, is_income: false })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (outErr) throw outErr;
+    .insert([
+      { ...base, account_id: from_account_id, amount: from_amount, is_income: false },
+      { ...base, account_id: to_account_id, amount: to_amount, is_income: true },
+    ])
+    .select("*, categories(id, name, color, type), accounts(id, name, type)");
+  if (error) throw error;
 
-  const { data: incoming, error: inErr } = await supabase
-    .from("transactions")
-    .insert({ ...base, account_id: to_account_id, amount: to_amount, is_income: true })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (inErr) throw inErr;
-
-  return [outgoing, incoming];
+  return [data.find((row) => !row.is_income), data.find((row) => row.is_income)];
 }
 
 /**

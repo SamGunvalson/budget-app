@@ -1,4 +1,5 @@
 import { useState, Fragment, useMemo } from 'react';
+import { categoriesForBudget, categoryLabel, isAvailableCategory } from '../../utils/categoryArchive';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -119,7 +120,7 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
           />
           {isEditMode ? (
             <span className="max-w-[120px] truncate text-xs font-medium text-stone-800 dark:text-stone-200">
-              {cat.name}
+              {categoryLabel(cat)}
             </span>
           ) : (
             <button
@@ -128,7 +129,7 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
               title="Set amount for all 12 months"
               className="max-w-[120px] truncate text-left text-xs font-medium text-stone-800 transition-colors hover:text-amber-600 dark:text-stone-200 dark:hover:text-amber-400"
             >
-              {cat.name}
+              {categoryLabel(cat)}
             </button>
           )}
           {isEditMode && (
@@ -338,7 +339,7 @@ export default function AnnualBudgetTable() {
     return Object.fromEntries(MONTHS.map((month) => {
       const allocations = {};
       categories.forEach((category) => {
-        allocations[category.id] = 0;
+        if (isAvailableCategory(category)) allocations[category.id] = 0;
       });
       Object.assign(allocations, base[month]?.allocations ?? {});
       Object.assign(allocations, yearDrafts[month] ?? {});
@@ -591,7 +592,7 @@ export default function AnnualBudgetTable() {
   };
 
   // ---------- group categories ----------
-  const budgetableCategories = categories.filter((c) => c.type !== 'transfer');
+  const budgetableCategories = categoriesForBudget(categories, annualBudgetQuery.data ?? {});
 
   const grouped = useMemo(() => {
     const g = {};
@@ -634,8 +635,13 @@ export default function AnnualBudgetTable() {
         if (val && val !== 0) ids.add(id);
       });
     });
+    categories.filter((c) => c.is_archived).forEach((category) => {
+      if (Object.values(annualBudgetQuery.data ?? {}).some((data) =>
+        Object.hasOwn(data.allocations ?? {}, category.id),
+      )) ids.add(category.id);
+    });
     return ids;
-  }, [monthData]);
+  }, [monthData, categories, annualBudgetQuery.data]);
 
   const visibleGrouped = useMemo(() => {
     if (isEditMode) return grouped;

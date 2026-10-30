@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
@@ -80,7 +81,7 @@ function getInitialFormValues(initialValues, isEditing) {
  *  - isEditing: boolean flag
  */
 export default function RecurringForm({
-  categories = [],
+  categories: allCategories = [],
   accounts = [],
   initialValues,
   onSubmit,
@@ -89,6 +90,7 @@ export default function RecurringForm({
   partnership = null,
   partnerEmail = '',
 }) {
+  const categories = selectableCategories(allCategories, isEditing ? [initialValues?.category_id] : []);
   const [initialFormValues] = useState(() =>
     getInitialFormValues(initialValues, isEditing),
   );
@@ -130,9 +132,7 @@ export default function RecurringForm({
   const filteredCategories = isTransfer
     ? categories.filter((c) => c.type === 'transfer')
     : categories.filter((c) => c.type !== 'transfer');
-  const effectiveCategoryId = filteredCategories.some((c) => c.id === categoryId)
-    ? categoryId
-    : filteredCategories[0]?.id || '';
+  const effectiveCategoryId = resolveCategoryId(filteredCategories, categoryId);
 
   // Group filtered categories by type
   const groupedCategories = CATEGORY_TYPE_ORDER
@@ -345,11 +345,11 @@ export default function RecurringForm({
         <div>
           <label className={labelClass}>Category *</label>
           <select value={effectiveCategoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
-            <option value="">Select…</option>
+            <option value="">{filteredCategories.length ? 'Select…' : 'No available categories — create or restore one'}</option>
             {groupedCategories.map((g) => (
               <optgroup key={g.type} label={g.label}>
                 {g.items.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
                 ))}
               </optgroup>
             ))}

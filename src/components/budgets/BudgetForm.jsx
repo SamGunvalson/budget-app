@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import BudgetItemInput from './BudgetItemInput';
 import MonthYearSelector from '../common/MonthYearSelector';
-import { useCategories } from '../../hooks/queries';
+import { useAnnualBudgetData, useCategories } from '../../hooks/queries';
 import {
   getBudgetPlan,
   createBudgetPlan,
@@ -13,6 +13,7 @@ import {
   formatCurrency,
 } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
+import { categoriesForBudget } from '../../utils/categoryArchive';
 
 const TYPE_HEADER_STYLES = {
   income: {
@@ -45,8 +46,10 @@ export default function BudgetForm() {
   const { month, year, setMonthYear } = useMonthYear();
 
   const { data: categories = [] } = useCategories();
+  const annualBudgetQuery = useAnnualBudgetData(year);
   const [plan, setPlan] = useState(null);           // budget_plans row (or null)
   const [allocations, setAllocations] = useState({}); // { [categoryId]: cents }
+  const [savedAllocations, setSavedAllocations] = useState({});
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -91,14 +94,16 @@ export default function BudgetForm() {
             alloc[item.category_id] = item.planned_amount;
           });
           setAllocations(alloc);
+          setSavedAllocations(alloc);
         } else {
           // new month – zeros
           setPlan(null);
           const alloc = {};
-          categories.forEach((c) => {
+          categories.filter((c) => !c.is_archived).forEach((c) => {
             alloc[c.id] = 0;
           });
           setAllocations(alloc);
+          setSavedAllocations({});
         }
       } catch (err) {
         if (!cancelled) setError(err.message || 'Failed to load budget data');
@@ -157,6 +162,7 @@ export default function BudgetForm() {
       }));
       await upsertBudgetItems(items);
 
+      setSavedAllocations(allocations);
       setSuccess('Budget saved successfully!');
     } catch (err) {
       setError(err.message || 'Failed to save budget');
@@ -166,7 +172,10 @@ export default function BudgetForm() {
   };
 
   // ---------- group categories by type (exclude transfer from budget) ----------
-  const budgetableCategories = categories.filter((c) => c.type !== 'transfer');
+  const budgetableCategories = categoriesForBudget(categories, {
+    ...annualBudgetQuery.data,
+    [month]: { allocations: savedAllocations },
+  });
   const grouped = { needs: [], wants: [], savings: [], income: [] };
   budgetableCategories.forEach((c) => {
     if (grouped[c.type]) grouped[c.type].push(c);
@@ -181,7 +190,7 @@ export default function BudgetForm() {
   };
 
   // ---------- render ----------
-  if (isLoading) {
+  if (isLoading || annualBudgetQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
@@ -197,9 +206,9 @@ export default function BudgetForm() {
       </div>
 
       {/* Alerts */}
-      {error && (
+      {(error || annualBudgetQuery.error) && (
         <div className="animate-fade-in rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-          <span className="mr-1.5">⚠</span>{error}
+          <span className="mr-1.5">⚠</span>{error || annualBudgetQuery.error?.message}
         </div>
       )}
       {success && (

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isAvailableCategory } from '../../utils/categoryArchive';
 
 /**
  * BulkActionBar — sticky bar that appears when rows are selected.
@@ -109,7 +110,7 @@ export default function BulkActionBar({ selectedCount, categories, onRecategoriz
                 className="min-w-0 flex-1 rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100"
               >
                 <option value="">Choose category…</option>
-                {categories.map((cat) => (
+                {categories.filter(isAvailableCategory).map((cat) => (
                   <option key={cat.id} value={cat.id}>{cat.name} ({cat.type})</option>
                 ))}
               </select>

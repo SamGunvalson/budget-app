@@ -85,6 +85,7 @@ delegates to the shared migration, keeping existing local deployments compatible
 | `color`      | VARCHAR(7)  | DEFAULT '#3B82F6'       | Hex color for UI                                     |
 | `icon`       | TEXT        | NULL                    | Icon identifier (optional)                           |
 | `is_active`  | BOOLEAN     | DEFAULT TRUE            | Soft delete flag                                     |
+| `is_archived` | BOOLEAN    | NOT NULL, DEFAULT FALSE | Retired from new-entry choices; retained for history |
 | `sort_order` | INTEGER     | DEFAULT 0               | Manual sort position within type group               |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp                                   |
 
@@ -92,6 +93,34 @@ delegates to the shared migration, keeping existing local deployments compatible
 
 - `type` CHECK: Must be one of ('income', 'needs', 'wants', 'savings', 'transfer')
 - Unique: `(user_id, name)` where `is_active = true`
+- Archiving does not change `is_active`, ownership, uniqueness, category type,
+  or any transaction/budget references. Archived names remain reserved.
+
+**Archiving**:
+
+- All five types support reversible archiving. Archived rows remain readable
+  under existing ownership RLS and stay in the offline cache.
+- `set_category_archived(p_category_id UUID, p_archived BOOLEAN)` returns the
+  updated category row; requires authentication and an owned, non-deleted
+  category. The client requires a connection for archiving; restoration may
+  be queued offline.
+- `guard_category_archiving()` is an invoker trigger on category, recurring
+  template, and quick-template preference writes. It serializes archive/use
+  changes per owner with a transaction advisory lock and rejects archived
+  categories referenced by live, effectively unpaused schedules or any saved
+  quick-entry template. Group parent pause state is respected. Linked recurring
+  transfers also depend on the unarchived `Account Transfer` companion category.
+  Errors name the blocking schedules/templates. Resuming a paused schedule
+  requires restoring or replacing its archived categories.
+- `guard_transaction_category_archive()` rejects inserting transactions or
+  changing their category to an archived category, including stale/offline
+  queued writes. Updates retaining an original archived category are allowed.
+- Historical filters retain archived categories. Budgets retain saved archived
+  allocations and allow filling other months within that year. Budget copy and
+  import may carry archived categories forward without restoring them.
+- Install the idempotent
+  [`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
+  after the base schema and updated-at migration. No ownership RLS changes.
 
 **Indexes**:
 
@@ -1205,6 +1234,7 @@ All tables are fully implemented and live.
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `sql_scripts/supabase_schema_create.sql`    | Creates all tables, indexes, and RLS policies from scratch on a new project                          |
 | `sql_scripts/supabase_rls_complete.sql`     | Idempotently re-applies RLS policies to an existing database (safe to re-run)                        |
+| `sql_scripts/supabase_category_archiving.sql` | Adds archive flag, guarded archive/restore RPC, and archive/reference validation triggers |
 | `sql_scripts/supabase_transactions_soft_delete_rls.sql` | Migration — installs soft-delete RPC and replaces broad transaction policy with authenticated per-operation policies |
 | `sql_scripts/supabase_split_expenses.sql`   | Creates partnerships, split_expenses tables, **and** `get_partner_email` RPC (run after main schema) |
 | `sql_scripts/supabase_split_dedup.sql`      | Migration — soft-deletes duplicate split rows by `transaction_id` and adds unique active-row index      |
@@ -1226,8 +1256,8 @@ All tables are fully implemented and live.
 
 ---
 
-**Document version**: 2.2
+**Document version**: 2.3
 
-**Last updated**: 2026-10-21
+**Last updated**: 2026-10-29
 
 **Owner**: @SamGunvalson

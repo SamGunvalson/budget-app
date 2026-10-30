@@ -297,6 +297,7 @@ export async function markSynced(tableName, id) {
     _offline: 0,
     _action: null,
     _offlineAt: null,
+    ...(tableName === "categories" ? { _archiveRestore: false } : {}),
   });
   // Sync engine only calls markSynced for rows it pulled out of the offline
   // queue, so we know the row was previously pending.

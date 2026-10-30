@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { categoryLabel } from '../../utils/categoryArchive';
 import { getMonthName, maskAccountName } from '../../utils/helpers';
 import useAvailableYears from '../../hooks/useAvailableYears';
 import useSessionState from '../../hooks/useSessionState';
@@ -180,7 +181,7 @@ export default function TransactionFilters({
         >
           <option value="">All Categories</option>
           {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>{cat.name} ({cat.type})</option>
+            <option key={cat.id} value={cat.id}>{categoryLabel(cat)} ({cat.type})</option>
           ))}
         </select>
 

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
@@ -77,9 +78,7 @@ function getEffectiveChildCategoryId(child, categories) {
   const childCategories = child.txType === 'transfer'
     ? categories.filter((category) => category.type === 'transfer')
     : categories.filter((category) => category.type !== 'transfer');
-  return childCategories.some((category) => category.id === child.categoryId)
-    ? child.categoryId
-    : childCategories[0]?.id || '';
+  return resolveCategoryId(childCategories, child.categoryId);
 }
 
 /**
@@ -98,13 +97,16 @@ function getEffectiveChildCategoryId(child, categories) {
  *  - isEditing: boolean flag
  */
 export default function RecurringGroupForm({
-  categories = [],
+  categories: allCategories = [],
   accounts = [],
   initialValues,
   onSubmit,
   onCancel,
   isEditing = false,
 }) {
+  const categories = useMemo(() => selectableCategories(allCategories,
+    isEditing ? [initialValues?.category_id] : []),
+  [allCategories, isEditing, initialValues]);
   const [initialFormValues] = useState(() =>
     getInitialFormValues(initialValues, isEditing),
   );
@@ -192,13 +194,15 @@ export default function RecurringGroupForm({
   };
 
   // ── Categories for children based on their type ──
-  const getChildCategories = (childTxType) => {
-    if (childTxType === 'transfer') return categories.filter((c) => c.type === 'transfer');
-    return categories.filter((c) => c.type !== 'transfer');
+  const getChildCategories = (child) => {
+    const original = child.id ? initialValues?.children?.find((row) => row.id === child.id) : null;
+    const choices = selectableCategories(allCategories, original ? [original.category_id] : []);
+    return choices.filter((category) => child.txType === 'transfer'
+      ? category.type === 'transfer' : category.type !== 'transfer');
   };
 
-  const getGroupedChildCategories = (childTxType) => {
-    const filtered = getChildCategories(childTxType);
+  const getGroupedChildCategories = (child) => {
+    const filtered = getChildCategories(child);
     return CATEGORY_TYPE_ORDER
       .map((type) => ({
         type,
@@ -239,7 +243,7 @@ export default function RecurringGroupForm({
       const ce = {};
       const amt = parseFloat(child.amount);
       if (!child.amount || isNaN(amt) || amt <= 0) ce.amount = 'Required';
-      if (!getEffectiveChildCategoryId(child, categories)) ce.categoryId = 'Required';
+      if (!getEffectiveChildCategoryId(child, getChildCategories(child))) ce.categoryId = 'Required';
       if (!child.accountId) ce.accountId = 'Required';
       if (child.txType === 'transfer' && !child.toAccountId) ce.toAccountId = 'Required';
       if (child.txType === 'transfer' && child.toAccountId === child.accountId) ce.toAccountId = 'Must differ';
@@ -271,7 +275,7 @@ export default function RecurringGroupForm({
         return {
           id: child.id || undefined,
           account_id: child.accountId,
-          category_id: getEffectiveChildCategoryId(child, categories),
+          category_id: getEffectiveChildCategoryId(child, getChildCategories(child)),
           description: child.description?.trim() || null,
           payee: child.payee?.trim() || null,
           amount: Math.abs(amountCents),
@@ -463,7 +467,7 @@ export default function RecurringGroupForm({
               {groupedCategories.map((g) => (
                 <optgroup key={g.type} label={g.label}>
                   {g.items.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
                   ))}
                 </optgroup>
               ))}
@@ -645,7 +649,7 @@ export default function RecurringGroupForm({
             {/* Table rows */}
             {children.map((child, index) => {
               const childErrs = errors.childErrors?.[index] || {};
-              const childGroupedCats = getGroupedChildCategories(child.txType);
+              const childGroupedCats = getGroupedChildCategories(child);
               const hasErrors = Object.keys(childErrs).length > 0;
 
               return (
@@ -711,7 +715,7 @@ export default function RecurringGroupForm({
                     {/* Category */}
                     <div>
                       <select
-                        value={getEffectiveChildCategoryId(child, categories)}
+                        value={getEffectiveChildCategoryId(child, getChildCategories(child))}
                         onChange={(e) => updateChild(index, 'categoryId', e.target.value)}
                         className={`${cellInputClass} ${childErrs.categoryId ? 'border-red-300 dark:border-red-700' : ''}`}
                       >
@@ -719,7 +723,7 @@ export default function RecurringGroupForm({
                         {childGroupedCats.map((g) => (
                           <optgroup key={g.type} label={g.label}>
                             {g.items.map((c) => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
+                              <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
                             ))}
                           </optgroup>
                         ))}
@@ -823,7 +827,7 @@ export default function RecurringGroupForm({
         <div className="space-y-2 sm:hidden">
           {children.map((child, index) => {
             const childErrs = errors.childErrors?.[index] || {};
-            const childGroupedCats = getGroupedChildCategories(child.txType);
+            const childGroupedCats = getGroupedChildCategories(child);
 
             return (
               <div
@@ -888,7 +892,7 @@ export default function RecurringGroupForm({
                     className={cellInputClass}
                   />
                   <select
-                    value={getEffectiveChildCategoryId(child, categories)}
+                    value={getEffectiveChildCategoryId(child, getChildCategories(child))}
                     onChange={(e) => updateChild(index, 'categoryId', e.target.value)}
                     className={`${cellInputClass} ${childErrs.categoryId ? 'border-red-300 dark:border-red-700' : ''}`}
                   >
@@ -896,7 +900,7 @@ export default function RecurringGroupForm({
                     {childGroupedCats.map((g) => (
                       <optgroup key={g.type} label={g.label}>
                         {g.items.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                          <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
                         ))}
                       </optgroup>
                     ))}

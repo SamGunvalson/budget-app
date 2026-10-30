@@ -6,6 +6,7 @@ supabase_schema_create.sql
 supabase_split_expenses.sql
 # Adds missing sync columns and update triggers; not folded into schema_create.
 supabase_add_updated_at.sql
+supabase_category_archiving.sql
 # Column/index replacement is folded in, but this also adds the occurrence lookup index.
 supabase_recurring_occurrence_date.sql
 # All referenced columns now exist; aggregation RPCs precede batched mutation RPCs.

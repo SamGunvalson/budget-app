@@ -30,6 +30,7 @@ CREATE TABLE categories (
   color      VARCHAR(7)  DEFAULT '#3B82F6',
   icon       TEXT,
   is_active  BOOLEAN     DEFAULT TRUE,
+  is_archived BOOLEAN    NOT NULL DEFAULT FALSE,
   sort_order INTEGER     DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (user_id, name, is_active)

@@ -516,24 +516,17 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
   if (opts.recurring_occurrence_date)
     baseTx.recurring_occurrence_date = opts.recurring_occurrence_date;
 
-  // Outgoing (from source account)
-  const { data: outgoing, error: outErr } = await supabase
-    .from("transactions")
-    .insert({ ...baseTx, account_id: template.account_id, is_income: false })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (outErr) throw outErr;
-
-  // Incoming (to destination account) — use to_amount if set (asymmetric transfer)
   const incomingAmount = template.to_amount != null ? Math.abs(template.to_amount) : Math.abs(template.amount);
-  const { data: incoming, error: inErr } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
-    .insert({ ...baseTx, account_id: template.to_account_id, amount: incomingAmount, is_income: true })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (inErr) throw inErr;
+    .insert([
+      { ...baseTx, account_id: template.account_id, is_income: false },
+      { ...baseTx, account_id: template.to_account_id, amount: incomingAmount, is_income: true },
+    ])
+    .select("*, categories(id, name, color, type), accounts(id, name, type)");
+  if (error) throw error;
 
-  return [outgoing, incoming];
+  return [data.find((row) => !row.is_income), data.find((row) => row.is_income)];
 }
 
 /**
@@ -588,11 +581,13 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
     .select("id")
     .eq("user_id", user.id)
     .eq("type", "transfer")
+    .eq("is_active", true)
+    .eq("is_archived", false)
     .ilike("name", "Account Transfer")
     .limit(1);
   if (catErr) throw catErr;
   if (!transferCats?.length)
-    throw new Error('No "Account Transfer" category found.');
+    throw new Error('No available "Account Transfer" category found. Create or restore it in Categories.');
   const companionCategoryId = transferCats[0].id;
 
   const sharedFields = {
@@ -609,20 +604,6 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
   if (opts.recurring_occurrence_date)
     sharedFields.recurring_occurrence_date = opts.recurring_occurrence_date;
 
-  // Main leg — budget-impacting (user's real category)
-  const { data: mainLeg, error: mainErr } = await supabase
-    .from("transactions")
-    .insert({
-      ...sharedFields,
-      account_id: template.account_id,
-      category_id: template.category_id,
-      is_income: template.is_income,
-      amount: Math.abs(template.amount),
-    })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (mainErr) throw mainErr;
-
   // Companion leg — neutral (transfer category), flipped is_income.
   // If template.to_amount is set (asymmetric linked transfer), use it for
   // the companion amount instead of the full payment amount.
@@ -630,20 +611,30 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
     template.to_amount != null
       ? Math.abs(template.to_amount)
       : Math.abs(template.amount);
-  const { data: companionLeg, error: compErr } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
-    .insert({
-      ...sharedFields,
-      amount: companionAmt,
-      account_id: template.to_account_id,
-      category_id: companionCategoryId,
-      is_income: !template.is_income,
-    })
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (compErr) throw compErr;
+    .insert([
+      {
+        ...sharedFields,
+        account_id: template.account_id,
+        category_id: template.category_id,
+        is_income: template.is_income,
+      },
+      {
+        ...sharedFields,
+        amount: companionAmt,
+        account_id: template.to_account_id,
+        category_id: companionCategoryId,
+        is_income: !template.is_income,
+      },
+    ])
+    .select("*, categories(id, name, color, type), accounts(id, name, type)");
+  if (error) throw error;
 
-  return [mainLeg, companionLeg];
+  return [
+    data.find((row) => row.account_id === template.account_id),
+    data.find((row) => row.account_id === template.to_account_id),
+  ];
 }
 
 /**

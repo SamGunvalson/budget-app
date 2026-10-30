@@ -51,6 +51,7 @@ export async function createCategory({ name, type, color }) {
       type,
       color,
       is_active: true,
+      is_archived: false,
     })
     .select()
     .single();
@@ -95,6 +96,15 @@ export async function deleteCategory(id) {
     .eq("id", id);
 
   if (error) throw error;
+}
+
+export async function setCategoryArchived(id, archived) {
+  const { data, error } = await supabase.rpc("set_category_archived", {
+    p_category_id: id,
+    p_archived: archived,
+  }).single();
+  if (error) throw error;
+  return data;
 }
 
 // ── User Preferences ──

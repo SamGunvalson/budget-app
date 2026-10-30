@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isAvailableCategory } from '../../utils/categoryArchive';
 import Modal from '../common/Modal';
 
 /**
@@ -42,7 +43,7 @@ export default function BulkEditModal({ transactions, categories, onSubmit, onCa
     }
   };
 
-  const categoryOptions = (categories || []).map((c) => ({
+  const categoryOptions = (categories || []).filter(isAvailableCategory).map((c) => ({
     value: c.id,
     label: `${c.name} (${c.type})`,
   }));

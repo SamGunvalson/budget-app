@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import CategoryForm from '../components/budgets/CategoryForm';
 import CategoryList from '../components/budgets/CategoryList';
 import TopBar from '../components/common/TopBar';
@@ -7,6 +8,8 @@ import {
   createCategoryOffline as createCategory,
   deleteCategoryOffline as deleteCategory,
   updateCategoryOffline as updateCategory,
+  archiveCategoryOffline,
+  restoreCategoryOffline,
 } from '../services/offlineAware';
 import { useCategories } from '../hooks/queries';
 
@@ -57,6 +60,23 @@ function CategoriesPage() {
   const [deletingCategory, setDeletingCategory] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [mutationError, setMutationError] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingCategory, setArchivingCategory] = useState(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+
+  const handleArchiveChange = async (category) => {
+    setArchiveBusy(true);
+    setMutationError('');
+    try {
+      if (category.is_archived) await restoreCategoryOffline(category.id);
+      else await archiveCategoryOffline(category.id);
+      setArchivingCategory(null);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to change category archive status.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
 
   useEffect(() => { document.title = 'Budget App | Categories'; }, []);
 
@@ -98,7 +118,7 @@ function CategoriesPage() {
               Categories
             </h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Organise your spending into needs, wants, and savings categories.
+              Organise your categories. Archive unused ones without losing their history.
             </p>
           </div>
           <button
@@ -112,6 +132,11 @@ function CategoriesPage() {
             New Category
           </button>
         </div>
+
+        <label className="mb-6 flex items-center gap-2 text-sm text-stone-700 dark:text-stone-300">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Show archived ({categories.filter((c) => c.is_archived).length})
+        </label>
 
         {/* Error banner */}
         {(loadError || mutationError) && (
@@ -133,10 +158,12 @@ function CategoriesPage() {
           </div>
         ) : (
           <CategoryList
-            categories={categories}
+            categories={categories.filter((c) => showArchived || !c.is_archived)}
             onEdit={setEditingCategory}
             onDelete={setDeletingCategory}
             deletingId={deletingId}
+            onArchive={(category) => { setMutationError(''); setArchivingCategory(category); }}
+            archiveBusy={archiveBusy}
           />
         )}
       </div>
@@ -164,6 +191,25 @@ function CategoriesPage() {
       )}
 
       {/* Confirm delete */}
+      {archivingCategory && (
+        <Modal title={archivingCategory.is_archived ? 'Restore Category' : 'Archive Category'} onClose={() => { if (!archiveBusy) setArchivingCategory(null); }}>
+          <p className="mb-4 text-sm text-stone-700 dark:text-stone-300">
+            {archivingCategory.is_archived
+              ? `Restore "${archivingCategory.name}" to new-entry lists? This will not resume any schedules.`
+              : `Archive "${archivingCategory.name}"? It will be hidden from new-entry lists. Historical transactions and budgets will remain unchanged. Archiving requires a connection.`}
+          </p>
+          <p className="mb-4 text-sm text-stone-600 dark:text-stone-400">
+            First change or pause any <Link className="text-amber-600 underline dark:text-amber-400" to="/app/transactions">recurring schedules</Link> and change or remove <Link className="text-amber-600 underline dark:text-amber-400" to="/app/settings">quick-entry templates</Link> using this category.
+          </p>
+          {mutationError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{mutationError}</p>}
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={archiveBusy} onClick={() => setArchivingCategory(null)} className="rounded-xl border border-stone-200/60 px-4 py-2 text-stone-600 dark:border-stone-700/60 dark:text-stone-300">Cancel</button>
+            <button type="button" disabled={archiveBusy} onClick={() => handleArchiveChange(archivingCategory)} className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white disabled:opacity-50">
+              {archiveBusy ? 'Saving…' : archivingCategory.is_archived ? 'Restore' : 'Archive'}
+            </button>
+          </div>
+        </Modal>
+      )}
       {deletingCategory && (
         <ConfirmDeleteModal
           category={deletingCategory}
