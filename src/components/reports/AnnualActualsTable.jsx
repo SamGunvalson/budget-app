@@ -60,7 +60,7 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
   // No budget exists for this cell → neutral indicator
   if (plannedCents === undefined || plannedCents === null) {
     if (actualCents > 0) {
-      return 'bg-stone-100/50 dark:bg-stone-700/30 italic';
+      return 'bg-stone-100/50 dark:bg-stone-700/30 text-stone-600 dark:text-stone-300 italic';
     }
     return '';
   }
@@ -70,7 +70,7 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
 
   // No budget set (0) but has actual spending → neutral indicator
   if (plannedCents === 0 && actualCents > 0) {
-    return 'bg-stone-100/50 dark:bg-stone-700/30 italic';
+    return 'bg-stone-100/50 dark:bg-stone-700/30 text-stone-600 dark:text-stone-300 italic';
   }
 
   const pct = percentUsed(actualCents, plannedCents);
@@ -78,11 +78,11 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
 
   switch (level) {
     case 'danger':
-      return 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300';
+      return 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300';
     case 'warning':
-      return 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300';
+      return 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300';
     case 'underBudget':
-      return 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300';
+      return 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300';
     default:
       return '';
   }
@@ -262,20 +262,24 @@ export default function AnnualActualsTable({ year: yearProp }) {
         {/* Legend */}
         <div className="ml-auto flex flex-wrap items-center gap-4 text-[10px] text-stone-500 dark:text-stone-400">
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20" />
+            <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40" />
             Under budget (&lt;{thresholds.underBudget}%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20" />
+            <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-900/40" />
             Warning ({thresholds.warning}%+)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-900/20" />
+            <span className="inline-block h-3 w-3 rounded border border-red-300 bg-red-100 dark:border-red-700 dark:bg-red-900/40" />
             Over ({thresholds.danger}%+)
           </span>
           <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-stone-300 bg-white dark:border-stone-600 dark:bg-stone-800" />
+            Within range ({thresholds.underBudget}%–&lt;{thresholds.warning}%)
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="inline-block h-3 w-3 rounded border border-stone-300 bg-stone-100/50 dark:border-stone-600 dark:bg-stone-700/30" />
-            On budget
+            <span className="italic">No budget / zero allocation</span>
           </span>
         </div>
       </div>
@@ -375,7 +379,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
                       return (
                         <tr
                           key={cat.id}
-                          className="border-t border-stone-100 hover:bg-amber-50/30 dark:border-stone-700/50 dark:hover:bg-amber-900/10"
+                          className="border-t border-stone-100 hover:bg-stone-50 dark:border-stone-700/50 dark:hover:bg-stone-700/20"
                         >
                           {/* Category name (sticky) */}
                           <td className="sticky left-0 z-10 bg-white px-2 py-1.5 dark:bg-stone-800">
@@ -393,7 +397,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
                           {/* Month cells */}
                           {MONTHS.map((m) => {
                             const actualCents = actualData[m]?.[cat.id] || 0;
-                            const plannedCents = budgetData[m]?.[cat.id];
+                            const plannedCents = budgetData[m]?.allocations?.[cat.id];
                             const highlight = getCellHighlight(actualCents, plannedCents, thresholds, cat.type);
 
                             return (
