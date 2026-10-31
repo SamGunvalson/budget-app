@@ -28,19 +28,9 @@ npm install
 
 ## 1) Prepare production environment values
 
-This repo reads Supabase values from Vite env at build time (and only uses `window.__ENV__` if placeholders are replaced). For Android builds, set real values in `.env.production`.
-
-```bash
-cd /workspaces/budget-app
-cp .env.example .env.production
-```
-
-Edit `.env.production` to real values:
-
-```env
-VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
-VITE_SUPABASE_ANON_KEY=<your-anon-key>
-```
+Android builds use [`.env.android`](../.env.android), which selects the local
+backend and clears baked-in Supabase values. Do not use plain `npm run build`
+or configure `.env.production` for this self-hosted Android app.
 
 For the self-hosted local backend, the generic app build can be configured on
 the device instead of baking in Supabase credentials. When first launched, use
@@ -71,14 +61,23 @@ This creates:
 
 ## 3) Build web app and sync into Android project
 
-Run repo checks first (this repo has lint, no test suite):
+Run repo checks and prepare the native project:
 
 ```bash
 cd /workspaces/budget-app
 npm run lint
-npm run build
-npx cap sync android
+node --test scripts/category-archive.test.js
+npm run build:android
 ```
+
+Gradle's `preBuild` also runs an Android-mode Vite build and `cap copy android`
+before every debug/release build, including Android Studio **Run**. Both commands
+must succeed before native compilation can proceed. Node/npm must be installed
+and on the Android build process's PATH.
+
+`cap copy` refreshes the embedded web app, not native plugin dependencies. After
+adding or updating Capacitor plugins, run `npm run build:android` before starting
+Gradle so `cap sync` updates native configuration before Gradle reads it.
 
 ---
 
@@ -256,9 +255,19 @@ For a Play Store update, run `./gradlew bundleRelease` instead and upload
 `./gradlew assembleRelease bundleRelease`.
 
 If the APK appears unchanged, check its modification time and confirm you ran
-`assembleRelease`, not just `bundleRelease` or `npm run build`. Always run the
-web build and Capacitor sync above first so the APK contains your latest app
-changes. Direct installation also requires the release signing key configured
+`assembleRelease`, not just `bundleRelease` or `npm run build`. Gradle now
+refreshes web assets automatically; changing `versionName` alone previously
+could package stale assets under a new version number. Clearing app data or
+reinstalling the same APK cannot replace that embedded code.
+
+For category archiving, confirm **Archive** buttons and **Show archived** appear
+on Categories. Archived categories should be absent from new transaction choices,
+but remain labeled in historical filters and existing saved entries. If the UI
+is current but archive writes fail, verify the server's
+[category-archiving migration](./SETUP_GUIDE.md#category-archiving-upgrade)
+has been applied.
+
+Direct installation also requires the release signing key configured
 in steps 5 and 6; keep using the same key to update an existing installation.
 
 ---
@@ -269,6 +278,6 @@ in steps 5 and 6; keep using the same key to update an existing installation.
 - Backend values for mobile are baked at web build time. Use `npm run build:android` for self-hosted builds; to check which backend an APK uses, look for **Connect to your server** on first launch (self-hosted) vs. going straight to login (Supabase baked in).
 - The app pulls fresh data on launch, on reconnect, when brought back to the foreground, and when you tap the sync status dot in the top bar.
 - Keep `applicationId` stable once published (do not change after first Play release).
-- Any web code change requires rebuild + `npx cap sync android` before Android run/release.
+- Gradle rebuilds and copies web assets before Android run/release. Native plugin changes still require `npm run build:android` before starting Gradle.
 - If you ship a generic app build (no fixed env values), first launch now opens a **Connect to your server** screen before login. Enter your server root URL (for example `https://budget.<tailnet>.ts.net`) and run **Test connection**.
 - Connection errors are surfaced with actionable messages (offline device, timeout, invalid server config, TLS issues, unreachable server) so users know whether they need Tailscale/network access or server-side config fixes.

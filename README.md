@@ -217,19 +217,30 @@ Examples:
   sdk.dir=C:\\Users\\<your-user>\\AppData\\Local\\Android\\Sdk
   ```
 
-After building the web app and syncing Capacitor, build the release APK for
-direct installation on your phone:
+Build the release APK for direct installation on your phone:
 
 ```bash
-npm run build
-npx cap sync android
+npm run build:android
 cd android
 ./gradlew assembleRelease
 ```
 
+Gradle also rebuilds the web app in Android mode and copies it into the native
+project before every debug or release build, including Android Studio **Run**.
+Node/npm must be available on the Android build machine. Run
+`npm run build:android` after Capacitor plugin changes to sync the native project
+before Gradle configures it. Do not use plain `npm run build` for Android: it can
+bake in the wrong backend settings.
+
 The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
 For Play Store uploads, use `./gradlew bundleRelease` to generate an `.aab`
 instead. That command does **not** update the APK.
+
+Changing `versionName` alone does not update the embedded app. If 1.3.0 lacks
+**Archive** and **Show archived** on Categories, rebuild and install the newly
+generated APK; clearing phone data cannot replace old code inside the APK.
+Archived categories still appear in historical filters and saved entries by
+design, but not in new-entry choices.
 
 For full Android/Capacitor setup and publishing steps, see [android-app.md](./docs/android-app.md).
 
