@@ -53,10 +53,11 @@ function MobileNavigationMenu({ pathname }) {
               <Link
                 key={page.id}
                 to={page.link}
-                className={`flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center gap-3 border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navHover} ${page.navFocus} ${
                   isActive
-                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    : 'text-stone-600 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-stone-700/50'
+                    ? page.navActive
+                    : 'border-transparent text-stone-600 dark:text-stone-300'
                 }`}
               >
                 {page.iconSmall}
@@ -154,10 +155,11 @@ export default function TopBar() {
               <Link
                 key={page.id}
                 to={page.link}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900 ${page.navHover} ${page.navFocus} ${
                   isActive
-                    ? 'border border-amber-300 bg-amber-50 text-amber-700 shadow-amber-100/50 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                    : 'border border-stone-200/60 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300'
+                    ? page.navActive
+                    : 'border-stone-200/60 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300'
                 }`}
               >
                 {page.iconSmall}

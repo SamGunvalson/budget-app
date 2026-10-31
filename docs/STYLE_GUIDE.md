@@ -25,6 +25,30 @@ All colors use Tailwind CSS utilities. Use **stone** (warm gray) for neutrals, *
   - Use for: Reports, analytics accent
   - RGB: `#8B5CF6`
 
+### Navigation Accents
+
+Navigation uses the destination icon's color, not the global primary amber:
+Transactions = amber, Splits = pink, Accounts = blue, Reports = violet,
+Budgets = teal, Settings = stone. Active backgrounds, borders, text, hover
+states, keyboard focus rings, and mobile page dots share these accents.
+Keep the complete Tailwind classes in `src/constants/pages.jsx` so desktop
+and mobile navigation stay consistent and Tailwind generates every variant.
+Primary CTAs still use amber.
+
+### Annual Actuals Highlights
+
+Monthly expense cells compare actual cents with the category's allocation in
+`useAnnualBudgetData(year)[month].allocations[categoryId]`. Use the saved budget
+thresholds: emerald below the under-budget threshold, amber at/above warning,
+red at/above danger, and neutral between under-budget and warning. Use
+`bg-*-100` / `dark:bg-*-900/40` with `text-*-800` / `dark:text-*-300`
+for readable status colors in both themes.
+
+Missing or zero allocations with positive spending use a neutral italic
+indicator with explicit light/dark text colors; these are not "on budget."
+Income cells and annual totals remain neutral, and zero/zero cells are muted.
+The legend must distinguish unbudgeted spending from the normal threshold range.
+
 ### Status Colors
 
 - **Error Red**: `text-red-500`, `bg-red-50`, `border-red-200`

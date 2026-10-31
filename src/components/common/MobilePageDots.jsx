@@ -17,7 +17,7 @@ export default function MobilePageDots() {
           aria-hidden="true"
           className={`rounded-full transition-all duration-300 ${
             i === currentIndex
-              ? 'h-2.5 w-2.5 bg-amber-500 shadow-sm shadow-amber-200/50 dark:shadow-amber-900/50'
+              ? `h-2.5 w-2.5 shadow-sm ${page.dotActive}`
               : 'h-2 w-2 bg-stone-300 dark:bg-stone-600'
           }`}
         />
