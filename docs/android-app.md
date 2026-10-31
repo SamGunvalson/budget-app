@@ -236,7 +236,8 @@ versionName "1.0.1"
 Then build the signed APK for direct installation on your phone (outside of dev container):
 
 ```bash
-cd /workspaces/budget-app/android
+npm run build:android
+cd /android
 ./gradlew assembleRelease
 ```
 
