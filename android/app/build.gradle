@@ -1,5 +1,20 @@
 apply plugin: 'com.android.application'
 
+def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+def buildWebAssets = tasks.register('buildWebAssets', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine(isWindows ? 'npm.cmd' : 'npm', 'run', 'build', '--', '--mode', 'android')
+}
+def copyWebAssets = tasks.register('copyWebAssets', Exec) {
+    dependsOn buildWebAssets
+    workingDir rootProject.projectDir.parentFile
+    // Copy assets here; plugin sync must happen before Gradle configures the project.
+    commandLine(isWindows ? 'npx.cmd' : 'npx', '--no-install', 'cap', 'copy', 'android')
+}
+tasks.named('preBuild') {
+    dependsOn copyWebAssets
+}
+
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 if (keystorePropertiesFile.exists()) {
