@@ -1,5 +1,8 @@
 # Phase 1 — Cache-first reads + incremental sync
 
+> Historical implementation record, not current setup guidance. See the
+> [current performance index](../../performance/README.md).
+
 **Status:** Shipped
 **Touches:** `src/services/cache.js` (new), `src/services/offlineDb.js`,
 `src/services/sync.js`, `src/services/offlineAware.js`,

@@ -1,16 +1,16 @@
 /**
- * Cache layer (Phase 1 — cache-first reads).
+ * Cache-first reads and table-change events for the offline-aware wrappers.
  *
  * Provides three building blocks used by the offline-aware service wrappers:
  *
  *  1. **`swrRead`** — stale-while-revalidate read helper.
  *     Reads the local Dexie cache and returns it immediately when present.
- *     In parallel, fetches fresh data from the origin (Supabase), updates the
+ *     In parallel, fetches fresh data from the selected backend, updates the
  *     cache, and notifies subscribers. When the cache is empty (cold) the
  *     fetch is awaited so callers always get *some* data on first paint.
  *
  *  2. **Table change events** (`subscribeTable` / `notifyTable`) — a tiny pub/
- *     sub so consumers (or, in Phase 2, React Query) can react when a
+ *     sub so the query bridge and other consumers can react when a
  *     background revalidation has updated a table.
  *
  *  3. **Revalidating flag** (`subscribeRevalidating` / `getRevalidating`) —
@@ -22,8 +22,8 @@
  * ────────────
  *  - The cache is authoritative for the UI, the network is authoritative for
  *    correctness. We accept showing data that is up to a few seconds stale on
- *    the same tab (and longer on other tabs — multi-tab fanout is a Phase 2
- *    concern, see docs/performance/PHASE_1_CACHE_FIRST.md).
+ *    the same tab. The query bridge translates table events into React Query
+ *    invalidations; sync pulls reconcile changes from other devices.
  *  - Background fetch errors are *swallowed* (logged at debug level) so a
  *    flaky network never breaks UI. The original network-first code did
  *    rethrow on non-network errors; for SWR reads we deliberately don't —

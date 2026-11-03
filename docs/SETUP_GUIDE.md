@@ -4,11 +4,11 @@ This guide walks you through setting up the Budget App from scratch.
 
 ## Prerequisites
 
-- ✅ Node.js v18+ installed
+- ✅ Node.js 22.12+ installed for development (Node 22 in the dev container; Node 24 in CI)
 - ✅ Git installed
 - ✅ Code editor (VS Code recommended)
 
-## Self-hosted (local Postgres)
+## Self-hosted local Postgres
 
 This option runs PostgreSQL 16, PostgREST, the Fastify auth service, and the app's
 Nginx frontend in Docker Compose. It does not require Supabase. Nginx serves plain
@@ -171,6 +171,20 @@ have pushed all three images. The Docker Hub publishing token must have push
 access to all three repositories; create the additional repositories if needed
 and make them public for unauthenticated pulls.
 
+### Vite development against the self-hosted stack
+
+Start the stack, then point Vite's same-origin API proxy at its Nginx service:
+
+```bash
+VITE_BACKEND_MODE=local DEV_API_PROXY_TARGET=http://localhost:8085 npm run dev
+```
+
+The browser uses Vite's `/rest/v1` and `/auth/v1` paths. Alternatively,
+`VITE_API_ORIGIN` selects a direct API origin when its CORS policy permits
+the browser origin. The [Vite configuration](../vite.config.js) enables the
+proxy only when `DEV_API_PROXY_TARGET` is set; if both are supplied,
+`VITE_API_ORIGIN` takes precedence as its proxy target.
+
 ## Step 1: Supabase Setup (5-10 minutes)
 
 ### 1.1 Create Supabase Account
@@ -221,7 +235,51 @@ This creates the core app tables and their initial RLS policies:
 - `transactions`
 - `recurring_templates`
 
+#### Complete a fresh Supabase installation
+
+The base script creates seven core tables, not the complete installation.
+For the current frontend, run these additional scripts in order:
+
+1. [`supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql)
+   creates partnerships, split expenses, and the partner-email RPC.
+2. [`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
+   supplies the remaining sync timestamps and update triggers.
+3. [`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
+   installs archive/restore and reference guards.
+4. [`supabase_recurring_occurrence_date.sql`](../sql_scripts/supabase_recurring_occurrence_date.sql)
+   supplies the occurrence lookup index (the column and unique index are already in the base).
+5. [`supabase_phase3_aggregations.sql`](../sql_scripts/supabase_phase3_aggregations.sql)
+   installs account/report/year-picker RPCs and supporting indexes.
+6. [`supabase_phase4_mutations.sql`](../sql_scripts/supabase_phase4_mutations.sql)
+   installs batched writes and the closed-account insert guard.
+7. [`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
+   re-applies the complete policies after all referenced tables exist.
+
+Using the split-expense UI is optional, but the complete RLS script references
+its tables unconditionally. This sequence installs the full supported schema.
+Do not run the local-only auth/role/grant scripts on Supabase. See the
+[migration catalog](./DATA_MODEL.md#sql-migration-scripts) for scripts whose
+effects are already folded into the fresh-install base.
+
 #### Category archiving upgrade
+
+Use **Categories → Archive** to hide unused categories from new-entry lists
+without changing historical transactions, budgets, or totals. All five types
+are supported. Enable **Show archived** to restore one. Archiving is distinct
+from deletion; archived names remain reserved.
+
+Archiving requires a connection. Change or pause recurring schedules and
+change/remove quick-entry templates that reference the category first.
+Errors identify blockers. Linked recurring transfers also depend on the
+`Account Transfer` companion category. Paused schedules cannot resume with
+archived categories until those categories are restored or replaced.
+
+Historical filters retain an Archived label, and existing transactions may
+retain their archived category when edited. Saved budget allocations remain
+editable, including filling other months of the same year. Budget copy/import
+may explicitly carry archived categories forward; transaction CSV imports and
+other new-entry choices exclude them. Historical data works offline and
+restoration can queue for sync.
 
 For both fresh and existing Supabase installations, run
 [`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
@@ -246,19 +304,20 @@ Do not rerun the base CREATE script on an existing database. The shared
 archive migration also supplies the authenticated RPC EXECUTE grant; no new
 local-only function or duplicate migration is necessary.
 
-#### Optional: Split expenses schema
+#### Existing databases and RLS repair
 
-If you want the shared expense / partnership features, run [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) after the main schema script.
+Back up first and use the [migration catalog](./DATA_MODEL.md#sql-migration-scripts)
+to identify unapplied upgrades. Never rerun the base CREATE scripts on an
+existing database. Old databases may need column migrations already folded
+into today's base before applying archive, aggregation, or mutation scripts.
 
-This adds:
+For legacy transaction policies, first apply
+[`supabase_transactions_soft_delete_rls.sql`](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+to install the soft-delete RPC and replace the broad transaction policy.
 
-- `partnerships`
-- `split_expenses`
-- `get_partner_email(UUID)` RPC function
-
-#### Optional: RLS audit and re-apply
-
-If you want to verify or re-apply row-level security policies, run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql) after the schema scripts.
+To verify or re-apply row-level security policies, run
+[`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
+after all schema prerequisites, including partnerships and split expenses.
 
 Use this script when:
 
@@ -272,7 +331,7 @@ After running the scripts:
 
 1. Open **Table Editor** in Supabase
 2. Confirm the core tables exist
-3. If you ran the split-expense script, confirm `partnerships` and `split_expenses` also exist
+3. Confirm `partnerships` and `split_expenses` also exist
 4. Review the query results at the bottom of the script output to confirm RLS is enabled where expected
 
 ## Step 2: Local Project Setup
@@ -282,7 +341,7 @@ After running the scripts:
 ```bash
 git clone https://github.com/SamGunvalson/budget-app.git
 cd budget-app
-npm install
+npm ci
 ```
 
 ### 2.2 Configure Environment Variables
@@ -309,15 +368,6 @@ npm install
 npm run dev
 ```
 
-You should see:
-
-```
-  VITE v5.x.x  ready in XXX ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-```
-
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## Step 3: Verify Setup
@@ -329,59 +379,116 @@ The app will show a simple UI. If Supabase is configured correctly, you should b
 - Sign up for an account
 - Log in
 - See no console errors related to Supabase
-- Use the main budgeting features immediately after login if the main schema script was applied successfully
+- Use accounts, budgets, reports, and category management after completing the fresh-install sequence
 
-If you plan to use split expenses, open that page after login and confirm there are no missing-table errors.
+Open Split Expenses and confirm there are no missing-table errors.
 
 ### 3.2 Test Database
 
-Open browser DevTools (F12) → Console. Try:
-
-```javascript
-// Should log the Supabase client
-console.log(window.supabase);
-```
-
-If you see an object (not `undefined`), you're connected!
+Create an account and a transaction, edit it, and refresh the page to verify
+persistence. Check the browser Network panel for successful authenticated
+requests and the Supabase Table Editor for the saved rows. The app does not
+expose a `window.supabase` connection probe.
 
 ## Step 4: Default Data Setup (Optional)
 
 ### 4.1 Create Default Categories
 
-After signing up/logging in, you can manually create categories, or run this SQL in Supabase SQL Editor:
+Create categories through **Categories** after signing in. This uses the
+selected backend, ownership checks, and cache invalidation without maintaining
+a second SQL seed list in documentation.
 
-```sql
--- Replace 'YOUR_USER_ID' with your actual user ID from auth.users table
-INSERT INTO categories (user_id, name, type, color) VALUES
-  ('YOUR_USER_ID', 'Groceries', 'needs', '#10B981'),
-  ('YOUR_USER_ID', 'Rent/Mortgage', 'needs', '#EF4444'),
-  ('YOUR_USER_ID', 'Utilities', 'needs', '#F59E0B'),
-  ('YOUR_USER_ID', 'Transportation', 'needs', '#8B5CF6'),
-  ('YOUR_USER_ID', 'Entertainment', 'wants', '#EC4899'),
-  ('YOUR_USER_ID', 'Dining Out', 'wants', '#06B6D4'),
-  ('YOUR_USER_ID', 'Emergency Fund', 'savings', '#14B8A6'),
-  ('YOUR_USER_ID', 'Investments', 'savings', '#6366F1');
+## Dev container
+
+The [dev-container configuration](../.devcontainer/devcontainer.json) uses
+Node 22. Install Docker Desktop and the VS Code Dev Containers extension,
+configure `.env`, then open the repository and choose **Reopen in Container**.
+Dependencies install automatically; run `npm run dev` at the repository root.
+The container includes ESLint, Prettier, Tailwind CSS IntelliSense, GitLens,
+and React snippet extensions.
+
+### Windows troubleshooting
+
+If startup fails with `accessing specified distro mount service` and a missing
+`ubuntu.sock` (or another WSL distro socket), inspect the Dev Containers log
+for an automatically added `wayland-0` bind mount.
+
+This web app does not require Linux GUI forwarding. In **VS Code User settings**
+(not workspace settings or `devcontainer.json`), disable **Dev Containers: Mount
+Wayland Socket**, or add:
+
+```json
+"dev.containers.mountWaylandSocket": false
 ```
 
-**To get your user ID:**
+Then reopen the container. This affects all dev containers in the current
+VS Code profile. If other containers need Linux GUI apps, instead enable
+Docker Desktop WSL integration for the distro named in the failing mount
+and restart Docker Desktop.
 
-1. In Supabase dashboard, go to **Authentication** → **Users**
-2. Find your email
-3. Copy the UUID in the "ID" column
+## Docker deployment with Supabase
+
+The [default Compose file](../docker-compose.yml) pulls the published frontend
+image and injects Supabase configuration at runtime:
+
+```bash
+cp .env.example .env
+# Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+docker compose up -d --pull always
+```
+
+Open `http://<server-ip>:8085`. Use a trusted encrypted network such as Tailscale
+or a TLS reverse proxy; do not expose public plaintext HTTP.
+
+For an unpublished local frontend build:
+
+```bash
+docker build -t budget-app .
+docker run --name budget-app-local --restart unless-stopped \
+  -p 8085:8085 \
+  -e BACKEND_MODE=supabase \
+  -e SUPABASE_URL=https://your-project.supabase.co \
+  -e SUPABASE_ANON_KEY=your-public-key \
+  budget-app
+```
+
+No Supabase build arguments are required. In Unraid's manual Docker UI,
+select the published image or your local `budget-app` image, map host
+8085 to **container 8085**, and supply the same runtime environment variables.
+
+## Validation
+
+From the repository root:
+
+```bash
+npm run lint
+node --test scripts/category-archive.test.js scripts/helpers.test.js
+npm run build
+```
+
+- [Auth-service tests](../server/auth/README.md#tests): `npm --prefix server/auth test`;
+  require its installed dependencies and an isolated PostgreSQL database or Docker.
+- [Deployment smoke test](#building-self-hosted-images-from-source):
+  `node --test scripts/test-selfhost.test.js`; requires matching disposable image
+  tags and Docker. Never point it at a live database.
+- [Transaction RLS regression checks](../sql_scripts/local/README.md):
+  run only against a disposable local database.
+- [Android checks](./android-app.md#device-smoke-checks): use the native build
+  workflow and test offline/auth transitions on a device before release.
+
+Run the smallest relevant checks for a change. Documentation-only changes
+need local-link/anchor verification, not a native or database rebuild.
 
 ## Troubleshooting
 
 ### Build errors about missing modules
 
 ```bash
-npm install
+npm ci
 ```
 
-### "Module not found: recharts"
-
-```bash
-npm install recharts
-```
+Restore the declared dependency tree rather than installing individual missing
+packages or externalizing runtime imports.
 
 ### Supabase connection errors
 
@@ -395,7 +502,7 @@ npm install recharts
 1. Make sure you're logged in
 2. Re-run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
 3. In Supabase → Authentication → Policies, check each table has policies enabled
-4. If you use split expenses, make sure you also ran [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql)
+4. Make sure the full fresh-install sequence or the required incremental upgrades were applied
 5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`sql_scripts/supabase_split_fix_rls.sql`](../sql_scripts/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
 6. If recurring confirmations created duplicate split rows, run [`sql_scripts/supabase_split_dedup.sql`](../sql_scripts/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
 
@@ -403,12 +510,12 @@ npm install recharts
 
 1. Go to Supabase → SQL Editor → History
 2. Verify [`sql_scripts/supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql) ran successfully
-3. If you need split expenses, verify [`sql_scripts/supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) also ran successfully
-4. Re-run the failed script
+3. Verify [`supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) also ran successfully
+4. Inspect the error and current schema before retrying; CREATE scripts are not safely re-runnable
 
 ### Port 5173 already in use
 
-Stop other Vite dev servers or use a different port:
+Use a different port without interfering with another dev server:
 
 ```bash
 npm run dev -- --port 5174
@@ -416,9 +523,8 @@ npm run dev -- --port 5174
 
 ## Next Steps
 
-Once setup is complete:
-
-All phases are complete. See the root [README.md](../README.md) for the full feature list.
+See the [README](../README.md) for features and the
+[documentation index](./QUICK_REFERENCE.md) for contributor references.
 
 ## Additional Resources
 
@@ -438,5 +544,6 @@ All phases are complete. See the root [README.md](../README.md) for the full fea
 
 ---
 
-**Setup Version**: 1.1  
-**Last Updated**: March 18, 2026
+**Setup Version**: 2.0
+
+**Last Updated**: November 2, 2026

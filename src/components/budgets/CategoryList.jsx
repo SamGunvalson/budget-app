@@ -1,12 +1,12 @@
-const TYPE_LABELS = {
-  income: { label: 'Income', description: 'Salary, freelance & other earnings' },
-  needs: { label: 'Needs', description: 'Essential expenses' },
-  wants: { label: 'Wants', description: 'Discretionary spending' },
-  savings: { label: 'Savings', description: 'Goals & investments' },
-  transfer: { label: 'Transfer', description: 'Non-budgeting — money moving between accounts' },
-};
+import { CATEGORY_TYPE_LABELS, CATEGORY_TYPE_ORDER } from '../../utils/helpers';
 
-const TYPE_ORDER = ['income', 'needs', 'wants', 'savings', 'transfer'];
+const TYPE_LABELS = {
+  income: { label: CATEGORY_TYPE_LABELS.income, description: 'Salary, freelance & other earnings' },
+  needs: { label: CATEGORY_TYPE_LABELS.needs, description: 'Essential expenses' },
+  wants: { label: CATEGORY_TYPE_LABELS.wants, description: 'Discretionary spending' },
+  savings: { label: CATEGORY_TYPE_LABELS.savings, description: 'Goals & investments' },
+  transfer: { label: CATEGORY_TYPE_LABELS.transfer, description: 'Non-budgeting — money moving between accounts' },
+};
 
 /**
  * CategoryList – renders categories grouped by type.
@@ -50,7 +50,7 @@ function CategoryList({ categories = [], onEdit, onDelete, deletingId, onArchive
   }
 
   // Group by type preserving order
-  const grouped = TYPE_ORDER.reduce((acc, t) => {
+  const grouped = CATEGORY_TYPE_ORDER.reduce((acc, t) => {
     const items = categories.filter((c) => c.type === t);
     if (items.length > 0) acc[t] = items;
     return acc;

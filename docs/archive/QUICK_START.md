@@ -1,5 +1,8 @@
 # 🚀 Quick Start - What to Do Next
 
+> Historical scaffolding plan, not current setup instructions. Use the
+> [setup guide](../SETUP_GUIDE.md) and [documentation index](../QUICK_REFERENCE.md).
+
 Your Budget App project is scaffolded and ready! Here's your immediate next steps.
 
 ## ✅ What's Done
@@ -52,7 +55,7 @@ Your Budget App project is scaffolded and ready! Here's your immediate next step
 
 1. In Supabase dashboard: **SQL Editor** → **New query**
 
-2. Copy SQL from [DATA_MODEL.md](./DATA_MODEL.md) and run each step:
+2. Originally, this plan copied SQL from the data-model guide. For current installations, use the [setup guide](../SETUP_GUIDE.md); executable SQL is no longer duplicated in [DATA_MODEL.md](../DATA_MODEL.md):
    - Step 1: Enable UUID extension
    - Step 2: Create categories table
    - Step 3: Create budget_plans table
@@ -82,12 +85,12 @@ You should see:
 
 Before writing any code, read:
 
-1. **[CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md)** (20 min)
+1. **[CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md)** (20 min)
    - How to work with AI without hallucinations
    - Good vs bad prompts
    - Context management patterns
 
-2. **[DATA_MODEL.md](./DATA_MODEL.md)** (10 min)
+2. **[DATA_MODEL.md](../DATA_MODEL.md)** (10 min)
    - Complete database schema
    - TypeScript types
    - Design decisions
@@ -344,10 +347,10 @@ Data model (from DATA_MODEL.md):
 
 ## 📖 Documentation Quick Links
 
-- [📘 Setup Guide](./SETUP_GUIDE.md) - Detailed setup instructions
-- [🗂️ Data Model](./DATA_MODEL.md) - Complete database schema
-- [🎓 Context Guide](./CONTEXT_GUIDE.md) - AI workflow patterns
-- [📋 Project README](./PROJECT_README.md) - Architecture overview
+- [📘 Setup Guide](../SETUP_GUIDE.md) - Detailed setup instructions
+- [🗂️ Data Model](../DATA_MODEL.md) - Complete database schema
+- [🎓 Context Guide](../CONTEXT_GUIDE.md) - AI workflow patterns
+- [📋 Project README](../../README.md) - Architecture overview
 
 ---
 

@@ -1,6 +1,6 @@
 /**
- * Bridge between the Phase 1 cache layer (`services/cache.js`) and the
- * Phase 2 react-query L1 cache.
+ * Bridge between Dexie table-change events (`services/cache.js`) and the
+ * React Query in-memory cache.
  *
  * Whenever the cache layer announces that a Dexie table has changed
  * (background SWR revalidation completed, sync pulled new rows, or a
@@ -18,7 +18,7 @@
 import { subscribeTable } from "./cache";
 import { queryClient } from "./queryClient";
 
-// The seven mirrored Supabase tables. Anything not on this list won't get
+// The seven mirrored backend tables. Anything not on this list won't get
 // auto-invalidation; that's intentional (e.g. RPC-derived shapes like
 // account_balances are derived from `accounts` + `transactions` and get
 // invalidated when *those* tables fire).

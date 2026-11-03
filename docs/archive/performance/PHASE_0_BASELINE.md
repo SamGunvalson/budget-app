@@ -1,5 +1,8 @@
 # Phase 0 — Performance Baseline
 
+> Historical baseline plan. Tooling and status claims below describe that pass,
+> not the current checkout. See the [current performance index](../../performance/README.md).
+
 **Goal:** capture defensible before-numbers so every later phase can be measured
 against a real baseline. No behaviour changes.
 
@@ -11,11 +14,11 @@ against a real baseline. No behaviour changes.
 
 | Change | File | Notes |
 |---|---|---|
-| `rollup-plugin-visualizer` (dev dep) + `npm run build:analyze` script | [package.json](../../package.json), [vite.config.js](../../vite.config.js) | Emits `dist/stats.html` treemap when `ANALYZE=1`. |
-| Lightweight perf helper (`perfStart`, `perfAsync`, `perfRecord`) | [src/utils/perf.js](../../src/utils/perf.js) | No-op unless `import.meta.env.DEV`, `?perf=1`, or `localStorage.perf === '1'`. |
-| Supabase client wrapper that records `db:<table>:<verb>` per query | [src/services/supabase.js](../../src/services/supabase.js) | Hooks the query builder's `then`. |
-| Cold-boot mark (`boot:cold`) | [src/main.jsx](../../src/main.jsx) | Module-eval → first commit (resolved on the second `requestAnimationFrame`). |
-| Route-change marks (`route:<pathname>`) | [src/App.jsx](../../src/App.jsx) | One per `useLocation()` change. |
+| `rollup-plugin-visualizer` (dev dep) + `npm run build:analyze` script | [package.json](../../../package.json), [vite.config.js](../../../vite.config.js) | Emits `dist/stats.html` treemap when `ANALYZE=1`. |
+| Lightweight perf helper (`perfStart`, `perfAsync`, `perfRecord`) | [src/utils/perf.js](../../../src/utils/perf.js) | No-op unless `import.meta.env.DEV`, `?perf=1`, or `localStorage.perf === '1'`. |
+| Supabase client wrapper that records `db:<table>:<verb>` per query | [src/services/supabase.js](../../../src/services/supabase.js) | Hooks the query builder's `then`. |
+| Cold-boot mark (`boot:cold`) | [src/main.jsx](../../../src/main.jsx) | Module-eval → first commit (resolved on the second `requestAnimationFrame`). |
+| Route-change marks (`route:<pathname>`) | [src/App.jsx](../../../src/App.jsx) | One per `useLocation()` change. |
 
 No production user is affected — the helper is a no-op without explicit opt-in.
 
@@ -52,7 +55,7 @@ No production user is affected — the helper is a no-op without explicit opt-in
 
 5. **DevTools Performance trace** — record the same loop with the
    Performance panel; export the profile JSON. Save under
-   `docs/performance/traces/phase0-<scenario>.json` (gitignored if you'd
+   `docs/archive/performance/traces/phase0-<scenario>.json` (gitignored if you'd
    rather not commit them).
 
 ---

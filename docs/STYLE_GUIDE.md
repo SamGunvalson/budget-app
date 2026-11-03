@@ -668,7 +668,10 @@ The app supports dark mode with **dark as the default**. The `.dark` class is to
 
 1. **Tailwind v4 custom variant** — `@custom-variant dark (&:where(.dark, .dark *));` in `index.css`
 2. **ThemeContext** (`src/contexts/ThemeContext.jsx`) — provides `isDark` (default `true`) and `toggleTheme()`
-3. **Persistence** — theme preference is stored in Supabase via `getUserPreference('theme')` / `setUserPreference('theme', { dark: boolean })`
+3. **Persistence** — the provider uses `getUserPreferenceOffline('theme')` /
+   `setUserPreferenceOffline('theme', { dark: boolean })` from the
+   [offline wrappers](../src/services/offlineAware.js), supporting the selected
+   backend and offline sync
 4. **Hook** — use `useTheme()` from `src/hooks/useTheme.js` to access `isDark` and `toggleTheme()` in any component
 
 ### Color Mapping Table

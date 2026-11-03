@@ -7,14 +7,26 @@ A personal budget tracking PWA built with React 19 + Vite, with a selectable Sup
 ```bash
 npm run dev       # Start dev server at http://localhost:5173
 npm run build     # Production build
-npm run lint      # ESLint (no tests exist)
+npm run lint      # ESLint
+node --test scripts/category-archive.test.js scripts/helpers.test.js # Fast helper regressions
 ```
+
+Use Node.js 22.12+ for frontend development. Auth-service and deployment tests
+need isolated PostgreSQL/Docker resources; see
+[validation](../docs/SETUP_GUIDE.md#validation).
 
 ## Architecture
 
 ### Data flow (reads)
 
-All reads go through React Query hooks in `src/hooks/queries.js`. Each hook wraps a corresponding `*Offline` function from `src/services/offlineAware.js`, which serves Dexie (IndexedDB) immediately and revalidates from the selected backend in the background (SWR pattern). **Do not call backend service functions directly from components** — go through the hooks.
+New component reads go through React Query hooks in `src/hooks/queries.js`.
+Mirrored-table hooks use corresponding `*Offline` functions from
+`src/services/offlineAware.js`; SWR reads serve Dexie immediately and revalidate
+in the background, awaiting the backend on a cold online cache.
+Partnership/split hooks use their services directly because those tables are
+not Dexie-mirrored. Provider/imperative preference reads use existing offline
+wrappers. **Do not add direct backend reads to components**; preserve specialized
+existing paths unless their migration is explicitly in scope.
 
 ### Data flow (writes)
 
@@ -23,7 +35,10 @@ Mutations may be called directly from components via the `*Offline` wrappers in 
 1. Online: calls the underlying service through the selected backend, then updates Dexie.
 2. Offline: writes to Dexie with `_offline` flags and enqueues the mutation for sync.
 
-After any mutation, `notifyTable(tableName)` is called internally, which triggers React Query to invalidate matching queries via `src/services/queryBridge.js`.
+Mirrored-table wrappers call `notifyTable(tableName)` internally to invalidate
+matching queries through `src/services/queryBridge.js`. Non-mirrored
+partnership/split mutations retain their explicit query invalidation paths;
+do not assume the bridge subscribes to those tables.
 
 ### Offline sync
 
@@ -31,7 +46,11 @@ After any mutation, `notifyTable(tableName)` is called internally, which trigger
 
 ### Cache invalidation
 
-Query keys follow `[tableName, ...specifics]`. The bridge in `src/services/queryBridge.js` broad-invalidates all queries for a table when `notifyTable(tableName)` fires — so new mutations don't require manually specifying invalidation keys.
+Query keys follow `[tableName, ...specifics]`. The bridge in
+`src/services/queryBridge.js` subscribes to the seven mirrored tables and
+broad-invalidates their queries when `notifyTable(tableName)` fires. It also
+lists derived cross-table dependencies. Preserve those dependencies when adding
+new reads; non-mirrored tables need their existing explicit invalidation.
 
 ### Auth & RLS
 
@@ -83,7 +102,7 @@ The `transactions` and `split_expenses` tables use `deleted_at` (nullable timest
 Each context is split into two files:
 
 - `src/contexts/FooContext.jsx` — the provider component
-- `src/contexts/fooContextValue.js` — the memoized value logic
+- `src/contexts/fooContextValue.js` — the context object consumed by hooks
 
 Contexts: `AuthContext`, `MonthYearContext`, `SafeModeContext`, `ThemeContext`.
 

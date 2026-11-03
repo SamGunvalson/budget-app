@@ -6,8 +6,8 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 
 ## Data Services (`src/services/`)
 
-- [ ] Does every `UPDATE` or `DELETE` query include **both** `.eq("id", id)` and `.eq("user_id", user.id)`?
-- [ ] Does every `INSERT` set `user_id: user.id` explicitly?
+- [ ] For directly owned rows, do `UPDATE`/`DELETE` queries retain explicit ID/owner predicates? For parent-owned/shared rows or RPCs, is the equivalent ownership/membership check preserved rather than referencing a nonexistent `user_id` column?
+- [ ] Does every directly owned `INSERT` set `user_id: user.id` explicitly, with parent/shared ownership validated through the appropriate service and RLS contract?
 - [ ] Is `user.id` obtained from the selected auth adapter/session — not from client-supplied input?
 - [ ] Are there any raw SQL strings (template literals passed to `.rpc()` or similar)? If yes, are all parameters passed as bound arguments, never interpolated into the SQL string?
 - [ ] Does any new service function need a corresponding RLS policy in `supabase_rls_complete.sql` (used by both backend modes)?
@@ -35,7 +35,7 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 
 ## Infrastructure (`nginx.conf`, `Dockerfile`, `docker-compose.yml`)
 
-- [ ] Are all six security headers still present in `nginx.conf` after any changes?
+- [ ] Are the security headers still present in the [header template](../nginx/security-headers.conf.template) and correctly rendered/included by [Nginx configuration](../nginx.conf) after changes?
 - [ ] Does the `Content-Security-Policy` still restrict `connect-src` to the origins required by the selected backend mode?
 - [ ] Are any new environment variables that are secrets excluded from `VITE_*` prefixes (which would expose them in the browser bundle)?
 

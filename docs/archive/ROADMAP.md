@@ -1,5 +1,8 @@
 # 🗺️ Budget App: Complete Roadmap & Timeline
 
+> Historical roadmap, not current project status or setup instructions. Use
+> the [current documentation index](../QUICK_REFERENCE.md).
+
 **Project Goal**: Build a personal budget app while learning AI-assisted development and context management patterns that transfer to your other projects
 
 ---
@@ -345,10 +348,10 @@ budget-app/
 | [QUICK_START.md](./QUICK_START.md) | Phase 1 step-by-step | Start here (now) |
 | [PHASE_2.md](./PHASE_2.md) | Phase 2 features | After Phase 1 ships |
 | [PHASE_3.md](./PHASE_3.md) | Phase 3 features | After Phase 2 ships |
-| [DATA_MODEL.md](./DATA_MODEL.md) | Database reference | Reference always |
-| [CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md) | How to use AI | Read after Phase 0 |
-| [SETUP_GUIDE.md](./SETUP_GUIDE.md) | Supabase setup | If stuck on setup |
-| [PROJECT_README.md](./PROJECT_README.md) | Project overview | Quick reference |
+| [DATA_MODEL.md](../DATA_MODEL.md) | Database reference | Reference always |
+| [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md) | How to use AI | Read after Phase 0 |
+| [SETUP_GUIDE.md](../SETUP_GUIDE.md) | Supabase setup | If stuck on setup |
+| [README.md](../../README.md) | Project overview | Quick reference |
 
 ---
 
@@ -410,15 +413,15 @@ budget-app/
 
 ### Setup Issues
 
-→ Check [SETUP_GUIDE.md](./SETUP_GUIDE.md)
+→ Check [SETUP_GUIDE.md](../SETUP_GUIDE.md)
 
 ### Data Model Questions
 
-→ Check [DATA_MODEL.md](./DATA_MODEL.md)
+→ Check [DATA_MODEL.md](../DATA_MODEL.md)
 
 ### How to Ask AI
 
-→ Check [CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md)
+→ Check [CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md)
 
 ### Phase 1 Specific
 

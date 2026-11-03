@@ -1,5 +1,7 @@
 # Phase 3: Advanced Features - CSV Import & Offline Support (Weeks 3-4)
 
+> Historical build plan. Use the [current documentation index](../QUICK_REFERENCE.md) for implementation guidance.
+
 ## 📍 Current Status
 
 **Phase 2 Complete** ✅
@@ -43,7 +45,7 @@ As a user, I want to:
 
 #### Data Model Reference
 
-From [DATA_MODEL.md](./DATA_MODEL.md):
+From [DATA_MODEL.md](../DATA_MODEL.md):
 
 - transactions table: amount, description, transaction_date, category_id, is_income
 
@@ -125,7 +127,7 @@ Use Tailwind for UI.
 
 We'll use **Dexie.js** (IndexedDB wrapper) alongside Supabase.
 
-Mirror these tables in IndexedDB (from [DATA_MODEL.md](./DATA_MODEL.md)):
+Mirror these tables in IndexedDB (from [DATA_MODEL.md](../DATA_MODEL.md)):
 
 - `transactions` — includes `account_id` (NOT NULL), `payee`, `status` ('projected'|'pending'|'posted'), `transfer_group_id`, `recurring_template_id`, `deleted_at` (soft deletes)
 - `categories` — includes `sort_order`, `is_active`
@@ -233,7 +235,7 @@ As a user, I want to:
 
 #### Data Model Reference
 
-From [DATA_MODEL.md](./DATA_MODEL.md):
+From [DATA_MODEL.md](../DATA_MODEL.md):
 
 - recurring_templates table (Phase 2 addition)
 

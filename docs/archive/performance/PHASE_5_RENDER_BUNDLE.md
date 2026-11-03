@@ -1,5 +1,8 @@
 # Phase 5 — Render-path & bundle polish
 
+> Historical implementation record, not current setup guidance. See the
+> [current performance index](../../performance/README.md).
+
 **Status:** ✅ Shipped
 **Builds on:** Phase 4 (mutation batching).
 **Goal:** Trim what the browser has to download, parse, and re-render
@@ -39,10 +42,10 @@ fallback:
 
 | Component               | Imported from                                                                                  | Loads when                                 |
 | ----------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `TrendChart`            | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                     | User opens the **Trends** tab              |
-| `PlanVsActual` (+chart) | [`pages/ReportsPage.jsx`](../../src/pages/ReportsPage.jsx)                                     | User opens the **Plan vs Actual** tab      |
-| `CashflowChart`         | [`pages/AccountsPage.jsx`](../../src/pages/AccountsPage.jsx)                                   | User opens the **Cashflow** tab            |
-| `NetWorthChart`         | [`components/accounts/NetWorthSummary.jsx`](../../src/components/accounts/NetWorthSummary.jsx) | NetWorthSummary mounts (Accounts overview) |
+| `TrendChart`            | [`pages/ReportsPage.jsx`](../../../src/pages/ReportsPage.jsx)                                     | User opens the **Trends** tab              |
+| `PlanVsActual` (+chart) | [`pages/ReportsPage.jsx`](../../../src/pages/ReportsPage.jsx)                                     | User opens the **Plan vs Actual** tab      |
+| `CashflowChart`         | [`pages/AccountsPage.jsx`](../../../src/pages/AccountsPage.jsx)                                   | User opens the **Cashflow** tab            |
+| `NetWorthChart`         | [`components/accounts/NetWorthSummary.jsx`](../../../src/components/accounts/NetWorthSummary.jsx) | NetWorthSummary mounts (Accounts overview) |
 
 `CategoryChart` is a pure HTML/Tailwind bar list (no recharts), so it
 stays eagerly imported.
@@ -64,8 +67,8 @@ function loadExcelJs() {
 
 | File                                                     | When it loads                                             |
 | -------------------------------------------------------- | --------------------------------------------------------- |
-| [`src/services/export.js`](../../src/services/export.js) | First call to `exportTransactionsCSV` / `exportBudgetCSV` |
-| [`src/utils/csvParser.js`](../../src/utils/csvParser.js) | First call to `parseSpreadsheetFile` (the import flow)    |
+| [`src/services/export.js`](../../../src/services/export.js) | First call to `exportTransactionsCSV` / `exportBudgetCSV` |
+| [`src/utils/csvParser.js`](../../../src/utils/csvParser.js) | First call to `parseSpreadsheetFile` (the import flow)    |
 
 The Vite `manualChunks: { excel: ["exceljs"] }` rule keeps the lib in a
 single named chunk; the change here is that nothing in the eager module
@@ -73,15 +76,15 @@ graph imports it, so the chunk is only fetched on demand.
 
 ### 3. `React.memo` on virtualized rows
 
-[`TransactionItem`](../../src/components/transactions/TransactionItem.jsx)
-and [`TransactionGroupHeader`](../../src/components/transactions/TransactionGroupHeader.jsx)
+[`TransactionItem`](../../../src/components/transactions/TransactionItem.jsx)
+and [`TransactionGroupHeader`](../../../src/components/transactions/TransactionGroupHeader.jsx)
 are now wrapped in `React.memo`. The `forwardRef` + `memo` pattern is
 preserved so `@tanstack/react-virtual`'s `measureElement` ref still
 attaches.
 
 To make the memo actually skip work, the handlers piped into
-[`TransactionList`](../../src/components/transactions/TransactionList.jsx)
-from [`pages/TransactionsPage.jsx`](../../src/pages/TransactionsPage.jsx)
+[`TransactionList`](../../../src/components/transactions/TransactionList.jsx)
+from [`pages/TransactionsPage.jsx`](../../../src/pages/TransactionsPage.jsx)
 were stabilised with `useCallback`:
 
 - `handleConfirmAll`, `handleSkipAll`, `handleEditAll`, `handleDeleteAll`
@@ -102,18 +105,18 @@ that row's `edits` prop.
 
 `pendingCount()` previously did `db.table(t).where("_offline").equals(1).count()`
 across all 7 synced Dexie tables on every call.
-[`useSyncStatus`](../../src/hooks/useSyncStatus.js) re-runs on every
+[`useSyncStatus`](../../../src/hooks/useSyncStatus.js) re-runs on every
 queue/sync notification, which during a burst of inline edits meant
 dozens of 7-table COUNT scans.
 
-The counter now lives in [`offlineDb.js`](../../src/services/offlineDb.js):
+The counter now lives in [`offlineDb.js`](../../../src/services/offlineDb.js):
 
 - One full scan on first read populates `_pendingCountCache`.
 - `putOffline()` inspects the prior row's `_offline` flag and only
   increments when a clean row transitions to pending.
 - `markSynced()` always decrements (the sync engine only calls it for
   rows it pulled out of the offline queue).
-- [`syncQueue.enqueue()`](../../src/utils/syncQueue.js) does the same
+- [`syncQueue.enqueue()`](../../../src/utils/syncQueue.js) does the same
   pre-read + conditional increment for offline-only updates.
 
 `pendingCount()` is now O(1) after first call. The counter is
@@ -122,7 +125,7 @@ manual wipe), the next read will re-scan once.
 
 ### 5. Service worker: faster fallback + SWR for reference tables
 
-In [`vite.config.js`](../../vite.config.js):
+In [`vite.config.js`](../../../vite.config.js):
 
 - `networkTimeoutSeconds` for the Supabase REST cache dropped from **3 → 1**.
   On a flaky network, Workbox falls back to the cache (and our Dexie layer)

@@ -1,1263 +1,402 @@
-# Budget App Data Model
+# Budget App data model
 
-## Overview
+This is the reference for database fields, relationships, and service contracts.
+Executable SQL in [`sql_scripts/`](../sql_scripts/) defines installation and
+migration behavior; do not copy schema-creation SQL from documentation.
+See the [setup guide](./SETUP_GUIDE.md) for backend-specific installation and upgrades.
 
-This document defines the complete data schema for the budget app. **Reference this document when working with AI to avoid hallucinations and ensure consistency.**
+## Core principles
 
-## Core Principles
+- Money is integer **cents** (`BIGINT`), never floating-point dollars.
+- `DATE` values are `YYYY-MM-DD` strings; parse them as local dates in the UI.
+  `TIMESTAMPTZ` values represent instants.
+- Transactions and split expenses use `deleted_at`; active reads exclude deleted rows.
+- RLS scopes financial data to the authenticated owner or partnership members.
+- Database columns use snake_case. The frontend is JavaScript; SQL definitions
+  and existing service return shapes are authoritative, not illustrative TypeScript interfaces.
 
-- All monetary values stored as integers (cents) to avoid floating-point issues
-- All timestamps use UTC
-- Soft deletes where applicable (deleted_at column)
-- Row-level security (RLS) enforced at database level
+## Database schema
 
----
+Unless stated otherwise, public table IDs are UUID primary keys defaulting to
+`uuid_generate_v4()`. Columns marked **required** are `NOT NULL`; a default
+alone does not make a column non-nullable. `created_at` defaults to `now()`.
 
-## Database Schema (Supabase/PostgreSQL)
+### Auth users (not a public `users` table)
 
-### Local-mode `auth` compatibility schema
+Public ownership foreign keys reference **`auth.users(id)`**. Supabase manages
+this table in Supabase mode. There is no app-defined public `users` table with
+currency/timezone columns; UI preferences live in `user_preferences`.
 
-Vanilla PostgreSQL deployments apply `sql_scripts/local/` before/after the
-shared Supabase scripts, in `local/apply_order.txt` order. Supabase deployments
-continue using Supabase-managed Auth; this shim is **local-only**.
+In local mode, the [compatibility shim](../sql_scripts/local/README.md) supplies:
 
-- `auth.users`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, lowercase-only
-  `email TEXT NOT NULL UNIQUE` (`CHECK (email = lower(email))`),
-  `encrypted_password TEXT NOT NULL`, `created_at` and `updated_at TIMESTAMPTZ
-  NOT NULL DEFAULT now()`, and nullable `last_sign_in_at TIMESTAMPTZ`.
-  Existing public `user_id` foreign keys reference this table.
-- `auth.refresh_tokens`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`,
-  `user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`,
-  `token_hash TEXT NOT NULL UNIQUE`, `family_id UUID NOT NULL`, nullable
-  `parent_id UUID`, `revoked_at TIMESTAMPTZ`, and `user_agent TEXT`,
-  `expires_at TIMESTAMPTZ NOT NULL`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`.
-  Indexed by `user_id` and `family_id`; only hashes of opaque refresh tokens are
-  persisted, with family/parent fields supporting rotation and reuse detection.
-- `auth.uid()` is STABLE and returns the JWT subject UUID, from the legacy
-  individual claim setting or PostgREST's `request.jwt.claims` JSON. Missing or
-  empty settings yield NULL. `auth.jwt()`, `auth.email()`, and `auth.role()` are
-  STABLE compatibility helpers for the same claims.
+| Table | Fields |
+| --- | --- |
+| `auth.users` | `id UUID` PK, default `gen_random_uuid()`; required unique lowercase `email TEXT`; required `encrypted_password TEXT`; required `created_at`, `updated_at TIMESTAMPTZ` default `now()`; nullable `last_sign_in_at TIMESTAMPTZ` |
+| `auth.refresh_tokens` | `id UUID` PK, default `gen_random_uuid()`; required `user_id UUID` FK to auth users with cascade delete; required unique `token_hash TEXT`; required `family_id UUID`; nullable `parent_id UUID`, `revoked_at TIMESTAMPTZ`, `user_agent TEXT`; required `expires_at TIMESTAMPTZ`; required `created_at TIMESTAMPTZ` default `now()` |
 
-**Access/RLS**: `auth_admin` alone receives auth-table CRUD (besides the owner);
-`anon` and `authenticated` receive auth-schema USAGE and helper EXECUTE, not
-any auth-table grants. Auth tables are not exposed by PostgREST (public schema
-only); access is isolated by database grants rather than auth-table RLS. Public
-financial tables retain their existing RLS, with authenticated CRUD/RPC grants.
+Refresh tokens are stored as hashes; `user_id` and `family_id` are indexed.
+Only `auth_admin` (besides the owner) has auth-table CRUD. PostgREST exposes
+only `public`, never auth tables. `anon` and `authenticated` have auth-schema
+usage and helper execution, not auth-table access.
+
+Local STABLE helpers `auth.uid()`, `auth.jwt()`, `auth.email()`, and `auth.role()`
+read PostgREST JWT claims; `auth.uid()` supports both individual legacy claim
+settings and `request.jwt.claims`. Missing/empty subject settings yield NULL.
 `authenticator` is LOGIN NOINHERIT with membership in the two API roles.
-
-The local initializer uses the shared `soft_delete_transaction(txn_id UUID)` RPC
-and transaction policies documented below. The legacy local-fix entry point
-delegates to the shared migration, keeping existing local deployments compatible.
-
----
-
-### Table: `users`
-
-**Purpose**: Store user accounts (handled by Supabase Auth, extended here for preferences)
-
-| Column       | Type        | Constraints      | Description                |
-| ------------ | ----------- | ---------------- | -------------------------- |
-| `id`         | UUID        | PRIMARY KEY      | Supabase auth user ID      |
-| `email`      | TEXT        | UNIQUE, NOT NULL | User email                 |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW()    | Account creation timestamp |
-| `currency`   | VARCHAR(3)  | DEFAULT 'USD'    | ISO currency code          |
-| `timezone`   | TEXT        | DEFAULT 'UTC'    | User timezone              |
-
-**Indexes**:
-
-- Primary key on `id`
-- Unique index on `email`
-
-**RLS**: Users can only access their own records
-
----
+Default public grants apply to objects created by the database owner.
 
 ### Table: `categories`
 
-**Purpose**: Budget categories (e.g., Groceries, Rent, Entertainment)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `name` | TEXT | Required |
+| `type` | TEXT | Required; `income`, `needs`, `wants`, `savings`, `transfer` |
+| `color` | VARCHAR(7) | Default `#3B82F6` |
+| `icon` | TEXT | Nullable |
+| `is_active` | BOOLEAN | Default true; false marks deletion |
+| `is_archived` | BOOLEAN | Required; default false; retirement from new-entry choices |
+| `sort_order` | INTEGER | Default 0 |
+| `created_at` | TIMESTAMPTZ | Default `now()` |
+| `updated_at` | TIMESTAMPTZ | Default `now()`; added/trigger-maintained by sync migration |
 
-| Column       | Type        | Constraints             | Description                                          |
-| ------------ | ----------- | ----------------------- | ---------------------------------------------------- |
-| `id`         | UUID        | PRIMARY KEY             | Category ID                                          |
-| `user_id`    | UUID        | FOREIGN KEY → users(id) | Owner of category                                    |
-| `name`       | TEXT        | NOT NULL                | Category name (e.g., "Groceries")                    |
-| `type`       | TEXT        | NOT NULL                | 'income', 'needs', 'wants', 'savings', or 'transfer' |
-| `color`      | VARCHAR(7)  | DEFAULT '#3B82F6'       | Hex color for UI                                     |
-| `icon`       | TEXT        | NULL                    | Icon identifier (optional)                           |
-| `is_active`  | BOOLEAN     | DEFAULT TRUE            | Soft delete flag                                     |
-| `is_archived` | BOOLEAN    | NOT NULL, DEFAULT FALSE | Retired from new-entry choices; retained for history |
-| `sort_order` | INTEGER     | DEFAULT 0               | Manual sort position within type group               |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp                                   |
+The executable base has `UNIQUE(user_id, name, is_active)` (not a partial
+unique index). Active rows have user and `(user_id, type, sort_order)` indexes.
+RLS enforces ownership. Archiving preserves `is_active`, name reservation,
+ownership, type, and historical references.
 
-**Constraints**:
+`set_category_archived(p_category_id UUID, p_archived BOOLEAN)` returns the
+updated category row, requires authentication and an owned active category,
+and is executable by `authenticated`. Archiving is online-only in the client;
+restoration may queue offline.
 
-- `type` CHECK: Must be one of ('income', 'needs', 'wants', 'savings', 'transfer')
-- Unique: `(user_id, name)` where `is_active = true`
-- Archiving does not change `is_active`, ownership, uniqueness, category type,
-  or any transaction/budget references. Archived names remain reserved.
+The invoker `guard_category_archiving()` trigger serializes archive/reference
+writes per owner with an advisory transaction lock. Category, recurring, and
+quick-template preference writes reject archived categories referenced by live,
+effectively unpaused schedules or saved quick templates. Group parent pause
+state is respected; linked transfers also depend on the `Account Transfer`
+companion category. Errors identify blockers.
 
-**Archiving**:
-
-- All five types support reversible archiving. Archived rows remain readable
-  under existing ownership RLS and stay in the offline cache.
-- `set_category_archived(p_category_id UUID, p_archived BOOLEAN)` returns the
-  updated category row; requires authentication and an owned, non-deleted
-  category. The client requires a connection for archiving; restoration may
-  be queued offline.
-- `guard_category_archiving()` is an invoker trigger on category, recurring
-  template, and quick-template preference writes. It serializes archive/use
-  changes per owner with a transaction advisory lock and rejects archived
-  categories referenced by live, effectively unpaused schedules or any saved
-  quick-entry template. Group parent pause state is respected. Linked recurring
-  transfers also depend on the unarchived `Account Transfer` companion category.
-  Errors name the blocking schedules/templates. Resuming a paused schedule
-  requires restoring or replacing its archived categories.
-- `guard_transaction_category_archive()` rejects inserting transactions or
-  changing their category to an archived category, including stale/offline
-  queued writes. Updates retaining an original archived category are allowed.
-- Historical filters retain archived categories. Budgets retain saved archived
-  allocations and allow filling other months within that year. Budget copy and
-  import may carry archived categories forward without restoring them.
-- Install the idempotent
-  [`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
-  after the base schema and updated-at migration. No ownership RLS changes.
-
-**Indexes**:
-
-- `idx_categories_sort` on `(user_id, type, sort_order)` where `is_active = true`
-
-**Default Categories** (created on user signup):
-
-```javascript
-const defaultCategories = [
-  { name: "Groceries", type: "needs", color: "#10B981" },
-  { name: "Rent/Mortgage", type: "needs", color: "#EF4444" },
-  { name: "Utilities", type: "needs", color: "#F59E0B" },
-  { name: "Transportation", type: "needs", color: "#8B5CF6" },
-  { name: "Entertainment", type: "wants", color: "#EC4899" },
-  { name: "Dining Out", type: "wants", color: "#06B6D4" },
-  { name: "Emergency Fund", type: "savings", color: "#14B8A6" },
-  { name: "Investments", type: "savings", color: "#6366F1" },
-  { name: "Account Transfer", type: "transfer", color: "#64748B" },
-  { name: "Credit Card Payment", type: "transfer", color: "#64748B" },
-  { name: "Investment Contribution", type: "transfer", color: "#64748B" },
-  { name: "Reimbursement / Refund", type: "transfer", color: "#64748B" },
-];
-```
-
-**RLS**: Users can only access their own categories
-
----
+The invoker `guard_transaction_category_archive()` trigger rejects new
+transactions or category changes targeting an archived category, including
+stale queued writes. Edits retaining the original category are allowed.
+Historical filters retain archived categories. Saved budget allocations stay
+editable across the same year; budget copy/import may retain archived categories.
+See [archiving behavior](./SETUP_GUIDE.md#category-archiving-upgrade).
 
 ### Table: `user_preferences`
 
-**Purpose**: Store per-user UI preferences (e.g., category type group display order)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `preference_key` | TEXT | Required |
+| `preference_value` | JSONB | Required; default `{}` |
+| `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
 
-| Column             | Type        | Constraints             | Description                               |
-| ------------------ | ----------- | ----------------------- | ----------------------------------------- |
-| `id`               | UUID        | PRIMARY KEY             | Preference row ID                         |
-| `user_id`          | UUID        | FOREIGN KEY → users(id) | Preference owner                          |
-| `preference_key`   | TEXT        | NOT NULL                | Key identifier (e.g., 'type_group_order') |
-| `preference_value` | JSONB       | NOT NULL, DEFAULT '{}'  | JSON value for the preference             |
-| `created_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp                        |
-| `updated_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Last update timestamp                     |
+Unique `(user_id, preference_key)`; index on `user_id`; owner-scoped RLS.
+Preference values are application JSON, not separate database columns.
+Examples include `type_group_order`, `favorite_accounts`, theme preferences,
+`playground_scenarios`, and `quick_transaction_templates`.
 
-**Constraints**:
-
-- Unique: `(user_id, preference_key)`
-
-**Known preference keys**:
-
-- `type_group_order`: Array of type strings defining display order, e.g. `["income", "needs", "wants", "savings"]`
-- `favorite_accounts`: Array of account UUIDs marked as favorites, e.g. `["uuid1", "uuid2"]`. Surfaced as a "⭐ Favorites" optgroup at the top of account selectors in the transaction form.
-- `quick_transaction_templates`: Array of quick-transaction template objects used by Settings + Transactions quick-post flow. Each object stores transaction defaults (label, description, payee, `account_id`, `category_id`, `is_income`) plus optional split defaults (`is_split`, `split_method`, `split_payer`, `split_partner_share_pct`). Amount is intentionally **not** stored and is entered at post time.
-
-**RLS**: Users can only access their own preferences
-
----
+Quick templates store label/description/payee, account/category IDs,
+`is_income`, and optional `is_split`, `split_method`, `split_payer`,
+`split_partner_share_pct`. Amount is entered when posting, not saved in the
+template. See [quick transactions](../src/services/quickTransactions.js).
 
 ### Table: `budget_plans`
 
-**Purpose**: Monthly budget plans (what user intends to spend)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `month` | INT | Required; 1-12 |
+| `year` | INT | Required; 2020-2100 |
+| `name` | TEXT | Nullable |
+| `total_income` | BIGINT | Default 0; expected income in cents |
+| `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
 
-| Column         | Type        | Constraints             | Description                     |
-| -------------- | ----------- | ----------------------- | ------------------------------- |
-| `id`           | UUID        | PRIMARY KEY             | Budget plan ID                  |
-| `user_id`      | UUID        | FOREIGN KEY → users(id) | Budget owner                    |
-| `month`        | INT         | NOT NULL                | Month (1-12)                    |
-| `year`         | INT         | NOT NULL                | Year (e.g., 2026)               |
-| `name`         | TEXT        | NULL                    | Optional plan name              |
-| `total_income` | BIGINT      | DEFAULT 0               | Expected monthly income (cents) |
-| `created_at`   | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp              |
-| `updated_at`   | TIMESTAMPTZ | DEFAULT NOW()           | Last update timestamp           |
-
-**Constraints**:
-
-- Unique: `(user_id, month, year)`
-- CHECK: `month BETWEEN 1 AND 12`
-- CHECK: `year >= 2020 AND year <= 2100`
-
-**RLS**: Users can only access their own budget plans
-
----
+Unique `(user_id, month, year)`; index `(user_id, year DESC, month DESC)`;
+owner-scoped RLS.
 
 ### Table: `budget_items`
 
-**Purpose**: Per-category budget allocations within a plan
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `budget_plan_id` | UUID | Required; FK to `budget_plans`, cascade delete |
+| `category_id` | UUID | Required; FK to `categories`, restrict delete |
+| `planned_amount` | BIGINT | Required; >= 0 cents |
+| `notes` | TEXT | Nullable |
+| `updated_at` | TIMESTAMPTZ | Default `now()`; added/trigger-maintained by sync migration |
 
-| Column           | Type   | Constraints                    | Description              |
-| ---------------- | ------ | ------------------------------ | ------------------------ |
-| `id`             | UUID   | PRIMARY KEY                    | Budget item ID           |
-| `budget_plan_id` | UUID   | FOREIGN KEY → budget_plans(id) | Parent budget plan       |
-| `category_id`    | UUID   | FOREIGN KEY → categories(id)   | Category being budgeted  |
-| `planned_amount` | BIGINT | NOT NULL                       | Planned spending (cents) |
-| `notes`          | TEXT   | NULL                           | Optional notes           |
-
-**Constraints**:
-
-- Unique: `(budget_plan_id, category_id)`
-- CHECK: `planned_amount >= 0`
-
-**RLS**: Users can only access budget items for their own plans
-
----
+Unique `(budget_plan_id, category_id)`; indexes on each foreign key.
+RLS checks parent budget-plan ownership, not a nonexistent `budget_items.user_id`.
 
 ### Table: `accounts`
 
-**Purpose**: Financial accounts for net worth tracking (checking, savings, credit cards, retirement, etc.)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `name` | TEXT | Required |
+| `type` | TEXT | Required; `checking`, `savings`, `credit_card`, `retirement`, `brokerage`, `loan`, `mortgage` |
+| `starting_balance` | BIGINT | Default 0 cents |
+| `is_active` | BOOLEAN | Default true |
+| `closed_at` | DATE | Nullable; NULL means open |
+| `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
 
-| Column             | Type        | Constraints             | Description                           |
-| ------------------ | ----------- | ----------------------- | ------------------------------------- |
-| `id`               | UUID        | PRIMARY KEY             | Account ID                            |
-| `user_id`          | UUID        | FOREIGN KEY → users(id) | Account owner                         |
-| `name`             | TEXT        | NOT NULL                | Account name (e.g., "Chase Checking") |
-| `type`             | TEXT        | NOT NULL                | Account type (see CHECK below)        |
-| `starting_balance` | BIGINT      | DEFAULT 0               | Opening balance in cents              |
-| `is_active`        | BOOLEAN     | DEFAULT TRUE            | Soft delete flag                      |
-| `closed_at`        | DATE        | DEFAULT NULL            | Closure date (NULL = open)            |
-| `created_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Creation timestamp                    |
-| `updated_at`       | TIMESTAMPTZ | DEFAULT NOW()           | Last update timestamp                 |
-
-**Constraints**:
-
-- `type` CHECK: Must be one of (`'checking'`, `'savings'`, `'credit_card'`, `'retirement'`, `'brokerage'`, `'loan'`, `'mortgage'`)
-- Unique: `(user_id, name)` where `is_active = true`
-
-**Account type groups**:
-
-- **Asset accounts** (balance increases with income): `checking`, `savings`, `retirement`, `brokerage`
-- **Liability accounts** (balance increases with charges): `credit_card`, `loan`, `mortgage`
-
-**Balance calculation**: `starting_balance + SUM(transactions)` — for asset accounts, income adds and expenses subtract; for liability accounts, expenses add (charges) and income subtracts (payments).
-
-**RLS**: Users can only access their own accounts
-
----
+Active rows have a user index and unique `(user_id, name)` index.
+RLS enforces ownership. Assets are checking, savings, retirement, brokerage;
+liabilities are credit cards, loans, mortgages. Assets add income and subtract
+expenses; liabilities add charges and subtract payments.
 
 ### Table: `transactions`
 
-**Purpose**: Actual income/expense transactions
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `account_id`, `category_id` | UUID | Required; respective FKs, restrict delete |
+| `amount` | BIGINT | Required; nonzero cents |
+| `description` | TEXT | Required |
+| `payee` | TEXT | Nullable |
+| `transaction_date` | DATE | Required |
+| `is_income` | BOOLEAN | Default false; direction, not sufficient for classification |
+| `transfer_group_id` | UUID | Nullable; links transfer legs |
+| `status` | TEXT | Required; default `posted`; `projected`, `pending`, `posted` |
+| `recurring_template_id` | UUID | Nullable; FK to recurring templates, set NULL on delete |
+| `recurring_occurrence_date` | DATE | Nullable; original schedule date, unchanged by date edits |
+| `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
+| `deleted_at` | TIMESTAMPTZ | Nullable soft-delete timestamp |
 
-| Column                  | Type        | Constraints                                 | Description                                                                                                                                           |
-| ----------------------- | ----------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                    | UUID        | PRIMARY KEY                                 | Transaction ID                                                                                                                                        |
-| `user_id`               | UUID        | FOREIGN KEY → users(id)                     | Transaction owner                                                                                                                                     |
-| `account_id`            | UUID        | FOREIGN KEY → accounts(id), NOT NULL        | Account this transaction belongs to                                                                                                                   |
-| `category_id`           | UUID        | FOREIGN KEY → categories(id)                | Transaction category                                                                                                                                  |
-| `amount`                | BIGINT      | NOT NULL                                    | Amount in cents — always a positive absolute value; `is_income` determines direction (income adds, expense subtracts)                                 |
-| `description`           | TEXT        | NOT NULL                                    | Transaction description                                                                                                                               |
-| `payee`                 | TEXT        | NULL                                        | Who the money is going to or coming from                                                                                                              |
-| `transaction_date`      | DATE        | NOT NULL                                    | Date of transaction                                                                                                                                   |
-| `is_income`             | BOOLEAN     | DEFAULT FALSE                               | True if income, false if expense                                                                                                                      |
-| `transfer_group_id`     | UUID        | NULL                                        | Shared UUID linking both sides of a transfer. `NULL` on a transfer-type transaction indicates a single-account balance adjustment (no companion leg). |
-| `status`                | TEXT        | NOT NULL, DEFAULT 'posted'                  | Transaction lifecycle: 'projected', 'pending', 'posted'                                                                                               |
-| `recurring_template_id`   | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Back-link to the recurring template that generated this transaction                                                                                   |
-| `recurring_occurrence_date` | DATE      | NULL                                        | The originally-scheduled occurrence date from the recurring template. Set once on generation and **never changed** when the user edits `transaction_date`. Used by the dedup logic so a user-rescheduled transaction doesn't spawn a duplicate for the original scheduled date. |
-| `created_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Record creation timestamp                                                                                                                             |
-| `updated_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Last update timestamp                                                                                                                                 |
-| `deleted_at`              | TIMESTAMPTZ | NULL                                        | Soft delete timestamp                                                                                                                                 |
+Live-row indexes cover user/date, category, account, transfer group, and
+user/month; there is also a user/status/date index. Recurring deduplication is
+unique `(recurring_template_id, recurring_occurrence_date, account_id)` for
+live rows with non-null template and occurrence. Account ID permits two transfer
+legs for the same occurrence. The occurrence migration adds the generation
+lookup index; aggregation SQL adds account/date and user/category/date indexes.
 
-**Constraints**:
-
-- CHECK: `amount != 0` (no zero-amount transactions)
-- CHECK: `status IN ('projected', 'pending', 'posted')`
-- UNIQUE partial: `(recurring_template_id, recurring_occurrence_date, account_id) WHERE recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL` — at most one active transaction per recurring template per scheduled occurrence per account (allows dual-leg entries for transfers)
-
-**Indexes**:
-
-- Index on `(user_id, transaction_date DESC)` for fast queries
-- Index on `(user_id, category_id)` for aggregations
-- Index on `(account_id)` for account balance queries
-- Index on `deleted_at IS NULL` for active transactions
-- Index on `(user_id, status, transaction_date)` for status-based queries
-- Index on `(recurring_template_id, transaction_date)` where `recurring_template_id IS NOT NULL`
-- **Unique** index on `(recurring_template_id, recurring_occurrence_date, account_id)` where `recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL` — prevents duplicate projected/pending/posted transactions for the same template+occurrence+account while allowing transfer dual-leg entries
-
-**RLS**: Four policies restricted to `authenticated` scope access to the user's
-own transactions. SELECT and UPDATE USING also require `deleted_at IS NULL`.
-UPDATE WITH CHECK verifies ownership only, allowing soft-delete writes. INSERT
-checks ownership; DELETE retains the existing owner-only hard-delete permission.
-No permissive FOR ALL policy may coexist with these policies, because it would
-override the live-row filtering.
-
-**Soft-delete RPC**: `public.soft_delete_transaction(txn_id UUID) RETURNS VOID`
-sets `deleted_at` and `updated_at` to `now()` only for a live transaction owned
-by `auth.uid()`. It uses SECURITY DEFINER with a fixed `search_path = public`
-and a schema-qualified table, with explicit ownership/live-row checks because it
-bypasses RLS. Execution is granted to `authenticated`, revoked from PUBLIC and
-`anon`. Missing, already-deleted, and other users' IDs have no effect. The
-existing service passes `txn_id` and deletes transfer companions separately.
-
-Fresh installs include this RPC in
-[`supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql).
-Existing Supabase databases must run
-[`supabase_transactions_soft_delete_rls.sql`](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
-as the database owner. It atomically installs the RPC, removes the legacy broad
-policy, and recreates all four policies; it is safe to rerun. Its final diagnostic
-query should return exactly four policies, with no ALL command. Investigate any
-additional custom policies, as permissive policies are combined with OR.
-
----
+Authenticated transaction SELECT/UPDATE `USING` requires ownership and
+`deleted_at IS NULL`; UPDATE `WITH CHECK` checks ownership without the live-row
+condition. INSERT checks ownership; DELETE preserves owner-only hard deletes.
+The shared `soft_delete_transaction(txn_id UUID)` returns void and updates only
+owned live rows under SECURITY DEFINER with fixed search path. Execution is
+revoked from PUBLIC/anon and granted to authenticated. Repeat/missing-ID calls
+do not change rows. Never restore the legacy permissive FOR ALL policy.
 
 ### Table: `recurring_templates`
 
-**Purpose**: Templates for recurring transactions (subscriptions, rent, transfers, grouped paycheck/mortgage breakdowns, etc.)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_id` | UUID | Required; FK to `auth.users`, cascade delete |
+| `account_id`, `category_id` | UUID | Required; respective FKs, restrict delete |
+| `description` | TEXT | Required |
+| `payee` | TEXT | Nullable |
+| `amount` | BIGINT | Required cents |
+| `is_income`, `is_transfer` | BOOLEAN | Default false |
+| `to_account_id` | UUID | Nullable; FK to accounts, set NULL on delete |
+| `to_amount` | BIGINT | Nullable; when set, destination must exist and amount > 0 |
+| `frequency` | TEXT | Required; `weekly`, `biweekly`, `semi_monthly`, `monthly`, `quarterly`, `yearly`, `custom` |
+| `day_of_month`, `day_of_month_2` | INT | Nullable; 1-31 when set |
+| `day_of_week` | INT | Nullable; 0-6 when set |
+| `custom_interval` | INT | Nullable; >= 1 when set |
+| `custom_unit` | TEXT | Nullable; `days`, `weeks`, `months` |
+| `start_date` | DATE | Required |
+| `end_date`, `last_applied`, `projected_through` | DATE | Nullable |
+| `group_id` | UUID | Nullable; FK to parent recurring template, cascade delete |
+| `is_group_parent` | BOOLEAN | Default false |
+| `group_order` | INT | Default 0 |
+| `auto_confirm` | BOOLEAN | Required; default true |
+| `is_paused` | BOOLEAN | Default false |
+| `is_active` | BOOLEAN | Default true |
+| `is_split` | BOOLEAN | Required; default false |
+| `split_method` | TEXT | Nullable; `equal`, `full`, `custom` |
+| `split_payer` | TEXT | Nullable; `me`, `partner` |
+| `split_partner_share_pct` | INT | Nullable; 0-100 |
+| `created_at` | TIMESTAMPTZ | Default `now()` |
+| `updated_at` | TIMESTAMPTZ | Default `now()`; added/trigger-maintained by sync migration |
 
-**Group Model**: A group parent row stores administrative defaults (name, payee, account, schedule) that are inherited by child line items. When applied, only child line items generate actual transactions — no auto net deposit is created. The parent's `amount` stores the calculated net (sum of signed child amounts) for display/sorting purposes.
+Transfers require `to_account_id`. Active user/group indexes and a destination
+account index support lookup; RLS enforces ownership.
 
-| Column                    | Type        | Constraints                                 | Description                                                                                                                                                |
-| ------------------------- | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                      | UUID        | PRIMARY KEY                                 | Template ID                                                                                                                                                |
-| `user_id`                 | UUID        | FOREIGN KEY → users(id)                     | Template owner                                                                                                                                             |
-| `account_id`              | UUID        | FOREIGN KEY → accounts(id), NOT NULL        | Source account (group parent: default for new line items)                                                                                                  |
-| `category_id`             | UUID        | FOREIGN KEY → categories(id)                | Category (group parent: optional reference; children: required)                                                                                            |
-| `description`             | TEXT        | NOT NULL                                    | Transaction description (group parent: group name; children: optional label)                                                                               |
-| `payee`                   | TEXT        | NULL                                        | Payee (group parent: required default; children: optional override, inherits from parent at apply-time)                                                    |
-| `amount`                  | BIGINT      | NOT NULL                                    | Amount in cents — always a positive absolute value (group parent: absolute net from children; children: absolute amount; `is_income` determines direction) |
-| `is_income`               | BOOLEAN     | DEFAULT FALSE                               | True if income (group parent: true if net >= 0)                                                                                                            |
-| `is_transfer`             | BOOLEAN     | DEFAULT FALSE                               | True if this is a transfer template                                                                                                                        |
-| `to_account_id`           | UUID        | FOREIGN KEY → accounts(id), NULL            | Destination account (transfers only)                                                                                                                       |
-| `frequency`               | TEXT        | NOT NULL                                    | 'weekly', 'biweekly', 'semi_monthly', 'monthly', 'quarterly', 'yearly'                                                                                     |
-| `day_of_month`            | INT         | NULL                                        | Day of month (1-31) for monthly/semi-monthly                                                                                                               |
-| `day_of_month_2`          | INT         | NULL                                        | Second day (1-31) for semi-monthly                                                                                                                         |
-| `day_of_week`             | INT         | NULL                                        | Day of week (0-6) for weekly                                                                                                                               |
-| `start_date`              | DATE        | NOT NULL                                    | First occurrence date                                                                                                                                      |
-| `end_date`                | DATE        | NULL                                        | Optional end date                                                                                                                                          |
-| `last_applied`            | DATE        | NULL                                        | Last date template was applied                                                                                                                             |
-| `group_id`                | UUID        | FOREIGN KEY → recurring_templates(id), NULL | Parent group ID (children only)                                                                                                                            |
-| `is_group_parent`         | BOOLEAN     | DEFAULT FALSE                               | True if this is a group parent                                                                                                                             |
-| `group_order`             | INT         | DEFAULT 0                                   | Sort order within group (children)                                                                                                                         |
-| `auto_confirm`            | BOOLEAN     | NOT NULL, DEFAULT TRUE                      | If true, applied transactions start as 'posted'; if false, start as 'pending'                                                                              |
-| `projected_through`       | DATE        | NULL                                        | Last date through which projected transactions have been generated                                                                                         |
-| `is_paused`               | BOOLEAN     | DEFAULT FALSE                               | If true, template is paused and skipped during projection (auto-set when account is closed)                                                                |
-| `is_active`               | BOOLEAN     | DEFAULT TRUE                                | Active status                                                                                                                                              |
-| `created_at`              | TIMESTAMPTZ | DEFAULT NOW()                               | Creation timestamp                                                                                                                                         |
-| `is_split`                | BOOLEAN     | NOT NULL, DEFAULT FALSE                     | When true, auto-creates a `split_expenses` record each time this template's transaction is posted (non-transfer, non-group templates only)                 |
-| `split_method`            | TEXT        | NULL                                        | How the expense is divided: `'equal'` (50/50), `'full'` (non-payer owes 100%), `'custom'` (partner owes `split_partner_share_pct`% of total)               |
-| `split_payer`             | TEXT        | NULL                                        | Who pays: `'me'` (current user) or `'partner'`                                                                                                             |
-| `split_partner_share_pct` | INT         | NULL                                        | Partner's share percentage (0–100); only meaningful when `split_method = 'custom'`                                                                         |
-| `to_amount`               | BIGINT      | NULL                                        | Asymmetric transfer override: when set on a template that has a `to_account_id` (pure transfer or linked transfer), the companion/incoming leg is credited `to_amount` instead of `amount`. The difference (`amount - to_amount`) represents interest, fees, or other costs that do not credit any tracked account. Works for both `is_transfer = TRUE` templates and linked transfer templates (`is_transfer = FALSE` with `to_account_id`). |
-
-**Constraints**:
-
-- CHECK: `frequency IN ('weekly', 'biweekly', 'semi_monthly', 'monthly', 'quarterly', 'yearly')`
-- CHECK: `day_of_month IS NULL OR (day_of_month BETWEEN 1 AND 31)`
-- CHECK: `day_of_month_2 IS NULL OR (day_of_month_2 BETWEEN 1 AND 31)`
-- CHECK: `day_of_week IS NULL OR (day_of_week BETWEEN 0 AND 6)`
-- CHECK: `is_transfer = FALSE OR to_account_id IS NOT NULL`
-- CHECK: `split_method IS NULL OR split_method IN ('equal', 'full', 'custom')`
-- CHECK: `split_payer IS NULL OR split_payer IN ('me', 'partner')`
-- CHECK: `split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100`
-
-**RLS**: Users can only access their own templates
-
-**TypeScript Interface**:
-
-```typescript
-interface RecurringTemplate {
-  id: string;
-  user_id: string;
-  account_id: string;
-  category_id: string;
-  description: string;
-  payee?: string;
-  amount: number;
-  is_income: boolean;
-  is_transfer: boolean;
-  to_account_id?: string;
-  frequency:
-    | "weekly"
-    | "biweekly"
-    | "semi_monthly"
-    | "monthly"
-    | "quarterly"
-    | "yearly";
-  day_of_month?: number;
-  day_of_month_2?: number;
-  day_of_week?: number;
-  start_date: string;
-  end_date?: string;
-  last_applied?: string;
-  group_id?: string;
-  is_group_parent: boolean;
-  group_order: number;
-  auto_confirm: boolean;
-  projected_through?: string;
-  is_paused: boolean;
-  is_active: boolean;
-  created_at: string;
-  // Split expense configuration
-  is_split: boolean;
-  split_method?: "equal" | "full" | "custom";
-  split_payer?: "me" | "partner";
-  split_partner_share_pct?: number;
-  // Asymmetric transfer: incoming leg amount override (null = symmetric)
-  to_amount?: number;
-  // Joined relations
-  children?: RecurringTemplate[];
-  categories?: { id: string; name: string; color: string; type: string };
-  accounts?: { id: string; name: string; type: string };
-  to_account?: { id: string; name: string; type: string };
-}
-```
-
----
+Group parents carry administrative defaults and the computed absolute net of
+children for display; only children generate transactions. The database
+`category_id` is required even for parent rows. Child account/payee/schedule
+inheritance is implemented by the [recurring service](../src/services/recurring.js).
+Split configuration applies to non-transfer, non-group templates.
+`to_amount` supports asymmetric incoming transfer amounts.
 
 ### Table: `partnerships`
 
-**Purpose**: Link two users for shared expense splitting (2-person partnerships)
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `user_a_id` | UUID | Required inviter; FK to auth users, cascade delete |
+| `user_b_id` | UUID | Nullable invitee; FK to auth users, cascade delete |
+| `invited_email` | TEXT | Required |
+| `status` | TEXT | Required; default `pending`; `pending`, `active`, `dissolved` |
+| `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
+| `user_a_seen_at`, `user_b_seen_at` | TIMESTAMPTZ | Nullable notification watermarks |
 
-| Column            | Type        | Constraints                 | Description                                         |
-| ----------------- | ----------- | --------------------------- | --------------------------------------------------- |
-| `id`              | UUID        | PRIMARY KEY                 | Partnership ID                                      |
-| `user_a_id`       | UUID        | FOREIGN KEY → users(id)     | Inviter                                             |
-| `user_b_id`       | UUID        | FOREIGN KEY → users(id)     | Invitee (NULL until accepted)                       |
-| `invited_email`   | TEXT        | NOT NULL                    | Email of invited partner                            |
-| `status`          | TEXT        | NOT NULL, DEFAULT 'pending' | 'pending', 'active', 'dissolved'                    |
-| `created_at`      | TIMESTAMPTZ | DEFAULT NOW()               | Creation timestamp                                  |
-| `updated_at`      | TIMESTAMPTZ | DEFAULT NOW()               | Last update timestamp                               |
-| `user_a_seen_at`  | TIMESTAMPTZ | NULL                        | Last time user_a dismissed their notification panel |
-| `user_b_seen_at`  | TIMESTAMPTZ | NULL                        | Last time user_b dismissed their notification panel |
+Unique active unordered user pair; unique pending inviter/email pair.
+Indexes cover both members and pending invited email.
+SELECT/UPDATE/DELETE permit members or pending invitees matching the JWT email;
+INSERT requires the caller to be the inviter. UPDATE applies the same
+membership/invitation condition in `WITH CHECK`.
 
-**Constraints**:
-
-- CHECK: `status IN ('pending', 'active', 'dissolved')`
-- Unique partial: `(LEAST(user_a_id, user_b_id), GREATEST(user_a_id, user_b_id)) WHERE status = 'active'` — at most one active partnership between any two users
-- Unique partial: `(user_a_id, invited_email) WHERE status = 'pending'` — no duplicate pending invites
-
-**RLS**: INSERT allowed only for the inviter (`user_a_id`). SELECT, UPDATE, and DELETE are allowed for either member once the invite is accepted (`user_a_id` or `user_b_id`). While the invite is still pending (`user_b_id` is `NULL`), the invitee is matched on `invited_email` via JWT claims (`current_setting('request.jwt.claims')::jsonb ->> 'email'`) — a direct `auth.users` query cannot be used here because the `authenticated` role does not have `SELECT` on that table.
-
----
+`get_partner_email(p_partnership_id UUID)` returns the inviter email only to
+`user_b` of that **active** partnership, otherwise NULL. It is a fixed-search-path
+SECURITY DEFINER function reading auth users, with PUBLIC execution revoked and
+authenticated execution granted. It is created by the split-expense base script,
+not a separate partner-email migration.
 
 ### Table: `split_expenses`
 
-**Purpose**: Shared expense ledger entries within a partnership (Splitwise-style)
-
-| Column            | Type        | Constraints                          | Description                               |
-| ----------------- | ----------- | ------------------------------------ | ----------------------------------------- |
-| `id`              | UUID        | PRIMARY KEY                          | Split expense ID                          |
-| `partnership_id`  | UUID        | FOREIGN KEY → partnerships(id)       | Parent partnership                        |
-| `paid_by_user_id` | UUID        | FOREIGN KEY → users(id)              | Who fronted the money                     |
-| `transaction_id`  | UUID        | FOREIGN KEY → transactions(id), NULL | Optional link to payer's real transaction |
-| `description`     | TEXT        | NOT NULL                             | Expense description                       |
-| `total_amount`    | BIGINT      | NOT NULL, CHECK > 0                  | Total amount in cents                     |
-| `payer_share`     | BIGINT      | NOT NULL, CHECK >= 0                 | Payer's portion in cents                  |
-| `partner_share`   | BIGINT      | NOT NULL, CHECK >= 0                 | Non-payer's portion in cents              |
-| `is_settlement`   | BOOLEAN     | DEFAULT FALSE                        | True if this is a settle-up payment       |
-| `expense_date`    | DATE        | NOT NULL, DEFAULT CURRENT_DATE       | Date of expense                           |
-| `created_at`      | TIMESTAMPTZ | DEFAULT NOW()                        | Record creation timestamp                 |
-| `deleted_at`      | TIMESTAMPTZ | NULL                                 | Soft delete timestamp                     |
-
-**Constraints**:
-
-- CHECK: `total_amount > 0`
-- CHECK: `payer_share + partner_share = total_amount`
-- Unique partial: `transaction_id WHERE transaction_id IS NOT NULL AND deleted_at IS NULL` — at most one active split row per linked transaction
-
-**Balance formula** (from current user's perspective, positive = partner owes you):
-
-- Non-settlements: `+partner_share` when I paid, `-partner_share` when partner paid
-- Settlements: `+total_amount` when I paid (my debt decreases), `-total_amount` when partner paid me (their debt to me decreases)
-
-**RLS**: Operations are scoped via partnership membership (both `user_a_id` and `user_b_id`); inserts require active partnerships, while reads/updates/deletes are membership-scoped. Key detail for soft-delete: the UPDATE policy `USING` clause enforces `deleted_at IS NULL` (you can only update non-deleted rows), but the `WITH CHECK` clause intentionally does **not** require `deleted_at IS NULL` — this is what allows a soft-delete UPDATE to set the column without triggering a policy violation.
-
----
-
-### Function: `get_partner_email(p_partnership_id UUID)`
-
-**Purpose**: Allows the invitee (user_b) to look up the inviter's (user_a) email, which is not stored on the `partnerships` row and is not accessible via the normal Supabase client API.
-
-| Attribute   | Value                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------- |
-| Returns     | `TEXT` — the inviter's email, or `NULL` if the caller is not user_b of that partnership |
-| Security    | `SECURITY DEFINER` — runs as the DB owner to access `auth.users`                        |
-| Access      | `authenticated` role only; `PUBLIC` execute revoked                                     |
-| Scope guard | `AND p.user_b_id = auth.uid()` — cannot be used to look up arbitrary users' emails      |
-
-**Called from**: `src/services/partnerships.js` → `getPartnerEmail()` (invitee branch only)
-
----
-
-## Offline cache & sync metadata (IndexedDB / Dexie)
-
-The app keeps a faithful local mirror of the Supabase tables in IndexedDB
-via [Dexie](https://dexie.org/). The mirror lives in the `BudgetAppOffline`
-database (see [`src/services/offlineDb.js`](../src/services/offlineDb.js))
-and is the **primary source for UI reads** as of Phase 1 (cache-first SWR —
-see [`docs/performance/PHASE_1_CACHE_FIRST.md`](./performance/PHASE_1_CACHE_FIRST.md)).
-
-### Mirrored tables
-
-The Dexie database carries the following object stores, each one mirroring
-the Supabase table of the same name:
-
-| Object store          | Indexed fields (queryable via `.where()`)                                                                                                                        |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `transactions`        | `id, user_id, account_id, category_id, transaction_date, is_income, status, transfer_group_id, recurring_template_id, deleted_at, _offline, _action, _offlineAt` |
-| `categories`          | `id, user_id, type, is_active, sort_order, _offline, _action, _offlineAt`                                                                                        |
-| `budget_plans`        | `id, user_id, month, year, [user_id+month+year], _offline, _action, _offlineAt`                                                                                  |
-| `budget_items`        | `id, budget_plan_id, category_id, [budget_plan_id+category_id], _offline, _action, _offlineAt`                                                                   |
-| `accounts`            | `id, user_id, type, is_active, closed_at, _offline, _action, _offlineAt`                                                                                         |
-| `user_preferences`    | `id, user_id, preference_key, _offline, _action, _offlineAt`                                                                                                     |
-| `recurring_templates` | `id, user_id, account_id, category_id, is_active, _offline, _action, _offlineAt`                                                                                 |
-
-Every store stores **all** properties of each row (Dexie only requires
-declaring the fields you want to `.where()` on).
-
-### Offline mutation flags
-
-Three additional fields are added to any row that was created or updated
-locally while offline (or while a sync is pending):
-
-| Field        | Type                               | Purpose                                                                      |
-| ------------ | ---------------------------------- | ---------------------------------------------------------------------------- |
-| `_offline`   | `1` (truthy) when pending sync     | Filtered by `where('_offline').equals(1)` to find rows the syncer must push. |
-| `_action`    | `'create' \| 'update' \| 'delete'` | Tells the syncer which Supabase verb to replay.                              |
-| `_offlineAt` | ISO timestamp                      | When the local mutation happened — used for conflict timestamps.             |
-
-The sync engine (`src/services/sync.js`) reads these via the syncQueue
-helper, replays each row to Supabase, and clears the flags via
-`markSynced(table, id)` on success.
-
-### `sync_meta` — incremental-pull watermark
-
-A small bookkeeping store records the last successful pull per table:
-
-| Field         | Type                 | Description                                                          |
-| ------------- | -------------------- | -------------------------------------------------------------------- |
-| `table_name`  | TEXT (primary key)   | One of the seven mirrored tables above.                              |
-| `last_synced` | ISO timestamp string | Watermark used as `.gt('updated_at', last_synced)` on the next pull. |
-
-**Watermark protocol** (Phase 1):
-
-- A successful **full pull** writes `now()` as the watermark (used on cold
-  cache or explicit `pullAll({ full: true })`).
-- A successful **incremental pull** writes `max(updated_at across rows)` as
-  the watermark.
-- An incremental pull that returns **zero rows** does not advance the
-  watermark — this prevents skipping a row whose `updated_at` falls between
-  the watermark and "now-ish on the server".
-- Watermarks are per-table; tables advance independently.
-
-Conflict resolution: **last-write-wins** (server `updated_at` vs local
-`_offlineAt`). Acceptable for a single-user budget app. Cross-tab change
-fanout is deferred (would be implemented as a `BroadcastChannel('budget-sync')`
-listener that mirrors the bridge below).
-
-### Client-side query cache (React Query — Phase 2)
-
-A second cache layer sits on top of Dexie: the
-[`@tanstack/react-query`](https://tanstack.com/query) `QueryClient`
-configured in `services/queryClient.js` with a 5-minute `staleTime` and
-30-minute `gcTime`. UI components consume data through hooks in
-`src/hooks/queries.js` whose `queryFn` is the matching `*Offline` service
-(so cache-first SWR still applies underneath).
-
-Query keys follow the convention **`[tableName, ...specifics]`**. Examples:
-`["transactions", "list", { month, year, status }]`,
-`["accounts", "balances", projectedToDate]`,
-`["budget_plans", month, year]`.
-
-Mutations stay imperative (no `useMutation`). Every `*Offline` mutation
-calls `notifyTable(tableName)` (either inside `putOffline` for the
-offline path, or directly after the online success branch). The
-**query bridge** in `services/queryBridge.js` subscribes to those
-`notifyTable` events and calls
-`queryClient.invalidateQueries({ queryKey: [tableName], refetchType: "active" })`
-so every mounted hook for that table refetches automatically. The bridge
-also installs cross-table dependencies — e.g. a transactions change
-also invalidates the derived account-balances and net-worth-history
-queries.
-
-If you add a mutation that bypasses `offlineAware` (e.g. talking to
-Supabase directly through `services/recurring.js`), you must call
-`notifyTable(t)` or `queryClient.invalidateQueries({ queryKey: [t] })`
-yourself, otherwise React consumers will not refresh until the next
-mount or pull tick. See
-[`docs/performance/PHASE_2_REACT_QUERY.md`](./performance/PHASE_2_REACT_QUERY.md)
-for the full rationale and consumer list.
-
-### Required Postgres columns
-
-Every Supabase table that participates in the cache **must** have a
-trigger-maintained `updated_at TIMESTAMPTZ` column for the incremental
-watermark to work. Tables that support soft-delete also need either
-`deleted_at TIMESTAMPTZ` (transactions) or an `is_active BOOLEAN` flag
-(categories, accounts, recurring_templates) so the incremental pull can
-detect server-side removals and prune the local cache accordingly.
-
----
-
-## Relationships
-
-```
-users (1) ──→ (N) categories
-users (1) ──→ (N) accounts
-users (1) ──→ (N) budget_plans
-users (1) ──→ (N) transactions
-users (1) ──→ (N) recurring_templates
-users (1) ──→ (N) partnerships (user_a_id — inviter)
-users (1) ──→ (N) partnerships (user_b_id — invitee)
-
-accounts (1) ──→ (N) transactions
-accounts (1) ──→ (N) recurring_templates (account_id)
-accounts (1) ──→ (N) recurring_templates (to_account_id, transfers)
-budget_plans (1) ──→ (N) budget_items
-categories (1) ──→ (N) budget_items
-categories (1) ──→ (N) transactions
-categories (1) ──→ (N) recurring_templates
-recurring_templates (1) ──→ (N) recurring_templates (group parent → children via group_id)
-partnerships (1) ──→ (N) split_expenses
-transactions (1) ──→ (0..1) split_expenses (optional link via transaction_id)
-```
-
----
-
-## SQL Migration Scripts
-
-### Step 1: Enable UUID extension
-
-```sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-```
-
-### Step 2: Create categories table
-
-```sql
-CREATE TABLE categories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('income', 'needs', 'wants', 'savings', 'transfer')),
-  color VARCHAR(7) DEFAULT '#3B82F6',
-  icon TEXT,
-  is_active BOOLEAN DEFAULT TRUE,
-  sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, name, is_active)
-);
-
--- Enable RLS
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy: Users can only access their own categories
-CREATE POLICY "Users can manage their own categories"
-  ON categories
-  FOR ALL
-  USING (auth.uid() = user_id);
-
--- Indexes
-CREATE INDEX idx_categories_user ON categories(user_id) WHERE is_active = TRUE;
-CREATE INDEX idx_categories_sort ON categories(user_id, type, sort_order) WHERE is_active = TRUE;
-```
-
-### Step 3: Create user_preferences table
-
-```sql
-CREATE TABLE user_preferences (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  preference_key TEXT NOT NULL,
-  preference_value JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, preference_key)
-);
-
--- Enable RLS
-ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy
-CREATE POLICY "Users can manage their own preferences"
-  ON user_preferences
-  FOR ALL
-  USING (auth.uid() = user_id);
-
--- Index
-CREATE INDEX idx_user_preferences_user ON user_preferences(user_id);
-```
-
-### Step 4: Create budget_plans table
-
-```sql
-CREATE TABLE budget_plans (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
-  year INT NOT NULL CHECK (year >= 2020 AND year <= 2100),
-  name TEXT,
-  total_income BIGINT DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, month, year)
-);
-
--- Enable RLS
-ALTER TABLE budget_plans ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy
-CREATE POLICY "Users can manage their own budget plans"
-  ON budget_plans
-  FOR ALL
-  USING (auth.uid() = user_id);
-
--- Index
-CREATE INDEX idx_budget_plans_user_date ON budget_plans(user_id, year DESC, month DESC);
-```
-
-### Step 5: Create budget_items table
-
-```sql
-CREATE TABLE budget_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  budget_plan_id UUID NOT NULL REFERENCES budget_plans(id) ON DELETE CASCADE,
-  category_id UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-  planned_amount BIGINT NOT NULL CHECK (planned_amount >= 0),
-  notes TEXT,
-  UNIQUE(budget_plan_id, category_id)
-);
-
--- Enable RLS
-ALTER TABLE budget_items ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy (via budget_plan ownership)
-CREATE POLICY "Users can manage budget items for their plans"
-  ON budget_items
-  FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM budget_plans bp
-      WHERE bp.id = budget_items.budget_plan_id
-      AND bp.user_id = auth.uid()
-    )
-  );
-
--- Index
-CREATE INDEX idx_budget_items_plan ON budget_items(budget_plan_id);
-CREATE INDEX idx_budget_items_category ON budget_items(category_id);
-```
-
-### Step 6: Create accounts table
-
-```sql
-CREATE TABLE accounts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('checking', 'savings', 'credit_card', 'retirement', 'brokerage', 'loan', 'mortgage')),
-  starting_balance BIGINT DEFAULT 0,
-  is_active BOOLEAN DEFAULT TRUE,
-  closed_at DATE DEFAULT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy
-CREATE POLICY "Users can manage their own accounts"
-  ON accounts
-  FOR ALL
-  USING (auth.uid() = user_id);
-
--- Indexes
-CREATE INDEX idx_accounts_user ON accounts(user_id) WHERE is_active = TRUE;
-CREATE UNIQUE INDEX idx_accounts_user_name ON accounts(user_id, name) WHERE is_active = TRUE;
-```
-
-### Step 7: Create transactions table
-
-```sql
-CREATE TABLE transactions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
-  category_id UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-  amount BIGINT NOT NULL CHECK (amount != 0),
-  description TEXT NOT NULL,
-  payee TEXT NULL,
-  transaction_date DATE NOT NULL,
-  is_income BOOLEAN DEFAULT FALSE,
-  transfer_group_id UUID NULL,
-  status TEXT NOT NULL DEFAULT 'posted' CHECK (status IN ('projected', 'pending', 'posted')),
-  recurring_template_id UUID,  -- FK added after recurring_templates table exists
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- Enable RLS
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies (split so soft-delete UPDATE can set deleted_at)
-CREATE POLICY "Users can view their own active transactions"
-  ON transactions FOR SELECT
-  USING (auth.uid() = user_id AND deleted_at IS NULL);
-
-CREATE POLICY "Users can insert their own transactions"
-  ON transactions FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own transactions"
-  ON transactions FOR UPDATE
-  USING (auth.uid() = user_id AND deleted_at IS NULL)
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own transactions"
-  ON transactions FOR DELETE
-  USING (auth.uid() = user_id);
-
--- Indexes
-CREATE INDEX idx_transactions_user_date ON transactions(user_id, transaction_date DESC) WHERE deleted_at IS NULL;
-CREATE INDEX idx_transactions_category ON transactions(category_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_transactions_account ON transactions(account_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_transactions_transfer_group ON transactions(transfer_group_id) WHERE transfer_group_id IS NOT NULL AND deleted_at IS NULL;
-CREATE INDEX idx_transactions_user_month ON transactions(user_id, EXTRACT(YEAR FROM transaction_date), EXTRACT(MONTH FROM transaction_date)) WHERE deleted_at IS NULL;
-CREATE INDEX idx_transactions_status ON transactions(user_id, status, transaction_date);
-
--- Unique partial index: prevent duplicate recurring transactions per template per occurrence per account.
--- recurring_occurrence_date is the originally-scheduled date; it never changes when the user edits
--- transaction_date. account_id is included because transfers/linked-transfers create two legs
--- (source + destination) that share the same recurring_template_id and occurrence date but use
--- different accounts.
-CREATE UNIQUE INDEX idx_transactions_no_dup_recurring
-  ON transactions(recurring_template_id, recurring_occurrence_date, account_id)
-  WHERE recurring_template_id IS NOT NULL
-    AND recurring_occurrence_date IS NOT NULL
-    AND deleted_at IS NULL;
-```
-
-### Step 8: Create recurring_templates table
-
-```sql
-CREATE TABLE recurring_templates (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
-  category_id UUID NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-  description TEXT NOT NULL,
-  payee TEXT,
-  amount BIGINT NOT NULL,
-  is_income BOOLEAN DEFAULT FALSE,
-  is_transfer BOOLEAN DEFAULT FALSE,
-  to_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL,
-  frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'semi_monthly', 'monthly', 'quarterly', 'yearly')),
-  day_of_month INT CHECK (day_of_month IS NULL OR (day_of_month BETWEEN 1 AND 31)),
-  day_of_month_2 INT CHECK (day_of_month_2 IS NULL OR (day_of_month_2 BETWEEN 1 AND 31)),
-  day_of_week INT CHECK (day_of_week IS NULL OR (day_of_week BETWEEN 0 AND 6)),
-  start_date DATE NOT NULL,
-  end_date DATE,
-  last_applied DATE,
-  group_id UUID REFERENCES recurring_templates(id) ON DELETE CASCADE,
-  is_group_parent BOOLEAN DEFAULT FALSE,
-  group_order INT DEFAULT 0,
-  auto_confirm BOOLEAN NOT NULL DEFAULT TRUE,
-  projected_through DATE,
-  is_paused BOOLEAN DEFAULT FALSE,
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  -- Split expense configuration (non-transfer, non-group templates only)
-  is_split BOOLEAN NOT NULL DEFAULT FALSE,
-  split_method TEXT CHECK (split_method IS NULL OR split_method IN ('equal', 'full', 'custom')),
-  split_payer TEXT CHECK (split_payer IS NULL OR split_payer IN ('me', 'partner')),
-  split_partner_share_pct INT CHECK (split_partner_share_pct IS NULL OR split_partner_share_pct BETWEEN 0 AND 100),
-  CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
-);
-
--- Enable RLS
-ALTER TABLE recurring_templates ENABLE ROW LEVEL SECURITY;
-
--- RLS Policy
-CREATE POLICY "Users can manage their own recurring templates"
-  ON recurring_templates
-  FOR ALL
-  USING (auth.uid() = user_id);
-
--- Indexes
-CREATE INDEX idx_recurring_templates_user ON recurring_templates(user_id) WHERE is_active = TRUE;
-CREATE INDEX idx_recurring_templates_group ON recurring_templates(group_id) WHERE group_id IS NOT NULL AND is_active = TRUE;
-CREATE INDEX idx_recurring_templates_to_account ON recurring_templates(to_account_id) WHERE to_account_id IS NOT NULL;
-
--- Step 9: Add FK from transactions to recurring_templates (now that table exists)
-ALTER TABLE transactions
-  ADD CONSTRAINT fk_transactions_recurring_template
-  FOREIGN KEY (recurring_template_id) REFERENCES recurring_templates(id) ON DELETE SET NULL;
-
-CREATE INDEX idx_transactions_recurring_template ON transactions(recurring_template_id, transaction_date) WHERE recurring_template_id IS NOT NULL;
-```
-
----
-
-## TypeScript Types (for Frontend)
-
-```typescript
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-  currency: string;
-  timezone: string;
-}
-
-export interface Category {
-  id: string;
-  user_id: string;
-  name: string;
-  type: "income" | "needs" | "wants" | "savings" | "transfer";
-  color: string;
-  icon?: string;
-  is_active: boolean;
-  sort_order: number;
-  created_at: string;
-}
-
-export interface BudgetPlan {
-  id: string;
-  user_id: string;
-  month: number;
-  year: number;
-  name?: string;
-  total_income: number; // in cents
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BudgetItem {
-  id: string;
-  budget_plan_id: string;
-  category_id: string;
-  planned_amount: number; // in cents
-  notes?: string;
-}
-
-export interface Account {
-  id: string;
-  user_id: string;
-  name: string;
-  type:
-    | "checking"
-    | "savings"
-    | "credit_card"
-    | "retirement"
-    | "brokerage"
-    | "loan"
-    | "mortgage";
-  starting_balance: number; // in cents
-  is_active: boolean;
-  closed_at?: string; // ISO date string, NULL = open
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Transaction {
-  id: string;
-  user_id: string;
-  account_id: string;
-  category_id: string;
-  amount: number; // in cents
-  description: string;
-  payee?: string;
-  transaction_date: string; // ISO date string
-  is_income: boolean;
-  transfer_group_id?: string;
-  status: "projected" | "pending" | "posted";
-  recurring_template_id?: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at?: string;
-}
-
-export interface RecurringTemplate {
-  id: string;
-  user_id: string;
-  account_id: string;
-  category_id: string;
-  description: string;
-  payee?: string;
-  amount: number; // in cents
-  is_income: boolean;
-  is_transfer: boolean;
-  to_account_id?: string;
-  frequency:
-    | "weekly"
-    | "biweekly"
-    | "semi_monthly"
-    | "monthly"
-    | "quarterly"
-    | "yearly";
-  day_of_month?: number;
-  day_of_month_2?: number;
-  day_of_week?: number;
-  start_date: string;
-  end_date?: string;
-  last_applied?: string;
-  group_id?: string;
-  is_group_parent: boolean;
-  auto_confirm: boolean;
-  projected_through?: string;
-  group_order: number;
-  is_paused: boolean;
-  is_active: boolean;
-  created_at: string;
-  // Joined relations (when fetched with select)
-  children?: RecurringTemplate[];
-  categories?: { id: string; name: string; color: string; type: string };
-  accounts?: { id: string; name: string; type: string };
-  to_accounts?: { id: string; name: string; type: string };
-}
-```
-
----
-
-## Key Design Decisions
-
-### 1. **Cents-based storage**
-
-All monetary values stored as integers (cents) to avoid floating-point rounding errors.
-
-**Example**: $123.45 → stored as `12345`
-
-**Conversion functions**:
-
-```javascript
-const toCents = (dollars) => Math.round(dollars * 100);
-const toDollars = (cents) => cents / 100;
-```
-
-### 2. **Soft deletes for transactions**
-
-Transactions use `deleted_at` instead of hard deletes to maintain audit trail.
-
-### 3. **Row-level security (RLS)**
-
-All tables enforce RLS at the database level—no data leaks between users.
-
-### 4. **Unique constraints**
-
-- Categories: One active category per user with same name
-- Budget plans: One plan per user per month/year
-- Budget items: One budget item per plan per category
-
-### 5. **Monthly budget scoping**
-
-Budget plans are monthly—keeps UI simple and matches most budgeting workflows.
-
-### 6. **Supabase pagination (1000-row limit)**
-
-Supabase returns a maximum of 1000 rows per query by default. Any query on the `transactions` table that could return more than 1000 rows **must** use pagination via `.range(from, to)` in a loop.
-
-**Standard pagination pattern used across the codebase:**
-
-```javascript
-const PAGE_SIZE = 1000;
-let allData = [];
-let from = 0;
-let hasMore = true;
-
-while (hasMore) {
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("...")
-    // ...filters...
-    .order("transaction_date", { ascending: false })
-    .order("id", { ascending: true }) // unique tiebreaker — required
-    .range(from, from + PAGE_SIZE - 1);
-
-  if (error) throw error;
-  allData = allData.concat(data);
-  if (data.length < PAGE_SIZE) {
-    hasMore = false;
-  } else {
-    from += PAGE_SIZE;
-  }
-}
-```
-
-**Paginated functions** (all in `src/services/`):
-
-- `transactions.js` → `getTransactions`, `getTransactionsYTD`, `getTransactionsForYear`
-- `sync.js` → `fetchAll` (full and incremental Dexie pulls)
-- `accounts.js`, `export.js`, `import.js` → transaction fetches/duplicate checks
-
-**Always end the ORDER BY with a unique column (`id`).** Ordering only by a non-unique column such as `transaction_date` or `updated_at` lets Postgres return tied rows in a different order on each page, so `.range()` paging silently skips some rows and duplicates others once a result exceeds one page.
-
-**When adding new queries:** If fetching from `transactions` (or any table that may exceed 1000 rows), always use the pagination loop above. Queries scoped to small result sets (e.g., `categories`, `budget_plans` with max 12 rows/year) do not need pagination.
-
-### 7. **Non-budgeting transfer categories**
-
-Categories with `type = 'transfer'` represent money moving between accounts (e.g., account transfers, credit card payments, investment contributions, reimbursements) or single-account balance adjustments (e.g., market gain/loss). All transfer-type transactions:
-
-- **Are excluded** from income/expense totals, budget plan-vs-actual, and analytics aggregation
-- **Are visible** in the transaction list with a neutral "Transfer" badge
-- **Cannot be assigned** a planned budget amount (filtered out of budget item inputs)
-- **Transfer nature is determined by `category.type`**, not the `is_income` flag
-
-There are three sub-types, distinguished by `transfer_group_id` and `is_income`:
-
-| Sub-type                                | `transfer_group_id`      | Legs | `is_income`                                   |
-| --------------------------------------- | ------------------------ | ---- | --------------------------------------------- |
-| **Standard transfer** (from→to)         | Shared UUID on both rows | 2    | `false` on source, `true` on destination      |
-| **Linked transfer** (budget-impacting)  | Shared UUID on both rows | 2    | User-chosen on main leg; flipped on companion |
-| **Balance adjustment** (single-account) | `NULL`                   | 1    | `true` = gain, `false` = loss                 |
-
-Balance adjustments are used for events like market gains/losses on investment accounts where no money moves between accounts — only the account's balance changes.
-
-### 8. **Recurring transaction deduplication**
-
-Duplicate projected/pending transactions for the same recurring template + scheduled occurrence are prevented by a three-layer strategy:
-
-1. **Application-level concurrency lock** (`recurring.js`): A module-scoped promise (`_generatingPromise`) ensures that concurrent calls to `generateProjectedTransactions()` — caused by React StrictMode double-firing `useEffect`, or multiple browser tabs — coalesce into a single database pass.
-2. **Pre-insert dedup query** (`applyTemplateWithStatus()`): Before each insert, queries the DB for an existing active transaction with the same `(recurring_template_id, recurring_occurrence_date)`. Skips the insert if found.
-3. **Database-level unique partial index**: `idx_transactions_no_dup_recurring` on `(recurring_template_id, recurring_occurrence_date, account_id) WHERE recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL AND deleted_at IS NULL`. This is the hard guarantee — if both application guards fail due to a timing race, the DB rejects the duplicate and the app catches error code `23505` gracefully. The index includes `account_id` because transfer and linked-transfer templates (e.g., 401k contributions) legitimately create two transactions per occurrence date — one on the source account and one on the destination.
-
-The partial filter preserves soft-delete semantics: once a duplicate is soft-deleted (`deleted_at` set), a new transaction can be generated for the same template + occurrence + account.
-
-The dedup check in `generateProjectedTransactions()` also includes `posted` status (not just `projected`/`pending`) so that auto-confirmed transactions from earlier runs are not regenerated.
-
-**Why `recurring_occurrence_date` instead of `transaction_date`**: When a user edits a projected transaction and changes its date to reflect when it actually occurred (e.g., moves the 25th → 22nd), `transaction_date` changes but `recurring_occurrence_date` stays fixed at the originally-scheduled occurrence. Without this distinction, the next generation run would not find the 25th in its dedup set and would create a new projection — causing an infinite duplicate loop.
-
----
-
-## Common Queries (for AI Reference)
-
-### Get all transactions for a given month
-
-```sql
-SELECT t.*, c.name as category_name, c.color as category_color
-FROM transactions t
-JOIN categories c ON t.category_id = c.id
-WHERE t.user_id = $1
-  AND EXTRACT(YEAR FROM t.transaction_date) = $2
-  AND EXTRACT(MONTH FROM t.transaction_date) = $3
-  AND t.deleted_at IS NULL
-ORDER BY t.transaction_date DESC;
-```
-
-### Get Plan vs Actual for a month
-
-```sql
-SELECT
-  c.id as category_id,
-  c.name as category_name,
-  c.color,
-  COALESCE(bi.planned_amount, 0) as planned,
-  COALESCE(SUM(CASE WHEN t.is_income = false THEN ABS(t.amount) ELSE 0 END), 0) as actual
-FROM categories c
-LEFT JOIN budget_items bi ON bi.category_id = c.id
-  AND bi.budget_plan_id = (
-    SELECT id FROM budget_plans
-    WHERE user_id = $1 AND month = $2 AND year = $3
-  )
-LEFT JOIN transactions t ON t.category_id = c.id
-  AND EXTRACT(YEAR FROM t.transaction_date) = $3
-  AND EXTRACT(MONTH FROM t.transaction_date) = $2
-  AND t.deleted_at IS NULL
-  AND t.user_id = $1
-WHERE c.user_id = $1 AND c.is_active = true
-GROUP BY c.id, c.name, c.color, bi.planned_amount
-ORDER BY c.name;
-```
-
-### Get monthly spending trend (last 6 months)
-
-```sql
-SELECT
-  EXTRACT(YEAR FROM transaction_date) as year,
-  EXTRACT(MONTH FROM transaction_date) as month,
-  SUM(CASE WHEN is_income = false THEN ABS(amount) ELSE 0 END) as total_spent,
-  SUM(CASE WHEN is_income = true THEN amount ELSE 0 END) as total_income
-FROM transactions
-WHERE user_id = $1
-  AND deleted_at IS NULL
-  AND transaction_date >= CURRENT_DATE - INTERVAL '6 months'
-GROUP BY year, month
-ORDER BY year DESC, month DESC;
-```
-
----
-
-## Context Management Notes
-
-**When asking AI to generate code referencing this data model:**
-
-✅ **DO:**
-
-- Reference this document explicitly: "Using the data model in DATA_MODEL.md, generate..."
-- Specify the exact tables/columns needed
-- Include TypeScript types when generating React components
-- Mention if you're working with cents vs dollars
-
-❌ **DON'T:**
-
-- Assume AI "knows" the schema without showing it
-- Mix different naming conventions (stick to snake_case for DB, camelCase for TS)
-- Generate queries without specifying which indexes to use
-- Skip RLS considerations
-
-**Example good prompt:**
-
-> "Using the `transactions` table from DATA_MODEL.md, write a Supabase query to fetch all transactions for the current month. Return TypeScript `Transaction[]` type."
-
-**Example bad prompt:**
-
-> "Write a query to get transactions"
-> _(AI will hallucinate field names)_
-
----
-
-## Current Schema Summary
-
-All tables are fully implemented and live.
-
-| Script                                      | Purpose                                                                                              |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `sql_scripts/supabase_schema_create.sql`    | Creates all tables, indexes, and RLS policies from scratch on a new project                          |
-| `sql_scripts/supabase_rls_complete.sql`     | Idempotently re-applies RLS policies to an existing database (safe to re-run)                        |
-| `sql_scripts/supabase_category_archiving.sql` | Adds archive flag, guarded archive/restore RPC, and archive/reference validation triggers |
-| `sql_scripts/supabase_transactions_soft_delete_rls.sql` | Migration — installs soft-delete RPC and replaces broad transaction policy with authenticated per-operation policies |
-| `sql_scripts/supabase_split_expenses.sql`   | Creates partnerships, split_expenses tables, **and** `get_partner_email` RPC (run after main schema) |
-| `sql_scripts/supabase_split_dedup.sql`      | Migration — soft-deletes duplicate split rows by `transaction_id` and adds unique active-row index      |
-| `sql_scripts/supabase_partner_email_fn.sql` | Standalone migration — adds `get_partner_email` RPC to an **existing** database                      |
-| `sql_scripts/supabase_split_fix_rls.sql`    | Migration — fixes `split_expenses` UPDATE/DELETE policies on an existing database (drops and recreates) |
-| `sql_scripts/supabase_partnership_seen.sql` | Migration — adds `user_a_seen_at` / `user_b_seen_at` columns to `partnerships` on an existing DB     |
-
-| Table                 | Purpose                                                         |
-| --------------------- | --------------------------------------------------------------- |
-| `categories`          | Budget categories with type groups and drag-and-drop sort       |
-| `user_preferences`    | Per-user UI preferences (JSONB key/value)                       |
-| `budget_plans`        | Monthly budget plans (one per user per month/year)              |
-| `budget_items`        | Per-category allocations within a plan                          |
-| `accounts`            | Financial accounts for net worth tracking                       |
-| `transactions`        | Actual income/expense transactions with soft deletes            |
-| `recurring_templates` | Templates for recurring transactions with group/child hierarchy |
-| `partnerships`        | 2-person partnership links for shared expense splitting         |
-| `split_expenses`      | Shared expense ledger entries within a partnership              |
-
----
-
-**Document version**: 2.3
-
-**Last updated**: 2026-10-29
-
-**Owner**: @SamGunvalson
+| Column | Type | Constraint/default |
+| --- | --- | --- |
+| `id` | UUID | Primary key |
+| `partnership_id` | UUID | Required; FK to partnerships, cascade delete |
+| `paid_by_user_id` | UUID | Required; FK to auth users, cascade delete |
+| `transaction_id` | UUID | Nullable; FK to transactions, set NULL on delete |
+| `description` | TEXT | Required |
+| `total_amount` | BIGINT | Required; > 0 cents |
+| `payer_share`, `partner_share` | BIGINT | Required; >= 0 cents |
+| `is_settlement` | BOOLEAN | Default false |
+| `expense_date` | DATE | Required; default current date |
+| `created_at` | TIMESTAMPTZ | Default `now()` |
+| `deleted_at` | TIMESTAMPTZ | Nullable soft-delete timestamp |
+
+Shares must sum to total amount. At most one live row per non-null transaction ID.
+Live-row indexes cover partnership/date, payer, and transaction.
+RLS scopes operations through partnership membership; inserts require an active
+partnership. SELECT/UPDATE `USING` excludes deleted rows; UPDATE `WITH CHECK`
+intentionally does not, allowing soft deletes.
+
+Positive balance means the partner owes the current user. For ordinary expenses,
+add `partner_share` when the user paid and subtract it when the partner paid.
+For settlements, add `total_amount` when the user paid and subtract when the
+partner paid. See the [split service](../src/services/splitExpenses.js).
+
+## Aggregation and mutation contracts
+
+All aggregation and batched mutation functions below are SECURITY INVOKER,
+retaining RLS. Call them through existing services/hooks rather than duplicating
+queries in components. SQL return declarations and service joins define exact shapes.
+
+| Function | Parameters | Result |
+| --- | --- | --- |
+| `get_transaction_years` | None | Integer array from earliest transaction year through current year + 1 |
+| `get_account_balances` | `p_projected_to_date DATE DEFAULT NULL` | Account rows plus `transaction_net`, `balance`, `pending_net`, `projected_balance`, `is_asset` |
+| `get_net_worth_history` | `p_projected_to_date DATE DEFAULT NULL` | JSONB history consumed by account services |
+| `get_account_balance_history` | `p_account_ids UUID[]`, `p_start DATE`, `p_end DATE` | Rows `{date, balances JSONB, total BIGINT}` |
+| `get_plan_vs_actual` | `p_month INTEGER`, `p_year INTEGER` | JSONB category plan/actual breakdown |
+| `get_plan_vs_actual_ytd` | `p_year INTEGER`, `p_through_month INTEGER` | JSONB year-to-date breakdown |
+| `get_monthly_spending_trend` | `p_months INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL` | Rows `{key, label, year, month, spent, income, tx_count}` |
+| `get_yearly_spending_trend` | `p_years INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL` | Rows `{year, spent, income, tx_count}` |
+| `bulk_update_transactions` | `p_updates JSONB` array | JSONB updated rows with category/account joins; absent keys unchanged, explicit null handled per field |
+| `bulk_update_category_sort_order` | `p_items JSONB` array of ID/sort-order objects | Void |
+| `upsert_recurring_group` | `p_parent_id UUID`, `p_parent JSONB`, `p_children JSONB` | Parent UUID; service refetches nested/joined templates |
+
+The aggregation script also defines immutable `_is_asset_account(p_type TEXT)`.
+The mutation script defines invoker `assert_account_open()` and its transaction
+BEFORE INSERT trigger, rejecting inserts into closed accounts.
+The sync migration defines `set_updated_at()` and category/budget-item/recurring
+UPDATE triggers. Archive/partner/soft-delete functions are documented with their tables.
+
+`is_income` alone cannot classify reports: genuine income requires an income
+category, spending-category credits reduce spend, and income-category debits
+reduce income. Transfers are excluded from budgeting totals. Reuse
+[classification helpers](../src/utils/helpers.js) and
+[aggregation SQL](../sql_scripts/supabase_phase3_aggregations.sql).
+Services paginate backend reads rather than silently truncate at the default
+1,000-row PostgREST limit.
+
+## Offline cache & sync metadata
+
+[`offlineDb.js`](../src/services/offlineDb.js) defines the `BudgetAppOffline`
+Dexie database. It mirrors seven public tables: transactions, categories,
+accounts, budget plans/items, preferences, and recurring templates.
+Partnerships and split expenses are **not** Dexie-mirrored; their query hooks
+use the shared services.
+
+Dexie stores every row property; only declared indexes are queryable with
+`.where()`. See the executable store declarations for exact indexed fields.
+Compound indexes include `[user_id+month+year]`, `[budget_plan_id+category_id]`,
+and `[user_id+preference_key]`.
+
+| Local field/store | Contract |
+| --- | --- |
+| `_offline` | Numeric 1 when pending sync |
+| `_action` | `create`, `update`, or `delete` |
+| `_offlineAt` | ISO local mutation timestamp used in conflict resolution |
+| `_archiveRestore` | Local category-restore marker; stripped before backend writes |
+| `sync_meta` | Key `table_name`; `last_synced` ISO pull watermark |
+| `rpc_cache` | Key `key`; cached `value` and `updated_at` for derived RPC results |
+
+Sync strips local metadata and joined objects before backend writes, then clears
+pending flags on success. Full pulls record a watermark; incremental pulls
+use `.gt('updated_at', last_synced)` and advance to the newest returned timestamp.
+Empty incremental pulls do not advance it. Conflicts use last-write-wins
+(server `updated_at` versus local `_offlineAt`). Active/deleted flags allow
+local removal reconciliation subject to backend row visibility.
+
+The updated-at migration is required: base creation alone omits timestamps on
+categories, budget items, and recurring templates. It adds those columns and
+their update triggers; other write paths maintain timestamps in services/RPCs.
+
+React Query is the in-memory layer above Dexie, with five-minute stale time and
+30-minute garbage collection in [queryClient](../src/services/queryClient.js).
+Read hooks use `[tableName, ...specifics]` keys. Offline mutations notify table
+changes; [queryBridge](../src/services/queryBridge.js) invalidates the seven
+mirrored namespaces plus explicitly configured derived dependencies.
+Non-mirrored partnership/split queries retain their existing invalidation paths.
+See [contributor instructions](../.github/copilot-instructions.md) for read/write rules.
+
+## SQL migration scripts
+
+Do not squash or delete incremental migrations because fresh installs contain
+some of their effects. Existing databases still need the applicable upgrades.
+The [setup guide](./SETUP_GUIDE.md#complete-a-fresh-supabase-installation) defines
+the full Supabase fresh-install sequence. Local fresh installs use
+[`local/apply_order.txt`](../sql_scripts/local/apply_order.txt), with local-only
+roles/auth first and compatibility fixes/grants last.
+
+| Script | Role |
+| --- | --- |
+| [supabase_schema_create.sql](../sql_scripts/supabase_schema_create.sql) | Non-rerunnable base CREATEs for seven core tables and soft-delete RPC |
+| [supabase_split_expenses.sql](../sql_scripts/supabase_split_expenses.sql) | Non-rerunnable partnership/split CREATEs and partner-email RPC; after core base |
+| [supabase_add_updated_at.sql](../sql_scripts/supabase_add_updated_at.sql) | Sync columns/triggers; required on fresh installs and unapplied existing databases |
+| [supabase_category_archiving.sql](../sql_scripts/supabase_category_archiving.sql) | Archive column/RPC/guards; after core base and updated-at migration |
+| [supabase_recurring_occurrence_date.sql](../sql_scripts/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; also adds fresh-install lookup index |
+| [supabase_phase3_aggregations.sql](../sql_scripts/supabase_phase3_aggregations.sql) | Aggregation RPCs/helper/indexes; after required columns exist |
+| [supabase_phase4_mutations.sql](../sql_scripts/supabase_phase4_mutations.sql) | Batched writes and closed-account guard; follows aggregation installation |
+| [supabase_rls_complete.sql](../sql_scripts/supabase_rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
+| [supabase_transactions_soft_delete_rls.sql](../sql_scripts/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
+| [supabase_accounts_closed.sql](../sql_scripts/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
+| [supabase_asymmetric_transfer.sql](../sql_scripts/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
+| [supabase_custom_interval.sql](../sql_scripts/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
+| [supabase_split_recurring.sql](../sql_scripts/supabase_split_recurring.sql) | Adds recurring split columns/checks; folded into core base |
+| [supabase_partnership_seen.sql](../sql_scripts/supabase_partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
+| [supabase_split_dedup.sql](../sql_scripts/supabase_split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
+| [supabase_split_fix_rls.sql](../sql_scripts/supabase_split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
+
+The [local SQL README](../sql_scripts/local/README.md) documents local roles,
+auth helpers, default grants, initialization, and the legacy local-fix entrypoint
+that delegates to the shared transaction repair. Initialization only runs on a
+fresh volume. Existing self-hosted volumes require explicit release-specific
+`psql` migrations; never apply the whole initializer to an existing database.
+
+## Database change workflow
+
+Update this reference, the applicable base/migration SQL, and affected services
+together. Follow the [database checklist](../.github/copilot-instructions.md#database-change-workflow)
+for local compatibility and RLS rules. The
+[security guide](./SECURITY.md) explains invariants; the
+[archive](./archive/README.md) contains historical plans, not current contracts.
+
+**Document version**: 3.0
+
+**Last updated**: 2026-11-02
