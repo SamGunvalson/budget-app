@@ -24,7 +24,7 @@ Transaction SELECT/UPDATE policies must also require `deleted_at IS NULL` in
 USING, while UPDATE WITH CHECK checks ownership without that condition.
 A permissive transactions FOR ALL policy defeats the live-row filter even when
 the narrower policies exist. For existing Supabase databases, run
-[supabase_transactions_soft_delete_rls.sql](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+[migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
 as the database owner before reapplying the complete RLS script. It atomically
 replaces the legacy policy and installs the authenticated-only soft-delete RPC.
 The RPC uses SECURITY DEFINER with explicit ownership/live-row predicates and a

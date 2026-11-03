@@ -175,7 +175,7 @@ Live-row indexes cover user/date, category, account, transfer group, and
 user/month; there is also a user/status/date index. Recurring deduplication is
 unique `(recurring_template_id, recurring_occurrence_date, account_id)` for
 live rows with non-null template and occurrence. Account ID permits two transfer
-legs for the same occurrence. The occurrence migration adds the generation
+legs for the same occurrence. The core base also includes the generation
 lookup index; aggregation SQL adds account/date and user/category/date indexes.
 
 Authenticated transaction SELECT/UPDATE `USING` requires ownership and
@@ -360,9 +360,12 @@ See [contributor instructions](../.github/copilot-instructions.md) for read/writ
 Do not squash or delete incremental migrations because fresh installs contain
 some of their effects. Existing databases still need the applicable upgrades.
 The [setup guide](./SETUP_GUIDE.md#complete-a-fresh-supabase-installation) defines
-the full Supabase fresh-install sequence. Local fresh installs use
+the full Supabase fresh-install sequence, also listed in the
+[SQL setup guide](../sql_scripts/README.md). Top-level SQL files participate in
+current setup; [`migrations/`](../sql_scripts/migrations/README.md) retains
+historical upgrades and repairs. Local fresh installs use
 [`local/apply_order.txt`](../sql_scripts/local/apply_order.txt), with local-only
-roles/auth first and compatibility fixes/grants last.
+roles/auth first and grants last; historical repairs are excluded.
 
 | Script | Role |
 | --- | --- |
@@ -370,18 +373,18 @@ roles/auth first and compatibility fixes/grants last.
 | [supabase_split_expenses.sql](../sql_scripts/supabase_split_expenses.sql) | Non-rerunnable partnership/split CREATEs and partner-email RPC; after core base |
 | [supabase_add_updated_at.sql](../sql_scripts/supabase_add_updated_at.sql) | Sync columns/triggers; required on fresh installs and unapplied existing databases |
 | [supabase_category_archiving.sql](../sql_scripts/supabase_category_archiving.sql) | Archive column/RPC/guards; after core base and updated-at migration |
-| [supabase_recurring_occurrence_date.sql](../sql_scripts/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; also adds fresh-install lookup index |
 | [supabase_phase3_aggregations.sql](../sql_scripts/supabase_phase3_aggregations.sql) | Aggregation RPCs/helper/indexes; after required columns exist |
 | [supabase_phase4_mutations.sql](../sql_scripts/supabase_phase4_mutations.sql) | Batched writes and closed-account guard; follows aggregation installation |
 | [supabase_rls_complete.sql](../sql_scripts/supabase_rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
-| [supabase_transactions_soft_delete_rls.sql](../sql_scripts/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
-| [supabase_accounts_closed.sql](../sql_scripts/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
-| [supabase_asymmetric_transfer.sql](../sql_scripts/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
-| [supabase_custom_interval.sql](../sql_scripts/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
-| [supabase_split_recurring.sql](../sql_scripts/supabase_split_recurring.sql) | Adds recurring split columns/checks; folded into core base |
-| [supabase_partnership_seen.sql](../sql_scripts/supabase_partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
-| [supabase_split_dedup.sql](../sql_scripts/supabase_split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
-| [supabase_split_fix_rls.sql](../sql_scripts/supabase_split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
+| [migrations/supabase_recurring_occurrence_date.sql](../sql_scripts/migrations/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
+| [migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
+| [migrations/supabase_accounts_closed.sql](../sql_scripts/migrations/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
+| [migrations/supabase_asymmetric_transfer.sql](../sql_scripts/migrations/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
+| [migrations/supabase_custom_interval.sql](../sql_scripts/migrations/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
+| [migrations/supabase_split_recurring.sql](../sql_scripts/migrations/supabase_split_recurring.sql) | Adds recurring split columns/checks; folded into core base |
+| [migrations/supabase_partnership_seen.sql](../sql_scripts/migrations/supabase_partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
+| [migrations/supabase_split_dedup.sql](../sql_scripts/migrations/supabase_split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
+| [migrations/supabase_split_fix_rls.sql](../sql_scripts/migrations/supabase_split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
 
 The [local SQL README](../sql_scripts/local/README.md) documents local roles,
 auth helpers, default grants, initialization, and the legacy local-fix entrypoint
@@ -397,6 +400,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.0
+**Document version**: 3.1
 
-**Last updated**: 2026-11-02
+**Last updated**: 2026-11-03

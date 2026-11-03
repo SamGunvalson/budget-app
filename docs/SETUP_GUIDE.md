@@ -92,7 +92,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    ```bash
    docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --no-deps --wait db
    # Example only: replace with the migration filename specified by the release.
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_feature_migration.sql
+   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_feature_migration.sql
    docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d
    ```
 
@@ -246,20 +246,20 @@ For the current frontend, run these additional scripts in order:
    supplies the remaining sync timestamps and update triggers.
 3. [`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
    installs archive/restore and reference guards.
-4. [`supabase_recurring_occurrence_date.sql`](../sql_scripts/supabase_recurring_occurrence_date.sql)
-   supplies the occurrence lookup index (the column and unique index are already in the base).
-5. [`supabase_phase3_aggregations.sql`](../sql_scripts/supabase_phase3_aggregations.sql)
+4. [`supabase_phase3_aggregations.sql`](../sql_scripts/supabase_phase3_aggregations.sql)
    installs account/report/year-picker RPCs and supporting indexes.
-6. [`supabase_phase4_mutations.sql`](../sql_scripts/supabase_phase4_mutations.sql)
+5. [`supabase_phase4_mutations.sql`](../sql_scripts/supabase_phase4_mutations.sql)
    installs batched writes and the closed-account insert guard.
-7. [`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
+6. [`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
    re-applies the complete policies after all referenced tables exist.
 
 Using the split-expense UI is optional, but the complete RLS script references
 its tables unconditionally. This sequence installs the full supported schema.
 Do not run the local-only auth/role/grant scripts on Supabase. See the
-[migration catalog](./DATA_MODEL.md#sql-migration-scripts) for scripts whose
-effects are already folded into the fresh-install base.
+[SQL setup guide](../sql_scripts/README.md) and
+[historical migrations](../sql_scripts/migrations/README.md) for the separation
+between current setup and existing-database upgrades. The base already includes
+the recurring occurrence column, dedup constraint, and generation lookup index.
 
 #### Category archiving upgrade
 
@@ -312,7 +312,7 @@ existing database. Old databases may need column migrations already folded
 into today's base before applying archive, aggregation, or mutation scripts.
 
 For legacy transaction policies, first apply
-[`supabase_transactions_soft_delete_rls.sql`](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+[`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
 to install the soft-delete RPC and replace the broad transaction policy.
 
 To verify or re-apply row-level security policies, run
@@ -473,6 +473,9 @@ npm run build
   tags and Docker. Never point it at a live database.
 - [Transaction RLS regression checks](../sql_scripts/local/README.md):
   run only against a disposable local database.
+- SQL layout/initializer path checks: `node --test scripts/sql-layout.test.js`;
+  these use a mock `psql` to verify script ordering and fail-fast behavior, not
+  SQL execution. Run the deployment/RLS checks with Docker for database validation.
 - [Android checks](./android-app.md#device-smoke-checks): use the native build
   workflow and test offline/auth transitions on a device before release.
 
@@ -503,8 +506,8 @@ packages or externalizing runtime imports.
 2. Re-run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
 3. In Supabase → Authentication → Policies, check each table has policies enabled
 4. Make sure the full fresh-install sequence or the required incremental upgrades were applied
-5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`sql_scripts/supabase_split_fix_rls.sql`](../sql_scripts/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
-6. If recurring confirmations created duplicate split rows, run [`sql_scripts/supabase_split_dedup.sql`](../sql_scripts/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
+5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`migrations/supabase_split_fix_rls.sql`](../sql_scripts/migrations/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
+6. If recurring confirmations created duplicate split rows, run [`migrations/supabase_split_dedup.sql`](../sql_scripts/migrations/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
 
 ### Database tables not showing up
 

@@ -8,6 +8,7 @@ Use the [README](../README.md) for the feature overview and repository map. Each
 | Deploy with Supabase, Docker, or self-hosted PostgreSQL | [Setup guide](./SETUP_GUIDE.md) |
 | Build, sign, or update the Android app | [Android guide](./android-app.md) |
 | Check database columns, constraints, RLS/RPC contracts, or migrations | [Data model](./DATA_MODEL.md) |
+| Choose fresh-install SQL versus historical fixes | [SQL setup](../sql_scripts/README.md) and [migration guide](../sql_scripts/migrations/README.md) |
 | Follow the read/write architecture and coding invariants | [Contributor instructions](../.github/copilot-instructions.md) |
 | Build components, navigation, charts, or dark-mode styles | [Style guide](./STYLE_GUIDE.md) |
 | Understand current security boundaries | [Security model](./SECURITY.md) |
