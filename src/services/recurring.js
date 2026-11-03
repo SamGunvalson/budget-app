@@ -340,16 +340,16 @@ async function clearFutureProjectedPendingForTemplateIds(templateIds) {
   if (!templateIds.length) return 0;
   const now = new Date().toISOString();
   const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
-  const { data, error } = await supabase
+  // Return a count, not soft-deleted rows hidden by the SELECT policy.
+  const { count, error } = await supabase
     .from("transactions")
-    .update({ deleted_at: now, updated_at: now })
+    .update({ deleted_at: now, updated_at: now }, { count: "exact" })
     .in("recurring_template_id", templateIds)
     .in("status", ["projected", "pending"])
     .is("deleted_at", null)
-    .gte("transaction_date", todayStr)
-    .select("id");
+    .gte("transaction_date", todayStr);
   if (error) throw error;
-  return data?.length || 0;
+  return count ?? 0;
 }
 
 async function resetProjectedThroughForTemplateIds(templateIds) {

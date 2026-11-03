@@ -503,7 +503,7 @@ packages or externalizing runtime imports.
 ### RLS Policy errors ("new row violates row-level security policy")
 
 1. Make sure you're logged in
-2. Re-run [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
+2. If editing a recurring template fails on a `PATCH` to `transactions`, check that the app is not requesting returned rows from the soft-delete operation: the SELECT policy hides rows after `deleted_at` is set. Use an app version that updates without returning those rows. For other transaction RLS failures, existing databases may need [`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) followed by [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql); see the [migration guide](../sql_scripts/migrations/README.md#applying-upgrades) for the local Docker command. Do not rerun the fresh-install initializer on an existing database.
 3. In Supabase → Authentication → Policies, check each table has policies enabled
 4. Make sure the full fresh-install sequence or the required incremental upgrades were applied
 5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`migrations/supabase_split_fix_rls.sql`](../sql_scripts/migrations/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
