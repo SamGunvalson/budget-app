@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { maskAccountName } from '../../utils/helpers';
+import { maskAccountName, toDateString } from '../../utils/helpers';
 import { getUserPreference, setUserPreference } from '../../services/categories';
 
 const MAX_SCENARIOS = 10;
@@ -48,7 +48,7 @@ export default function TestTransactions({ accounts = [], onItemsChange }) {
   function tomorrowISO() {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return toDateString(d);
   }
 
   // ── Actions ─────────────────────────────────────────────────────────

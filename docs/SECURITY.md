@@ -8,7 +8,13 @@ This document describes the security invariants the app depends on. Any change t
 
 ### 1. Supabase Row-Level Security (RLS) is the last line of defense
 
-Every table that holds user data has RLS enabled with a `USING (auth.uid() = user_id)` policy (see [sql_scripts/supabase_rls_complete.sql](../sql_scripts/supabase_rls_complete.sql)). In self-hosted mode, PostgREST verifies the signed JWT and the local `auth.uid()` compatibility helper supplies the user identity; the same RLS policies still protect data.
+Public financial tables have RLS enabled, scoped by owner or parent/partnership
+membership (see [complete policies](../sql_scripts/supabase_rls_complete.sql)
+and [data-model contracts](./DATA_MODEL.md)). Not every table has a `user_id`
+column. In self-hosted mode, PostgREST verifies the signed JWT and the local
+`auth.uid()` compatibility helper supplies identity; the same policies protect
+public data. Auth tables are isolated by backend-managed access/local grants
+and must not be exposed through PostgREST.
 
 **This must never be disabled or weakened.**
 
@@ -18,7 +24,7 @@ Transaction SELECT/UPDATE policies must also require `deleted_at IS NULL` in
 USING, while UPDATE WITH CHECK checks ownership without that condition.
 A permissive transactions FOR ALL policy defeats the live-row filter even when
 the narrower policies exist. For existing Supabase databases, run
-[supabase_transactions_soft_delete_rls.sql](../sql_scripts/supabase_transactions_soft_delete_rls.sql)
+[migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
 as the database owner before reapplying the complete RLS script. It atomically
 replaces the legacy policy and installs the authenticated-only soft-delete RPC.
 The RPC uses SECURITY DEFINER with explicit ownership/live-row predicates and a
@@ -113,7 +119,13 @@ cd budget-app
 npm run audit:security
 ```
 
-The GitHub Actions workflow at [.github/workflows/security.yml](../.github/workflows/security.yml) runs `npm audit --audit-level=high` on every push, PR, and weekly on Mondays.
+The [scheduled security workflow](../.github/workflows/security.yml) runs
+`npm audit --audit-level=high` and lint weekly on Mondays. The
+[Docker publishing workflow](../.github/workflows/docker-publish.yml) runs
+audit/lint quality gates on main pushes, matching version tags, and PRs to main,
+plus an isolated self-hosted deployment smoke test. These frontend dependency
+audits use the root lockfile; the auth service and migration utility have
+separate manifests/lockfiles.
 
 When `npm audit` reports a vulnerability:
 

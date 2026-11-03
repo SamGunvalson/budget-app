@@ -1,5 +1,8 @@
 # Phase 4 — Mutation batching & write-path cleanup
 
+> Historical implementation record, not current setup guidance. See the
+> [current performance index](../../performance/README.md).
+
 **Status:** ✅ Shipped
 **Builds on:** Phase 3 (server-side aggregations).
 **Goal:** Replace every chatty multi-round-trip mutation path with a single
@@ -29,7 +32,7 @@ All four are gone now.
 
 ### 1. SQL: bulk-mutation RPCs + trigger
 
-Single migration script: [`sql_scripts/supabase_phase4_mutations.sql`](../../sql_scripts/supabase_phase4_mutations.sql)
+Single migration script: [`sql_scripts/supabase_phase4_mutations.sql`](../../../sql_scripts/supabase_phase4_mutations.sql)
 (idempotent — safe to re-run).
 
 | Object                                                           | Type     | Replaces (client-side)                                                                        |
@@ -108,7 +111,7 @@ SELECTs before.
 
 ## Migration steps
 
-1. Run [`sql_scripts/supabase_phase4_mutations.sql`](../../sql_scripts/supabase_phase4_mutations.sql)
+1. Run [`sql_scripts/supabase_phase4_mutations.sql`](../../../sql_scripts/supabase_phase4_mutations.sql)
    against the project (idempotent). This installs the four RPCs and the
    trigger.
 2. Deploy the JS changes. No client-side cache or schema bump needed —

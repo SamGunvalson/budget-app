@@ -7,14 +7,26 @@ A personal budget tracking PWA built with React 19 + Vite, with a selectable Sup
 ```bash
 npm run dev       # Start dev server at http://localhost:5173
 npm run build     # Production build
-npm run lint      # ESLint (no tests exist)
+npm run lint      # ESLint
+node --test scripts/category-archive.test.js scripts/helpers.test.js # Fast helper regressions
 ```
+
+Use Node.js 22.12+ for frontend development. Auth-service and deployment tests
+need isolated PostgreSQL/Docker resources; see
+[validation](../docs/SETUP_GUIDE.md#validation).
 
 ## Architecture
 
 ### Data flow (reads)
 
-All reads go through React Query hooks in `src/hooks/queries.js`. Each hook wraps a corresponding `*Offline` function from `src/services/offlineAware.js`, which serves Dexie (IndexedDB) immediately and revalidates from the selected backend in the background (SWR pattern). **Do not call backend service functions directly from components** — go through the hooks.
+New component reads go through React Query hooks in `src/hooks/queries.js`.
+Mirrored-table hooks use corresponding `*Offline` functions from
+`src/services/offlineAware.js`; SWR reads serve Dexie immediately and revalidate
+in the background, awaiting the backend on a cold online cache.
+Partnership/split hooks use their services directly because those tables are
+not Dexie-mirrored. Provider/imperative preference reads use existing offline
+wrappers. **Do not add direct backend reads to components**; preserve specialized
+existing paths unless their migration is explicitly in scope.
 
 ### Data flow (writes)
 
@@ -23,7 +35,10 @@ Mutations may be called directly from components via the `*Offline` wrappers in 
 1. Online: calls the underlying service through the selected backend, then updates Dexie.
 2. Offline: writes to Dexie with `_offline` flags and enqueues the mutation for sync.
 
-After any mutation, `notifyTable(tableName)` is called internally, which triggers React Query to invalidate matching queries via `src/services/queryBridge.js`.
+Mirrored-table wrappers call `notifyTable(tableName)` internally to invalidate
+matching queries through `src/services/queryBridge.js`. Non-mirrored
+partnership/split mutations retain their explicit query invalidation paths;
+do not assume the bridge subscribes to those tables.
 
 ### Offline sync
 
@@ -31,7 +46,11 @@ After any mutation, `notifyTable(tableName)` is called internally, which trigger
 
 ### Cache invalidation
 
-Query keys follow `[tableName, ...specifics]`. The bridge in `src/services/queryBridge.js` broad-invalidates all queries for a table when `notifyTable(tableName)` fires — so new mutations don't require manually specifying invalidation keys.
+Query keys follow `[tableName, ...specifics]`. The bridge in
+`src/services/queryBridge.js` subscribes to the seven mirrored tables and
+broad-invalidates their queries when `notifyTable(tableName)` fires. It also
+lists derived cross-table dependencies. Preserve those dependencies when adding
+new reads; non-mirrored tables need their existing explicit invalidation.
 
 ### Auth & RLS
 
@@ -83,7 +102,7 @@ The `transactions` and `split_expenses` tables use `deleted_at` (nullable timest
 Each context is split into two files:
 
 - `src/contexts/FooContext.jsx` — the provider component
-- `src/contexts/fooContextValue.js` — the memoized value logic
+- `src/contexts/fooContextValue.js` — the context object consumed by hooks
 
 Contexts: `AuthContext`, `MonthYearContext`, `SafeModeContext`, `ThemeContext`.
 
@@ -108,7 +127,10 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
 - **`docs/DATA_MODEL.md`** — authoritative DB schema with all table/column names and types. Always check this before writing queries or defining data shapes.
 - **`docs/STYLE_GUIDE.md`** — full design system including color tokens, typography scale, and component patterns.
 - **`docs/SECURITY.md`** — security invariants (RLS, input validation, etc.).
-- **`sql_scripts/supabase_schema_create.sql`** — shared base schema; other files in `sql_scripts/` are incremental migrations.
+- **`sql_scripts/README.md`** — current shared setup sequence. Top-level SQL
+  supplies the base and required feature/RPC/policy definitions.
+- **`sql_scripts/migrations/`** — historical upgrades/repairs whose effects are
+  already represented in current setup; do not run them on fresh databases.
 - **`sql_scripts/local/`** — self-hosted Postgres compatibility shim, initialization order, and grants.
 
 ## Database Change Workflow
@@ -118,14 +140,21 @@ Whenever you add, rename, or remove a column, table, function, or RLS policy, yo
 1. **`docs/DATA_MODEL.md`** — update the affected table definition, constraints, RLS note, and the version/date at the bottom of the file.
 
 2. **The relevant SQL script** — choose the right file:
-   - New table → `sql_scripts/supabase_schema_create.sql` (creation) + a new `sql_scripts/supabase_<feature>.sql` migration for existing databases
-   - New column on an existing table → add the column to `sql_scripts/supabase_schema_create.sql` so fresh installs include it, AND create a separate `ALTER TABLE` migration in `sql_scripts/supabase_<feature>.sql` for existing databases
-   - RLS policy fix → create a new `sql_scripts/supabase_<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`) so it corrects policies already on the DB, AND update `sql_scripts/supabase_rls_complete.sql` to match
-   - New RPC function → add to the appropriate feature script and document in `DATA_MODEL.md`
+   - New table → add creation to the applicable base script and a migration in `sql_scripts/migrations/supabase_<feature>.sql` for existing databases
+   - New column on an existing table → add the column to the applicable base script so fresh installs include it, AND create a separate `ALTER TABLE` migration in `sql_scripts/migrations/supabase_<feature>.sql`
+   - RLS policy fix → create `sql_scripts/migrations/supabase_<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`), AND update base policies and `sql_scripts/supabase_rls_complete.sql` to match
+   - New RPC function → add to the appropriate current feature script, preserve an upgrade path for existing databases, and document in `DATA_MODEL.md`
 
 3. **The service layer** — if a column or table name changed, update the corresponding file in `src/services/`.
 
-For any new table or function, also keep self-hosted mode working: add its SQL migration to `sql_scripts/local/` and append the filename to `sql_scripts/local/apply_order.txt` in dependency order. `99_grants.sql` supplies default grants to future public objects created by the database owner. Init scripts run only on a fresh volume; apply new migrations manually to existing self-hosted databases with `psql`.
+For any new table or function, keep self-hosted mode working: ensure its current
+shared setup script is represented in `sql_scripts/local/apply_order.txt` in
+dependency order. Use `sql_scripts/local/` only for local-specific compatibility
+SQL; do not duplicate shared migrations. Historical upgrades stay out of fresh
+initialization once their effects are in current setup. The database image must
+bundle both setup and migration paths. `99_grants.sql` supplies default grants
+to future public objects created by the database owner. Init scripts run only
+on a fresh volume; apply upgrades manually to existing volumes with `psql`.
 
 ### RLS authoring rules
 
@@ -139,7 +168,7 @@ For any new table or function, also keep self-hosted mode working: add its SQL m
 When adding, renaming, or removing any column, table, function, or RLS policy:
 
 1. ☐ `docs/DATA_MODEL.md` updated (table definition, constraints, RLS note, version/date)
-2. ☐ SQL script created/updated (`supabase_schema_create.sql` + migration file); for local mode, add to `sql_scripts/local/` and append to `apply_order.txt`
+2. ☐ Current base/feature SQL and existing-database migration updated; local fresh-install order and image packaging include required setup, without replaying historical fixes
 3. ☐ Service layer updated (`src/services/` file for the affected table)
 4. ☐ RLS policies use `DROP POLICY IF EXISTS` + `CREATE POLICY` (no `IF NOT EXISTS`)
 5. ☐ Soft-delete tables (`transactions`, `split_expenses`): UPDATE policy `USING` includes `deleted_at IS NULL`; `WITH CHECK` does **not**

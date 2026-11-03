@@ -7,9 +7,9 @@
 --   • New Supabase project with auth.users already managed by Supabase Auth.
 --   • Run the statements in order — foreign key dependencies are respected.
 --
--- After running this script, optionally run supabase_rls_complete.sql to
--- verify that all RLS policies are in place (they are created here, but that
--- script lets you re-apply them idempotently at any time).
+-- This is the core base, not the entire setup. Follow README.md for the split
+-- schema, sync, archive, aggregation, mutation, and complete RLS scripts.
+-- Historic migrations/ fixes are for existing databases, not fresh installs.
 -- =============================================================================
 
 
@@ -313,6 +313,10 @@ CREATE UNIQUE INDEX idx_transactions_no_dup_recurring
 CREATE INDEX idx_transactions_recurring_template
   ON transactions(recurring_template_id, transaction_date)
   WHERE recurring_template_id IS NOT NULL;
+
+CREATE INDEX idx_transactions_recurring_occurrence
+  ON transactions(recurring_template_id, recurring_occurrence_date)
+  WHERE recurring_template_id IS NOT NULL AND recurring_occurrence_date IS NOT NULL;
 
 
 -- =============================================================================

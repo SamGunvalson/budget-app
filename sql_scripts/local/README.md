@@ -4,10 +4,12 @@ Only for vanilla PostgreSQL 16 + PostgREST, **not Supabase**.
 `apply_order.txt` is the canonical fresh-database order;
 it documents migrations already folded into the base scripts. The base scripts
 create tables without IF NOT EXISTS, so the full initializer is not re-runnable.
-The role, auth-schema, grants, and local-fix scripts are individually idempotent.
+The role, auth-schema, grants, and legacy local-fix scripts are individually
+idempotent. Historical repairs are not included in fresh initialization.
 
 The self-hosted database image builds from [`../Dockerfile`](../Dockerfile),
-bundling the SQL files at `/sql_scripts` and executable `local/init.sh` at
+bundling current setup and historical `migrations/` SQL at `/sql_scripts` and
+executable `local/init.sh` at
 `/docker-entrypoint-initdb.d/00-budget.sh` on top of PostgreSQL 16. The deployment
 Compose file needs no source checkout or SQL mounts.
 Set `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_PASSWORD`,
@@ -34,9 +36,10 @@ missing/empty claim settings. No API role can read passwords or refresh hashes.
 `get_partner_email` keeps its authenticated-only, invitee-membership-scoped
 SECURITY DEFINER behavior.
 
-`98_local_fixes.sql` delegates to the shared
-[`supabase_transactions_soft_delete_rls.sql`](../supabase_transactions_soft_delete_rls.sql)
-migration. The base schema now includes its `soft_delete_transaction(txn_id uuid)`
+The legacy `98_local_fixes.sql` entrypoint delegates to the shared
+[`migrations/supabase_transactions_soft_delete_rls.sql`](../migrations/supabase_transactions_soft_delete_rls.sql)
+migration. It remains available for existing deployments but is excluded from
+`apply_order.txt`. The base schema includes its `soft_delete_transaction(txn_id uuid)`
 RPC and authenticated-only, per-operation transaction policies. The migration
 also repairs existing databases by removing the legacy permissive FOR ALL
 policy. The RPC uses explicit ownership checks under SECURITY DEFINER to permit
@@ -53,3 +56,6 @@ psql -X -v ON_ERROR_STOP=1 -U postgres -d budget_test \
 The checks use two test users and roll back all fixtures. They cover live-row
 visibility, ownership enforcement, authenticated RPC grants, soft deletes,
 repeat/missing-ID calls, and preservation of existing owner-only hard deletes.
+
+See the [SQL setup guide](../README.md) for the current shared scripts and the
+[historical migration guide](../migrations/README.md) for manual upgrades.

@@ -1,5 +1,8 @@
 # Phase 2 — React Query adoption + invalidation bus
 
+> Historical implementation record, not current setup guidance. See the
+> [current performance index](../../performance/README.md).
+
 **Status:** Shipped
 **Touches:** `package.json` (added `@tanstack/react-query`),
 `src/services/queryClient.js` (new), `src/services/queryBridge.js` (new),

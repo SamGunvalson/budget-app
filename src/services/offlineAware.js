@@ -2,9 +2,11 @@
  * Offline-aware service wrappers.
  *
  * Each wrapper follows the same pattern:
- * - **Online**: call Supabase (existing service), then cache result in IndexedDB.
+ * - **Online writes**: call the selected backend service, then cache in IndexedDB.
  * - **Offline**: write to IndexedDB with `_offline` flags, enqueue for sync.
- * - **Read (any state)**: try Supabase first; if offline / error, fall back to IndexedDB.
+ * - **SWR reads**: return Dexie data immediately and revalidate in the background;
+ *   await the backend on a cold online cache.
+ * - Other imperative reads retain their online-first, network-error fallback.
  *
  * This keeps the original service modules untouched — all offline logic lives here.
  */
@@ -16,7 +18,7 @@ import { isAvailableCategory } from "../utils/categoryArchive";
 // ── SWR helpers ──
 //
 // Phase 1 cache-first reads: priority "hot" read functions delegate to
-// `swrRead` which serves Dexie immediately and revalidates from Supabase
+// `swrRead` which serves Dexie immediately and revalidates from the backend
 // in the background. Helpers in this file build the (readCache, fetchFresh,
 // writeCache) triple for each function while preserving the original
 // signatures and return shapes so callers don't need to change.

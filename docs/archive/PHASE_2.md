@@ -1,5 +1,7 @@
 # Phase 2: Budget Planning & Intelligent Dashboards (Week 2)
 
+> Historical build plan. Use the [current documentation index](../QUICK_REFERENCE.md) for implementation guidance.
+
 ## 📍 Where You Are
 
 **Phase 1 Complete** ✅
@@ -69,7 +71,7 @@ As a user, I want to:
 
 #### Data Model Reference
 
-From [DATA_MODEL.md](./DATA_MODEL.md):
+From [DATA_MODEL.md](../DATA_MODEL.md):
 
 **Tables to use:**
 
@@ -610,8 +612,8 @@ User logs in → Dashboard shows:
 
 Reference these files frequently:
 
-1. **[DATA_MODEL.md](./DATA_MODEL.md)** - Budget tables and queries
-2. **[CONTEXT_GUIDE.md](./CONTEXT_GUIDE.md)** - How to ask AI questions
+1. **[DATA_MODEL.md](../DATA_MODEL.md)** - Budget tables and queries
+2. **[CONTEXT_GUIDE.md](../CONTEXT_GUIDE.md)** - How to ask AI questions
 3. **[Recharts Docs](https://recharts.org)** - Chart examples
 4. **[Supabase Docs](https://supabase.com/docs)** - Query patterns
 

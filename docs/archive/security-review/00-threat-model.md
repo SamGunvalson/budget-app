@@ -1,5 +1,8 @@
 # 00 — Threat Model & Asset Map
 
+> Historical Supabase-era review, not a current security certification or
+> self-hosted threat model. See the [current security model](../../SECURITY.md).
+
 > Phase 1 of the security review. Establishes the asset inventory, trust
 > boundaries, and ranked threats that every later phase scores findings
 > against. Compliance target: **OWASP Top 10 (2021) + ASVS L1**.
@@ -38,8 +41,8 @@
 
 | Asset                          | Location                                                                                                                                                     | Sensitivity                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| Supabase URL + anon key        | Runtime via [public/env-config.js](../../public/env-config.js) (templated by [docker-entrypoint.sh](../../docker-entrypoint.sh)); fallback `import.meta.env` | Public-by-design but rotation-sensitive |
-| nginx reverse proxy + headers  | [nginx.conf](../../nginx.conf)                                                                                                                               | High                                    |
+| Supabase URL + anon key        | Runtime via [public/env-config.js](../../../public/env-config.js) (templated by [docker-entrypoint.sh](../../../docker-entrypoint.sh)); fallback `import.meta.env` | Public-by-design but rotation-sensitive |
+| nginx reverse proxy + headers  | [nginx.conf](../../../nginx.conf)                                                                                                                               | High                                    |
 | Container image                | `thewarguy/budget-app` (Docker Hub)                                                                                                                          | High                                    |
 | CI secrets (`DOCKERHUB_TOKEN`) | GitHub Actions secrets                                                                                                                                       | High                                    |
 
@@ -99,12 +102,12 @@ _OWASP A01 Broken Access Control · ASVS V4_
 - **A2.** Authenticated user A `INSERT`s into a per-user table with
   `user_id=<B's id>`, hoping to plant data in B's account. **Mitigation:**
   `WITH CHECK (auth.uid() = user_id)` on INSERT — present for `transactions`
-  via the split policies in [supabase_schema_create.sql](../../sql_scripts/supabase_schema_create.sql),
+  via the split policies in [supabase_schema_create.sql](../../../sql_scripts/supabase_schema_create.sql),
   but the broader `FOR ALL` policies in
-  [supabase_rls_complete.sql](../../sql_scripts/supabase_rls_complete.sql)
+  [supabase_rls_complete.sql](../../../sql_scripts/supabase_rls_complete.sql)
   rely on Postgres' implicit "WITH CHECK = USING" rule. **See Phase 2 Finding F-DB-002.**
 - **A3.** RLS disabled accidentally during migration. **Mitigation:** weekly
-  diagnostic query in [supabase_rls_complete.sql](../../sql_scripts/supabase_rls_complete.sql);
+  diagnostic query in [supabase_rls_complete.sql](../../../sql_scripts/supabase_rls_complete.sql);
   Phase 2 will add an automated test.
 
 ### T2 — Partnership / split-expense privilege abuse (High)
@@ -181,7 +184,7 @@ _OWASP A02 Cryptographic Failures · ASVS V8 Data Protection_
 
 ## 4. Reconciliation with existing docs
 
-[docs/SECURITY.md](../SECURITY.md) lists 7 invariants. Status against
+[docs/SECURITY.md](../../SECURITY.md) lists 7 invariants. Status against
 implementation:
 
 | Invariant                                       | Status                                                                                                                                                   |
@@ -190,7 +193,7 @@ implementation:
 | 2. All mutations also `.eq("user_id", user.id)` | ⚠️ Mostly — `confirmTransaction`, `skipTransaction`, `updateTransfer` legs, and several `splitExpenses.*` writes rely on RLS only. **Finding F-AC-001.** |
 | 3. No `dangerouslySetInnerHTML`                 | ✅ Verified — zero matches across `src/**`                                                                                                               |
 | 4. Offline data cleared on logout               | ⚠️ IndexedDB ✅ + sessionStorage ✅; **but** Workbox runtime cache and `localStorage` (`splitSeenAt_*`) are NOT cleared. **Finding F-OF-001.**           |
-| 5. All `/app/*` routes use `ProtectedRoute`     | ✅ Verified in [src/App.jsx](../../src/App.jsx)                                                                                                          |
+| 5. All `/app/*` routes use `ProtectedRoute`     | ✅ Verified in [src/App.jsx](../../../src/App.jsx)                                                                                                          |
 | 6. Anon key is the only credential in bundle    | ✅ Verified — no `service_role` references                                                                                                               |
 | 7. Import file/row limits                       | ✅ Verified — 10 MB / 5 000 rows                                                                                                                         |
 

@@ -1,5 +1,8 @@
 # Phase 3 — Server-side aggregations
 
+> Historical implementation record, not current setup guidance. See the
+> [current performance index](../../performance/README.md).
+
 **Status:** ✅ Shipped
 **Builds on:** Phase 1 (cache-first reads) and Phase 2 (React Query + bridge).
 **Goal:** Push every report-style aggregation that previously required pulling
