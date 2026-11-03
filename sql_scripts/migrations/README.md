@@ -16,6 +16,7 @@ Paths now include `migrations/`.
 | [supabase_split_dedup.sql](./supabase_split_dedup.sql) | Soft-deletes duplicate linked splits and adds uniqueness | Split base index; fresh databases have no old duplicates |
 | [supabase_split_fix_rls.sql](./supabase_split_fix_rls.sql) | Repairs split UPDATE/DELETE policies | Split base and complete RLS |
 | [supabase_transactions_soft_delete_rls.sql](./supabase_transactions_soft_delete_rls.sql) | Atomically replaces legacy transaction policies and installs soft-delete RPC | Core base RPC/policies and complete RLS |
+| [supabase_recurring_projection_cleanup.sql](./supabase_recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
 
 ## Applying upgrades
 

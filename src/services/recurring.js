@@ -298,16 +298,7 @@ export async function getRecurringTemplateById(id) {
  * @param {string} templateId
  */
 export async function clearProjectedTransactionsForTemplate(templateId) {
-  const now = new Date().toISOString();
-  const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
-  const { error } = await supabase
-    .from("transactions")
-    .update({ deleted_at: now, updated_at: now })
-    .eq("recurring_template_id", templateId)
-    .in("status", ["projected", "pending"])
-    .is("deleted_at", null)
-    .gte("transaction_date", todayStr);
-  if (error) throw error;
+  await clearFutureProjectedPendingForTemplateIds([templateId]);
 }
 
 async function getTemplateFamilyIds(
@@ -338,18 +329,14 @@ async function getTemplateFamilyIds(
 
 async function clearFutureProjectedPendingForTemplateIds(templateIds) {
   if (!templateIds.length) return 0;
-  const now = new Date().toISOString();
   const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
-  // Return a count, not soft-deleted rows hidden by the SELECT policy.
-  const { count, error } = await supabase
-    .from("transactions")
-    .update({ deleted_at: now, updated_at: now }, { count: "exact" })
-    .in("recurring_template_id", templateIds)
-    .in("status", ["projected", "pending"])
-    .is("deleted_at", null)
-    .gte("transaction_date", todayStr);
+  const { data, error } = await supabase.rpc("soft_delete_recurring_projections", {
+    p_template_ids: templateIds,
+    p_transaction_ids: null,
+    p_from_date: todayStr,
+  });
   if (error) throw error;
-  return count ?? 0;
+  return data;
 }
 
 async function resetProjectedThroughForTemplateIds(templateIds) {
@@ -1299,16 +1286,17 @@ export async function cleanupOrphanedProjections({
 
   if (orphanIds.length === 0) return { cleaned: 0 };
 
-  const { error: delErr } = await supabase
-    .from("transactions")
-    .update({
-      deleted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .in("id", orphanIds);
+  const { data: cleaned, error: delErr } = await supabase.rpc(
+    "soft_delete_recurring_projections",
+    {
+      p_template_ids: null,
+      p_transaction_ids: orphanIds,
+      p_from_date: format(addDays(today, 1), "yyyy-MM-dd"),
+    },
+  );
   if (delErr) throw delErr;
 
-  return { cleaned: orphanIds.length };
+  return { cleaned };
 }
 
 /**

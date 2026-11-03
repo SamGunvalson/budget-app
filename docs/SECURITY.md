@@ -32,6 +32,13 @@ fixed search path. The migration's final query must show four authenticated
 transaction policies (SELECT, INSERT, UPDATE, DELETE), no ALL or extra permissive
 policies. This preserves existing owner-only hard deletes; it does not purge data.
 
+Recurring projection cleanup also uses an authenticated-only SECURITY DEFINER
+RPC, [installed by this upgrade](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql).
+It requires an explicit ID scope and date cutoff, and checks ownership, live
+rows, recurring linkage, and projected/pending status in the UPDATE itself.
+It returns only a count, never hidden deleted rows. Do not replace this with
+direct client soft-delete UPDATEs or widen SELECT visibility to enable cleanup.
+
 ### 2. All mutations also filter by user_id in application code
 
 Even though RLS enforces data isolation at the database level, every `UPDATE` and `DELETE` query in [src/services/transactions.js](../src/services/transactions.js) and [src/services/accounts.js](../src/services/accounts.js) also includes `.eq("user_id", user.id)`.  

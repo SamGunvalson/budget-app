@@ -161,7 +161,7 @@ node --test scripts/test-selfhost.test.js
 
 The test copies only the deployment Compose file into a temporary directory,
 generates its own credentials, and uses an isolated project/volume. It checks
-fresh initialization, transaction RLS, signup, authenticated writes, and login
+fresh initialization, transaction/recurring-cleanup RLS, signup, authenticated writes, and login
 and data persistence after container recreation, then removes its own resources.
 It never uses the development or production database volume.
 
@@ -305,6 +305,21 @@ archive migration also supplies the authenticated RPC EXECUTE grant; no new
 local-only function or duplicate migration is necessary.
 
 #### Existing databases and RLS repair
+
+If recurring edits save the template but fail while clearing projections with
+`42501: new row violates row-level security policy for table "transactions"`,
+apply
+[`migrations/supabase_recurring_projection_cleanup.sql`](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql)
+as the database owner in the Supabase SQL Editor before deploying the updated
+frontend. Cleanup uses an owner-scoped RPC rather than direct soft-delete
+UPDATEs; posted transactions and transaction RLS remain unchanged.
+
+Fresh self-hosted databases include the RPC in phase-4 setup. For an existing
+self-hosted volume, back up and apply it using the updated database image:
+
+```bash
+docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_recurring_projection_cleanup.sql
+```
 
 Back up first and use the [migration catalog](./DATA_MODEL.md#sql-migration-scripts)
 to identify unapplied upgrades. Never rerun the base CREATE scripts on an
@@ -476,6 +491,9 @@ npm run build
 - SQL layout/initializer path checks: `node --test scripts/sql-layout.test.js`;
   these use a mock `psql` to verify script ordering and fail-fast behavior, not
   SQL execution. Run the deployment/RLS checks with Docker for database validation.
+- Recurring cleanup service regressions:
+  `node --experimental-vm-modules --test scripts/recurring-cleanup.test.js`;
+  these mock backend calls to verify RPC scopes, lifecycle ordering, and errors.
 - [Android checks](./android-app.md#device-smoke-checks): use the native build
   workflow and test offline/auth transitions on a device before release.
 

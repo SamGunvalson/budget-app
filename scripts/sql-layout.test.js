@@ -30,6 +30,7 @@ const migrationScripts = [
   'supabase_custom_interval.sql',
   'supabase_partnership_seen.sql',
   'supabase_recurring_occurrence_date.sql',
+  'supabase_recurring_projection_cleanup.sql',
   'supabase_split_dedup.sql',
   'supabase_split_fix_rls.sql',
   'supabase_split_recurring.sql',
@@ -87,6 +88,18 @@ test('fresh base already supplies the soft-delete RPC and grants from the legacy
   assert.ok(base);
   assert.ok(migration);
   assert.equal(base, migration);
+});
+
+test('fresh setup and recurring cleanup upgrade supply the same restricted RPC', () => {
+  const rpc = /CREATE OR REPLACE FUNCTION public\.soft_delete_recurring_projections\([\s\S]*?GRANT EXECUTE ON FUNCTION public\.soft_delete_recurring_projections\(uuid\[\], uuid\[\], date\) TO authenticated;/;
+  const setup = readSqlFile('supabase_phase4_mutations.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/supabase_recurring_projection_cleanup.sql').match(rpc)?.[0];
+  assert.ok(setup);
+  assert.equal(setup, migration);
+  assert.match(setup, /SECURITY DEFINER\s+SET search_path = public/);
+  assert.match(setup, /WHERE user_id = v_user_id\s+AND deleted_at IS NULL\s+AND recurring_template_id IS NOT NULL\s+AND status IN \('projected', 'pending'\)\s+AND transaction_date >= p_from_date/);
+  assert.match(setup, /GET DIAGNOSTICS v_count = ROW_COUNT/);
+  assert.match(setup, /REVOKE EXECUTE[\s\S]*FROM PUBLIC, anon;/);
 });
 
 function runInitializer(failAt) {
