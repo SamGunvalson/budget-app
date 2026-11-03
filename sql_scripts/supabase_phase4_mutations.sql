@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Budget App — Phase 4: mutation batching + write-path cleanup
 --
--- Replaces five client-side multi-round-trip mutation paths with single SQL
+-- Replaces client-side multi-round-trip mutation paths with single SQL
 -- RPCs (or, in one case, a Postgres trigger):
 --
 --   • bulk_update_transactions(p_updates jsonb)
@@ -27,8 +27,9 @@
 --       Now: trigger raises a check_violation with a friendly message; the
 --            client just propagates error.message.
 --
--- All functions are SECURITY INVOKER and pin search_path so existing RLS
--- continues to enforce row visibility — we never widen access.
+-- Mutation functions use SECURITY INVOKER except projection soft deletion,
+-- which needs SECURITY DEFINER to avoid SELECT RLS rejecting deleted rows.
+-- All pin search_path; the definer explicitly checks ownership and live status.
 --
 -- Idempotent: safe to re-run.  Drops + recreates each function and uses
 -- IF NOT EXISTS / DROP-then-create on triggers.
@@ -388,3 +389,45 @@ BEGIN
   RETURN v_parent_id;
 END;
 $$;
+
+-- Soft-deleted results cannot pass transaction SELECT RLS, even without
+-- returning rows. Restrict definer access to owned, live recurring projections.
+CREATE OR REPLACE FUNCTION public.soft_delete_recurring_projections(
+  p_template_ids uuid[],
+  p_transaction_ids uuid[],
+  p_from_date date
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_count integer;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF p_from_date IS NULL OR (p_template_ids IS NULL AND p_transaction_ids IS NULL) THEN
+    RAISE EXCEPTION 'Projection cleanup requires a date and template or transaction IDs'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  UPDATE public.transactions
+  SET deleted_at = now(), updated_at = now()
+  WHERE user_id = v_user_id
+    AND deleted_at IS NULL
+    AND recurring_template_id IS NOT NULL
+    AND status IN ('projected', 'pending')
+    AND transaction_date >= p_from_date
+    AND (p_template_ids IS NULL OR recurring_template_id = ANY(p_template_ids))
+    AND (p_transaction_ids IS NULL OR id = ANY(p_transaction_ids));
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.soft_delete_recurring_projections(uuid[], uuid[], date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.soft_delete_recurring_projections(uuid[], uuid[], date) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

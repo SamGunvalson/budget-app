@@ -186,6 +186,16 @@ owned live rows under SECURITY DEFINER with fixed search path. Execution is
 revoked from PUBLIC/anon and granted to authenticated. Repeat/missing-ID calls
 do not change rows. Never restore the legacy permissive FOR ALL policy.
 
+`soft_delete_recurring_projections(p_template_ids UUID[], p_transaction_ids UUID[],
+p_from_date DATE)` returns the integer count of soft-deleted rows. It requires
+authentication, a non-null local-date cutoff, and at least one non-null ID array.
+When both arrays are supplied their filters intersect; an empty array matches
+nothing. The fixed-search-path SECURITY DEFINER RPC only updates owned, live
+recurring rows with projected/pending status on or after the cutoff, preserving
+posted transactions and past rows. Execution is authenticated-only. Template
+refresh uses template-family IDs (including inactive children); orphan cleanup
+uses transaction IDs and tomorrow's cutoff. No transaction policies are widened.
+
 ### Table: `recurring_templates`
 
 | Column | Type | Constraint/default |
@@ -378,6 +388,7 @@ roles/auth first and grants last; historical repairs are excluded.
 | [supabase_rls_complete.sql](../sql_scripts/supabase_rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
 | [migrations/supabase_recurring_occurrence_date.sql](../sql_scripts/migrations/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
 | [migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
+| [migrations/supabase_recurring_projection_cleanup.sql](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql) | Installs owner-scoped recurring cleanup RPC; included in current phase-4 mutations |
 | [migrations/supabase_accounts_closed.sql](../sql_scripts/migrations/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
 | [migrations/supabase_asymmetric_transfer.sql](../sql_scripts/migrations/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
 | [migrations/supabase_custom_interval.sql](../sql_scripts/migrations/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
@@ -400,6 +411,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.1
+**Document version**: 3.2
 
 **Last updated**: 2026-11-03
