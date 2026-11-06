@@ -194,6 +194,29 @@ Use Tailwind's spacing scale consistently. **Balanced approach**: not too spacio
 
 ## Common Component Patterns
 
+### Optional amount calculator
+
+Use `src/components/common/AmountInput.jsx` for calculator-enabled monetary
+fields. It preserves native input props and normal numeric entry; the quiet
+calculator icon opens a shared dialog rather than changing the field to a formula
+editor. Supply a destination-specific `calculatorLabel`, `onAmountChange(value,
+cents)`, and `minCents` (default 1; use 0 for budgets). `value` is an exact
+two-decimal dollar string; `cents` is the integer value for existing save paths.
+Use `calculatorValue` when the unfocused input displays a rounded amount, so the
+calculator always starts from the exact current draft. Never seed math from a
+safe-mode-masked display value.
+
+Use `compact` for dense desktop grid cells: the icon appears on focus within the
+input/control group and remains keyboard accessible. Mobile grid cells should
+expose it in their existing edit dialog. For blur-to-commit editors, use
+`onFieldBlur` instead of input `onBlur` so focus entering the calculator does not
+commit the draft. The dialog uses the native modal top layer, contains focus,
+blocks background interaction, and restores focus on close.
+
+Calculation and **Use amount** never save the parent form. Keep explicit Save
+actions, field-specific validation, disabled states, theme variants, and existing
+offline write paths intact. Calculation drafts are local and are not persisted.
+
 ### Date Selection (Month/Year Persistence)
 
 Any page or component with a month or year selector **must** use the shared `MonthYearContext` rather than local `useState` initialized from `getCurrentMonthYear()`. This ensures the selected period persists across page navigation and stays in sync app-wide.

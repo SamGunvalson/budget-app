@@ -1,6 +1,8 @@
 import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
-import { formatCurrency, formatDate, toCents, toDollars, maskAccountName } from '../../utils/helpers';
+import AmountInput from '../common/AmountInput';
+import { centsToInput } from '../../utils/calculator';
+import { formatCurrency, formatDate, toCents, maskAccountName } from '../../utils/helpers';
 import { getAccountBadgeColor } from '../../services/accounts';
 
 function TransactionStatusBadges({
@@ -161,13 +163,16 @@ function EditableCell({ value, onChange, type = 'text', className = '', options,
     );
   }
 
+  const Input = type === 'number' ? AmountInput : 'input';
   return (
-    <input
+    <Input
       ref={inputRef}
       type={type}
       value={draft}
       onChange={(e) => setDraft(type === 'number' ? e.target.value : e.target.value)}
-      onBlur={commit}
+      {...(type === 'number'
+        ? { onFieldBlur: commit, onAmountChange: setDraft, calculatorLabel: 'Transaction amount' }
+        : { onBlur: commit })}
       onKeyDown={(e) => {
         if (e.key === 'Enter') commit();
         if (e.key === 'Escape') cancel();
@@ -641,7 +646,7 @@ const TransactionItem = forwardRef(function TransactionItem({
             </span>
           )}
           <EditableCell
-            value={String(toDollars(displayAmount))}
+            value={centsToInput(displayAmount)}
             type="number"
             className="text-right"
             displayValue={formatCurrency(displayAmount)}

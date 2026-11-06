@@ -35,6 +35,8 @@ import useMonthYear from '../../hooks/useMonthYear';
 import { useAnnualBudgetData, useCategories, useUserPreference } from '../../hooks/queries';
 import CategoryForm from './CategoryForm';
 import Modal from '../common/Modal';
+import AmountInput from '../common/AmountInput';
+import { centsToInput } from '../../utils/calculator';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const SHORT_MONTHS = MONTHS.map((m) =>
@@ -167,13 +169,22 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
             </button>
             {/* Desktop: editable input */}
             <div className="relative hidden sm:block">
-              <span className="pointer-events-none absolute inset-y-0 left-1 flex items-center text-[10px] text-stone-300">
+              <span className="pointer-events-none absolute inset-y-0 left-1 z-10 flex items-center text-[10px] text-stone-300">
                 $
               </span>
-              <input
+              <AmountInput
                 type="text"
                 inputMode="decimal"
                 value={inputValue}
+                compact
+                calculatorLabel={`${cat.name}, ${SHORT_MONTHS[m - 1]} budget`}
+                calculatorValue={focusedMonth === m ? editValue : (cents ? centsToInput(cents) : '')}
+                minCents={0}
+                onAmountChange={(value) => {
+                  setFocusedMonth(m);
+                  setEditValue(value);
+                  onCellChange(m, cat.id, value);
+                }}
                 onChange={(e) => {
                   setEditValue(e.target.value);
                   onCellChange(m, cat.id, e.target.value);
@@ -184,7 +195,7 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
                   const target = e.target;
                   setTimeout(() => target.select(), 0);
                 }}
-                onBlur={() => {
+                onFieldBlur={() => {
                   setFocusedMonth(null);
                   setEditValue('');
                 }}
@@ -974,12 +985,15 @@ export default function AnnualBudgetTable() {
                 </button>
               </div>
               <div className="relative mb-5">
-                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-stone-400 dark:text-stone-500">$</span>
-                <input
+                <span className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-stone-400 dark:text-stone-500">$</span>
+                <AmountInput
                   type="number"
                   step="0.01"
                   min="0"
                   value={mobileEditCell.value}
+                  calculatorLabel={`${mobileCat?.name}, ${mobileMonthName} budget`}
+                  minCents={0}
+                  onAmountChange={(value) => setMobileEditCell((prev) => ({ ...prev, value }))}
                   onChange={(e) => setMobileEditCell((prev) => ({ ...prev, value: e.target.value }))}
                   onFocus={(e) => e.target.select()}
                   autoFocus
@@ -1034,12 +1048,15 @@ export default function AnnualBudgetTable() {
               <span className="font-semibold text-stone-700 dark:text-stone-300">{year}</span>.
             </p>
             <div className="relative mb-4">
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-stone-400 dark:text-stone-500">$</span>
-              <input
+              <span className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-stone-400 dark:text-stone-500">$</span>
+              <AmountInput
                 type="number"
-                step="1"
+                step="0.01"
                 min="0"
                 value={bulkFillCell.value}
+                calculatorLabel={`${bulkFillCell.categoryName} budget for all months`}
+                minCents={0}
+                onAmountChange={(value) => setBulkFillCell((prev) => ({ ...prev, value }))}
                 onChange={(e) => setBulkFillCell((prev) => ({ ...prev, value: e.target.value }))}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleBulkFillSave(); }}
                 onFocus={(e) => e.target.select()}

@@ -10,6 +10,7 @@ import RecurringForm from '../components/transactions/RecurringForm';
 import RecurringGroupForm from '../components/transactions/RecurringGroupForm';
 import UpcomingRecurring from '../components/reports/UpcomingRecurring';
 import Modal, { ConfirmDeleteModal } from '../components/common/Modal';
+import AmountInput from '../components/common/AmountInput';
 import TopBar from '../components/common/TopBar';
 import useTransactionManager from '../hooks/useTransactionManager';
 import {
@@ -950,12 +951,15 @@ export default function TransactionsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">Amount ($)</label>
-                <input
+                <AmountInput
                   type="number"
                   step="0.01"
                   min="0.01"
                   value={quickAmount}
                   onChange={(e) => setQuickAmount(e.target.value)}
+                  onAmountChange={setQuickAmount}
+                  calculatorLabel="Quick transaction amount"
+                  disabled={quickSaving}
                   autoFocus
                   className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm text-stone-900 shadow-sm transition-all focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
                 />

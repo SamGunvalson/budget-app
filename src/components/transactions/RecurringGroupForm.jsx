@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
@@ -63,7 +64,7 @@ function getInitialFormValues(initialValues, isEditing) {
           id: child.id || null,
           txType: child.is_transfer ? 'transfer' : child.is_income ? 'income' : 'expense',
           description: child.description || '',
-          amount: String(toDollars(Math.abs(child.amount))),
+          amount: String(toDollars(Math.abs(child.amount), { raw: true })),
           categoryId: child.category_id || '',
           accountId: child.account_id || initialValues.account_id || '',
           toAccountId: child.is_transfer ? child.to_account_id || '' : '',
@@ -701,12 +702,15 @@ export default function RecurringGroupForm({
 
                     {/* Amount */}
                     <div>
-                      <input
+                      <AmountInput
                         type="number"
                         step="0.01"
                         min="0.01"
                         value={child.amount}
                         onChange={(e) => updateChild(index, 'amount', e.target.value)}
+                        onAmountChange={(value) => updateChild(index, 'amount', value)}
+                        calculatorLabel={`Recurring item ${index + 1} amount`}
+                        disabled={isSaving}
                         placeholder="0.00"
                         className={`${cellInputClass} ${childErrs.amount ? 'border-red-300 dark:border-red-700' : ''}`}
                       />
@@ -865,12 +869,15 @@ export default function RecurringGroupForm({
                 </div>
                 {/* Amount + Payee */}
                 <div className="mb-1.5 grid grid-cols-2 gap-2">
-                  <input
+                  <AmountInput
                     type="number"
                     step="0.01"
                     min="0.01"
                     value={child.amount}
                     onChange={(e) => updateChild(index, 'amount', e.target.value)}
+                    onAmountChange={(value) => updateChild(index, 'amount', value)}
+                    calculatorLabel={`Recurring item ${index + 1} amount`}
+                    disabled={isSaving}
                     placeholder="$0.00"
                     className={`${cellInputClass} ${childErrs.amount ? 'border-red-300 dark:border-red-700' : ''}`}
                   />
