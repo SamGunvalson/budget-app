@@ -13,6 +13,7 @@ A personal budget tracking app built with React and Vite, using either Supabase 
 - Monthly and annual budgets, plan-vs-actual reports, trends, and category drill-down
 - Accounts, net worth, cashflow projections, and hypothetical transaction scenarios
 - Recurring transactions, grouped schedules, and projected transactions
+- Optional amount calculator for transactions, Quick Transactions, recurring entries, and monthly/annual budgets
 - Shared expenses, partnerships, and settlements
 - CSV import with mapping and duplicate detection; Excel workbook export
 - Custom categories with drag-and-drop ordering and reversible archiving
@@ -61,11 +62,21 @@ The native project is already configured. Follow the [Android guide](./docs/andr
 
 Use **Categories → Archive** and **Show archived → Restore**. Historical entries remain intact; new-entry choices exclude archived categories. See [archiving behavior and required database upgrade](./docs/SETUP_GUIDE.md#category-archiving-upgrade).
 
+### Amount calculator
+
+Type amounts normally, or select the calculator icon beside a supported amount
+field. In the annual budget grid, focus a cell to reveal its icon; on mobile,
+open the cell editor first. The calculator supports `+`, `-`, `*`, `/`,
+parentheses, and decimals using keyboard entry or its keypad. It rounds only the
+final result to the nearest cent. **Use amount** fills the field; the form's
+normal Save action is still required. Cancel or Escape leaves the field unchanged.
+Inline `=...` formulas, percentages, and saved calculation history are not supported.
+
 ## Development checks
 
 ```bash
 npm run lint
-node --test scripts/category-archive.test.js scripts/helpers.test.js
+node --test scripts/category-archive.test.js scripts/helpers.test.js scripts/calculator.test.js
 npm run build
 ```
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
@@ -61,33 +62,33 @@ function getInitialFormValues({
         values.accountId = transferCompanionAccountId;
         values.toAccountId = initialValues.account_id || '';
         if (transferCompanionAmount != null) {
-          values.amount = String(toDollars(Math.abs(transferCompanionAmount)));
+          values.amount = String(toDollars(Math.abs(transferCompanionAmount), { raw: true }));
           const destinationAmount = Math.abs(initialValues.amount);
           if (destinationAmount !== Math.abs(transferCompanionAmount)) {
-            values.toAmountForAccount = String(toDollars(destinationAmount));
+            values.toAmountForAccount = String(toDollars(destinationAmount, { raw: true }));
           }
         } else {
-          values.amount = String(toDollars(Math.abs(initialValues.amount)));
+          values.amount = String(toDollars(Math.abs(initialValues.amount), { raw: true }));
         }
       } else {
         values.accountId = initialValues.account_id || '';
         values.toAccountId = transferCompanionAccountId;
-        values.amount = String(toDollars(Math.abs(initialValues.amount)));
+        values.amount = String(toDollars(Math.abs(initialValues.amount), { raw: true }));
         if (
           transferCompanionAmount != null &&
           Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)
         ) {
-          values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount)));
+          values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount), { raw: true }));
         }
       }
     } else {
       values.accountId = initialValues.account_id || '';
-      values.amount = String(toDollars(Math.abs(initialValues.amount)));
+      values.amount = String(toDollars(Math.abs(initialValues.amount), { raw: true }));
       values.gainOrLoss = initialValues.is_income ? 'gain' : 'loss';
     }
   } else {
     values.accountId = initialValues.account_id || '';
-    values.amount = String(toDollars(Math.abs(initialValues.amount)));
+    values.amount = String(toDollars(Math.abs(initialValues.amount), { raw: true }));
     values.transactionType = initialValues.is_income ? 'income' : 'expense';
     if (initialLinkedAccountId) {
       values.linkedAccountId = initialLinkedAccountId;
@@ -95,7 +96,7 @@ function getInitialFormValues({
         transferCompanionAmount != null &&
         Math.abs(transferCompanionAmount) !== Math.abs(initialValues.amount)
       ) {
-        values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount)));
+        values.toAmountForAccount = String(toDollars(Math.abs(transferCompanionAmount), { raw: true }));
       }
     }
     values.isSplit = hasSplit ?? false;
@@ -579,12 +580,15 @@ export default function TransactionForm({ categories: allCategories = [], accoun
           <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">
             {isTransfer && !isAdjustment ? 'Total payment ($)' : 'Amount ($)'}
           </label>
-          <input
+          <AmountInput
             type="number"
             step="0.01"
             min="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            onAmountChange={setAmount}
+            calculatorLabel={isTransfer && !isAdjustment ? 'Total payment' : 'Transaction amount'}
+            disabled={isSaving}
             className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
             placeholder="0.00"
           />
@@ -599,12 +603,15 @@ export default function TransactionForm({ categories: allCategories = [], accoun
             {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
             <InfoTip text="Leave blank to apply the full amount. Enter a lower value if part of the payment is interest or fees that don't reduce the account balance (e.g. student loan interest)." />
           </label>
-          <input
+          <AmountInput
             type="number"
             step="0.01"
             min="0.01"
             value={toAmountForAccount}
             onChange={(e) => setToAmountForAccount(e.target.value)}
+            onAmountChange={setToAmountForAccount}
+            calculatorLabel="Amount applied to account"
+            disabled={isSaving}
             className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
             placeholder="Leave blank for full amount"
           />

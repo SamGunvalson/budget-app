@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { toDollars } from '../../utils/helpers';
+import AmountInput from '../common/AmountInput';
+import { centsToInput } from '../../utils/calculator';
 
 /**
  * Single row for a category budget allocation.
@@ -71,16 +73,23 @@ export default function BudgetItemInput({ category, plannedAmount, onChange, dis
 
       {/* Dollar input */}
       <div className="relative w-32 flex-shrink-0">
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-stone-400 dark:text-stone-500">
+        <span className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-sm text-stone-400 dark:text-stone-500">
           $
         </span>
-        <input
+        <AmountInput
           type="text"
           inputMode="decimal"
           value={displayValue}
+          calculatorValue={editValue ?? (plannedAmount ? centsToInput(plannedAmount) : '')}
+          calculatorLabel={`${category.name} monthly budget`}
+          minCents={0}
+          onAmountChange={(value, cents) => {
+            setEditValue(value);
+            onChange(cents);
+          }}
           onChange={handleChange}
           onFocus={handleFocus}
-          onBlur={handleBlur}
+          onFieldBlur={handleBlur}
           disabled={disabled}
           placeholder="0"
           className="w-full rounded-lg border border-stone-300 bg-stone-50/50 py-2 pl-7 pr-3 text-right text-sm text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"

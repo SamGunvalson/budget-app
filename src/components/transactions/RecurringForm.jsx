@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
@@ -45,7 +46,7 @@ function getInitialFormValues(initialValues, isEditing) {
         ? initialValues.to_account_id
         : '',
     categoryId: initialValues.category_id || '',
-    amount: String(toDollars(Math.abs(initialValues.amount))),
+    amount: String(toDollars(Math.abs(initialValues.amount), { raw: true })),
     description: initialValues.description || '',
     payee: initialValues.payee || '',
     frequency: initialValues.frequency || 'monthly',
@@ -63,7 +64,7 @@ function getInitialFormValues(initialValues, isEditing) {
     splitPartnerSharePct: initialValues.split_partner_share_pct ?? 50,
     toAmountForAccount:
       initialValues.to_amount != null
-        ? String(toDollars(Math.abs(initialValues.to_amount)))
+        ? String(toDollars(Math.abs(initialValues.to_amount), { raw: true }))
         : '',
   };
 }
@@ -331,12 +332,15 @@ export default function RecurringForm({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelClass}>{isTransfer ? 'Total payment ($) *' : 'Amount ($) *'}</label>
-          <input
+          <AmountInput
             type="number"
             step="0.01"
             min="0.01"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            onAmountChange={setAmount}
+            calculatorLabel="Recurring amount"
+            disabled={isSaving}
             placeholder="0.00"
             className={inputClass}
           />
@@ -365,12 +369,15 @@ export default function RecurringForm({
             {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
             <span className="ml-1 text-xs font-normal text-stone-400 dark:text-stone-500">optional</span>
           </label>
-          <input
+          <AmountInput
             type="number"
             step="0.01"
             min="0.01"
             value={toAmountForAccount}
             onChange={(e) => setToAmountForAccount(e.target.value)}
+            onAmountChange={setToAmountForAccount}
+            calculatorLabel="Recurring amount applied to account"
+            disabled={isSaving}
             placeholder="Leave blank for full amount"
             className={inputClass}
           />
