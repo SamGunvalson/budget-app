@@ -142,6 +142,56 @@ section; Caddy connects over Docker networking without publishing a host port.
 Use the manager's pull/update and recreate operations for updates, with the
 same backup and explicit schema-migration precautions described above.
 
+#### Applying a migration on Unraid
+
+Run these from the Unraid web terminal (**>_** icon) or over SSH. Plain
+`docker` commands avoid needing Compose Manager's env-file path.
+
+1. Find the database container name. Compose Manager names it after the
+   project, e.g. `budget-app-db-1`:
+
+   ```bash
+   docker ps --format '{{.Names}}' | grep -- '-db-'
+   DB=budget-app-db-1   # replace with the name printed above
+   ```
+
+2. Back up to the array, not the container:
+
+   ```bash
+   docker exec "$DB" pg_dump -U postgres -d postgres > /mnt/user/backups/budget-$(date +%F).sql
+   ```
+
+3. Run the migration. Choose one source for the SQL file:
+
+   - **Released version.** The images are published from `main`, so the file
+     is already inside the DB image. Use Compose Manager's **Update Stack**
+     button, which pulls and recreates every container, then immediately run
+     the command below. Reports fail only until it finishes.
+
+     ```bash
+     docker exec -i "$DB" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+       -f /sql_scripts/migrations/supabase_report_as_of.sql
+     ```
+
+   - **Unreleased branch.** The running image does not contain the file yet.
+     Copy the file from your checkout to the server, for example into
+     `/mnt/user/appdata/budget-app/` over the SMB share, and pipe it in. This
+     works with any image tag:
+
+     ```bash
+     docker exec -i "$DB" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+       < /mnt/user/appdata/budget-app/supabase_report_as_of.sql
+     ```
+
+   A successful run prints a run of `DROP FUNCTION` and `CREATE FUNCTION`
+   lines and ends with `NOTIFY` and `COMMIT`. If any line says `ERROR`, the
+   whole transaction rolled back and nothing changed.
+
+4. For the unreleased-branch path, update the app container after the
+   migration so the new frontend never runs against the old functions. The
+   old frontend keeps working after the migration, because `p_as_of` is
+   optional.
+
 ### Building self-hosted images from source
 
 For development or testing unpublished changes, use the optional build override
@@ -303,6 +353,33 @@ Existing volumes must already have the base schema and updated-at migration.
 Do not rerun the base CREATE script on an existing database. The shared
 archive migration also supplies the authenticated RPC EXECUTE grant; no new
 local-only function or duplicate migration is necessary.
+
+#### Report "Include upcoming" upgrade
+
+Reports exclude projected, pending, and future-dated transactions by default,
+with an **Include upcoming** toggle. The frontend passes `p_as_of` to
+`get_plan_vs_actual`, `get_plan_vs_actual_ytd`, `get_monthly_spending_trend`,
+and `get_yearly_spending_trend`, so existing databases need
+[`migrations/supabase_report_as_of.sql`](../sql_scripts/migrations/supabase_report_as_of.sql)
+**before** the updated frontend is deployed. Without it, report requests fail
+because PostgREST cannot find a matching function signature.
+
+This is the only schema change for this release, assuming earlier release
+upgrades are already applied. It runs in a single transaction, replaces only
+those four functions, changes no data, and is safe to rerun. It ends with
+`NOTIFY pgrst, 'reload schema'`, so no PostgREST restart is needed. Fresh
+installs already get these definitions from `supabase_phase3_aggregations.sql`.
+
+- **Supabase:** run the file as the database owner in the SQL Editor.
+- **Self-hosted:** back up, recreate `db` from the updated image, then run:
+
+  ```bash
+  docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_report_as_of.sql
+  ```
+
+- **Unraid:** see [applying a migration on Unraid](#applying-a-migration-on-unraid).
+
+To verify, `\df get_plan_vs_actual` in `psql` should list `p_as_of date`.
 
 #### Existing databases and RLS repair
 

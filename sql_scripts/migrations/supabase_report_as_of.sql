@@ -393,4 +393,7 @@ AS $$
   ORDER BY y;
 $$;
 
+-- PostgREST caches RPC signatures; reload so calls passing p_as_of resolve.
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;

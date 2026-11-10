@@ -395,6 +395,7 @@ roles/auth first and grants last; historical repairs are excluded.
 | [migrations/supabase_recurring_occurrence_date.sql](../sql_scripts/migrations/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
 | [migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
 | [migrations/supabase_recurring_projection_cleanup.sql](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql) | Installs owner-scoped recurring cleanup RPC; included in current phase-4 mutations |
+| [migrations/supabase_report_as_of.sql](../sql_scripts/migrations/supabase_report_as_of.sql) | Replaces the four report RPCs with `p_as_of` versions; included in current phase-3 aggregations |
 | [migrations/supabase_accounts_closed.sql](../sql_scripts/migrations/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
 | [migrations/supabase_asymmetric_transfer.sql](../sql_scripts/migrations/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
 | [migrations/supabase_custom_interval.sql](../sql_scripts/migrations/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
