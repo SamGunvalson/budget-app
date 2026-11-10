@@ -12,17 +12,24 @@
     }
   },
 
-  "postCreateCommand": "npm install",
+  // Keep the container's node_modules in a named volume so it doesn't share
+  // (and clobber) the host's node_modules. Native deps like rollup, esbuild,
+  // lightningcss and tailwind oxide ship per-platform binaries, so a
+  // linux-arm64 install breaks the Mac build and vice versa.
+  "mounts": [
+    "source=budget-app-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+
+  "postCreateCommand": "sudo chown node:node node_modules && npm ci",
 
   "customizations": {
     "vscode": {
       "extensions": [
-				"github.copilot-chat",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
-        "eamodio.gitlens",
-        "dsznajder.es7-react-js-snippets"
+        "dsznajder.es7-react-js-snippets",
+        "Anthropic.claude-code"
       ],
       "settings": {
         "editor.formatOnSave": true,
