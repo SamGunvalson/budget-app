@@ -1,5 +1,11 @@
 import { useMemo, Fragment } from 'react';
-import { formatCurrency, isTrueIncome, isSpendingCredit } from '../../utils/helpers';
+import {
+  formatCurrency,
+  isTrueIncome,
+  isSpendingCredit,
+  isIncomeDebit,
+  isSettledTransaction,
+} from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
@@ -94,13 +100,20 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
  *
  * Mirrors the AnnualBudgetTable grid layout (sticky header/footer/left column,
  * type-group sections, annual totals column).
+ *
+ * `asOf` (YYYY-MM-DD) limits actuals to posted transactions dated on or
+ * before it; null/omitted counts every live transaction.
  */
-export default function AnnualActualsTable({ year: yearProp }) {
+export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
   const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
   const year = yearProp ?? ctxYear;
   const { thresholds } = useThresholds();
   const { years } = useAvailableYears();
   const transactionsQuery = useTransactionsForYear(year);
+  const transactions = useMemo(
+    () => (transactionsQuery.data ?? []).filter((tx) => isSettledTransaction(tx, asOf)),
+    [transactionsQuery.data, asOf],
+  );
   const categoriesQuery = useCategories();
   const typeOrderQuery = useUserPreference('type_group_order');
   const budgetQuery = useAnnualBudgetData(year);
@@ -120,7 +133,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
   }, [savedTypeOrder]);
   const actualData = useMemo(() => {
     const actuals = Object.fromEntries(MONTHS.map((month) => [month, {}]));
-    for (const tx of transactionsQuery.data ?? []) {
+    for (const tx of transactions) {
       if (tx.categories?.type === 'transfer') continue;
 
       const date = new Date(`${tx.transaction_date}T00:00:00`);
@@ -130,12 +143,40 @@ export default function AnnualActualsTable({ year: yearProp }) {
 
       if (!actuals[month][categoryId]) actuals[month][categoryId] = 0;
       if (isTrueIncome(tx)) actuals[month][categoryId] += Math.abs(tx.amount);
+      // Debit in an income category (e.g. a refunded paycheck) reduces income
+      else if (isIncomeDebit(tx)) actuals[month][categoryId] -= Math.abs(tx.amount);
       else if (isSpendingCredit(tx)) actuals[month][categoryId] -= Math.abs(tx.amount);
       else actuals[month][categoryId] += Math.abs(tx.amount);
     }
     return actuals;
-  }, [transactionsQuery.data]);
+  }, [transactions]);
   const budgetData = budgetQuery.data ?? {};
+
+  // Months after the current calendar month haven't happened yet: fade them
+  // and skip budget highlighting so empty or projected cells don't read as
+  // "under budget".
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const isFutureMonth = (m) =>
+    year > currentYear || (year === currentYear && m > currentMonth);
+  const futureClass = (m) => (isFutureMonth(m) ? 'opacity-40' : '');
+
+  // Average over elapsed months (completed months plus the current one).
+  const elapsedMonths = MONTHS.filter((m) => !isFutureMonth(m));
+  const averageOf = (valueForMonth) =>
+    elapsedMonths.length === 0
+      ? null
+      : Math.round(
+          elapsedMonths.reduce((s, m) => s + valueForMonth(m), 0) / elapsedMonths.length,
+        );
+  const formatAverage = (cents) =>
+    cents === null || cents === 0
+      ? <span className="opacity-30">–</span>
+      : formatCurrency(cents, 'USD', { hideCents: true });
+  const averageTitle = elapsedMonths.length === 0
+    ? 'No completed months yet'
+    : `Average of ${SHORT_MONTHS[0]}–${SHORT_MONTHS[elapsedMonths.length - 1]} (${elapsedMonths.length} month${elapsedMonths.length === 1 ? '' : 's'})`;
   const isLoading = [
     transactionsQuery,
     categoriesQuery,
@@ -151,7 +192,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
 
   // ── Group categories by type (exclude transfers) ──
   const activityIds = new Set([
-    ...(transactionsQuery.data ?? []).map((tx) => tx.category_id),
+    ...transactions.map((tx) => tx.category_id),
     ...Object.values(budgetData).flatMap((data) => Object.keys(data.allocations ?? {})),
   ]);
   const budgetableCategories = categories.filter((c) =>
@@ -281,6 +322,10 @@ export default function AnnualActualsTable({ year: yearProp }) {
             <span className="inline-block h-3 w-3 rounded border border-stone-300 bg-stone-100/50 dark:border-stone-600 dark:bg-stone-700/30" />
             <span className="italic">No budget / zero allocation</span>
           </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded border border-stone-300 bg-white opacity-40 dark:border-stone-600 dark:bg-stone-800" />
+            Upcoming month (not highlighted)
+          </span>
         </div>
       </div>
 
@@ -304,7 +349,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
           className="overflow-y-auto overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
           style={{ maxHeight: 'calc(100vh - 300px)' }}
         >
-          <table className="w-full border-separate border-spacing-0 text-sm" style={{ minWidth: '900px' }}>
+          <table className="w-full border-separate border-spacing-0 text-sm" style={{ minWidth: '970px' }}>
             <thead className="sticky top-0 z-20 bg-stone-50 shadow-sm dark:bg-stone-900">
               <tr className="border-b border-stone-200 dark:border-stone-700">
                 <th
@@ -316,8 +361,9 @@ export default function AnnualActualsTable({ year: yearProp }) {
                 {MONTHS.map((m, i) => (
                   <th
                     key={m}
-                    className="px-0.5 py-2 text-center text-[10px] font-semibold uppercase text-stone-500 dark:text-stone-400"
+                    className={`px-0.5 py-2 text-center text-[10px] font-semibold uppercase text-stone-500 dark:text-stone-400 ${futureClass(m)}`}
                     style={{ minWidth: '52px' }}
+                    title={isFutureMonth(m) ? 'Upcoming month' : undefined}
                   >
                     {SHORT_MONTHS[i]}
                   </th>
@@ -327,6 +373,13 @@ export default function AnnualActualsTable({ year: yearProp }) {
                   style={{ minWidth: '70px' }}
                 >
                   Annual
+                </th>
+                <th
+                  className="px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400"
+                  style={{ minWidth: '70px' }}
+                  title={averageTitle}
+                >
+                  Avg
                 </th>
               </tr>
             </thead>
@@ -357,7 +410,9 @@ export default function AnnualActualsTable({ year: yearProp }) {
                               key={m}
                               className={`border-t ${typeStyle.headerBorder} ${typeStyle.headerBg} px-0.5 py-1.5 text-center text-[11px] font-bold ${typeStyle.headerText}`}
                             >
+                              <span className={futureClass(m)}>
                               {val === 0 ? <span className="opacity-30">–</span> : formatCurrency(val, 'USD', { hideCents: true })}
+                              </span>
                             </td>
                           );
                         })}
@@ -366,6 +421,9 @@ export default function AnnualActualsTable({ year: yearProp }) {
                           const annual = MONTHS.reduce((s, m) => s + (groupSubtotals[type]?.[m] || 0), 0);
                           return annual === 0 ? <span className="opacity-30">–</span> : formatCurrency(annual, 'USD', { hideCents: true });
                         })()}
+                      </td>
+                      <td className={`border-t ${typeStyle.headerBorder} ${typeStyle.headerBg} px-2 py-1.5 text-right text-[11px] font-bold ${typeStyle.headerText}`}>
+                        {formatAverage(averageOf((m) => groupSubtotals[type]?.[m] || 0))}
                       </td>
                     </tr>
 
@@ -398,12 +456,14 @@ export default function AnnualActualsTable({ year: yearProp }) {
                           {MONTHS.map((m) => {
                             const actualCents = actualData[m]?.[cat.id] || 0;
                             const plannedCents = budgetData[m]?.allocations?.[cat.id];
-                            const highlight = getCellHighlight(actualCents, plannedCents, thresholds, cat.type);
+                            const highlight = isFutureMonth(m)
+                              ? ''
+                              : getCellHighlight(actualCents, plannedCents, thresholds, cat.type);
 
                             return (
                               <td
                                 key={m}
-                                className={`px-0.5 py-1 text-center text-[11px] ${highlight}`}
+                                className={`px-0.5 py-1 text-center text-[11px] ${highlight} ${futureClass(m)}`}
                               >
                                 <span className={`${actualCents === 0 ? 'text-stone-300 dark:text-stone-600' : !highlight ? 'text-stone-800 dark:text-stone-200' : ''}`}>
                                   {formatCurrency(actualCents, 'USD', { hideCents: true })}
@@ -415,6 +475,11 @@ export default function AnnualActualsTable({ year: yearProp }) {
                           {/* Annual total */}
                           <td className="px-2 py-1.5 text-right text-[11px] font-semibold text-stone-700 dark:text-stone-300">
                             {formatCurrency(annualTotal, 'USD', { hideCents: true })}
+                          </td>
+
+                          {/* Average over elapsed months */}
+                          <td className="px-2 py-1.5 text-right text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                            {formatAverage(averageOf((m) => actualData[m]?.[cat.id] || 0))}
                           </td>
                         </tr>
                       );
@@ -432,12 +497,15 @@ export default function AnnualActualsTable({ year: yearProp }) {
                   Income
                 </td>
                 {MONTHS.map((m) => (
-                  <td key={m} className="px-0.5 py-1.5 text-center text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  <td key={m} className={`px-0.5 py-1.5 text-center text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 ${futureClass(m)}`}>
                     {formatCurrency(getMonthIncome(m), 'USD', { hideCents: true })}
                   </td>
                 ))}
                 <td className="px-2 py-1.5 text-right text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
                   {formatCurrency(MONTHS.reduce((s, m) => s + getMonthIncome(m), 0), 'USD', { hideCents: true })}
+                </td>
+                <td className="px-2 py-1.5 text-right text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                  {formatAverage(averageOf(getMonthIncome))}
                 </td>
               </tr>
 
@@ -447,12 +515,15 @@ export default function AnnualActualsTable({ year: yearProp }) {
                   Expenses
                 </td>
                 {MONTHS.map((m) => (
-                  <td key={m} className="px-0.5 py-1.5 text-center text-[11px] font-semibold text-stone-700 dark:text-stone-300">
+                  <td key={m} className={`px-0.5 py-1.5 text-center text-[11px] font-semibold text-stone-700 dark:text-stone-300 ${futureClass(m)}`}>
                     {formatCurrency(getMonthExpenses(m), 'USD', { hideCents: true })}
                   </td>
                 ))}
                 <td className="px-2 py-1.5 text-right text-[11px] font-bold text-stone-700 dark:text-stone-300">
                   {formatCurrency(MONTHS.reduce((s, m) => s + getMonthExpenses(m), 0), 'USD', { hideCents: true })}
+                </td>
+                <td className="px-2 py-1.5 text-right text-[11px] font-bold text-stone-700 dark:text-stone-300">
+                  {formatAverage(averageOf(getMonthExpenses))}
                 </td>
               </tr>
 
@@ -466,7 +537,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
                   return (
                     <td
                       key={m}
-                      className={`px-0.5 py-1.5 text-center text-[11px] font-semibold ${rem >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+                      className={`px-0.5 py-1.5 text-center text-[11px] font-semibold ${rem >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'} ${futureClass(m)}`}
                     >
                       {formatCurrency(rem, 'USD', { hideCents: true })}
                     </td>
@@ -481,6 +552,17 @@ export default function AnnualActualsTable({ year: yearProp }) {
                     return (
                       <span className={total >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
                         {formatCurrency(total, 'USD', { hideCents: true })}
+                      </span>
+                    );
+                  })()}
+                </td>
+                <td className="px-2 py-1.5 text-right text-[11px] font-bold">
+                  {(() => {
+                    const avg = averageOf((m) => getMonthIncome(m) - getMonthExpenses(m));
+                    if (avg === null) return <span className="opacity-30">–</span>;
+                    return (
+                      <span className={avg >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                        {formatCurrency(avg, 'USD', { hideCents: true })}
                       </span>
                     );
                   })()}

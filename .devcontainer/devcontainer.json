@@ -12,17 +12,31 @@
     }
   },
 
-  "postCreateCommand": "npm install",
+  // Keep the container's node_modules in a named volume so it doesn't share
+  // (and clobber) the host's node_modules. Native deps like rollup, esbuild,
+  // lightningcss and tailwind oxide ship per-platform binaries, so a
+  // linux-arm64 install breaks the Mac build and vice versa.
+  "mounts": [
+    "source=budget-app-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
+    // Persist Claude Code login + session history across container rebuilds.
+    "source=budget-app-claude-config,target=/home/node/.claude,type=volume"
+  ],
+
+  // Keep ~/.claude.json inside the persisted dir too (it normally lives in $HOME).
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+
+  "postCreateCommand": "sudo chown node:node node_modules /home/node/.claude && npm ci",
 
   "customizations": {
     "vscode": {
       "extensions": [
-				"github.copilot-chat",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
-        "eamodio.gitlens",
-        "dsznajder.es7-react-js-snippets"
+        "dsznajder.es7-react-js-snippets",
+        "Anthropic.claude-code"
       ],
       "settings": {
         "editor.formatOnSave": true,

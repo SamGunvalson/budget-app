@@ -31,6 +31,7 @@ const migrationScripts = [
   'supabase_partnership_seen.sql',
   'supabase_recurring_occurrence_date.sql',
   'supabase_recurring_projection_cleanup.sql',
+  'supabase_report_as_of.sql',
   'supabase_split_dedup.sql',
   'supabase_split_fix_rls.sql',
   'supabase_split_recurring.sql',
@@ -67,6 +68,24 @@ test('base occurrence lookup index matches the retained upgrade definition', () 
   assert.ok(migration);
   const normalize = (sql) => sql.replace(' IF NOT EXISTS', '').replace(/\s+/g, ' ');
   assert.equal(normalize(base), normalize(migration));
+});
+
+test('report as-of upgrade matches the fresh report RPC definitions', () => {
+  const setup = readSqlFile('supabase_phase3_aggregations.sql');
+  const migration = readSqlFile('migrations/supabase_report_as_of.sql');
+  for (const name of [
+    'get_plan_vs_actual',
+    'get_plan_vs_actual_ytd',
+    'get_monthly_spending_trend',
+    'get_yearly_spending_trend',
+  ]) {
+    const rpc = new RegExp(`DROP FUNCTION IF EXISTS ${name}\\([^)]*\\);\\s+CREATE OR REPLACE FUNCTION ${name}\\([\\s\\S]*?\\n\\$\\$;`);
+    const base = setup.match(rpc)?.[0];
+    assert.ok(base, `Missing ${name} in fresh setup`);
+    assert.equal(migration.match(rpc)?.[0], base, `${name} upgrade differs from fresh setup`);
+    assert.match(base, /p_as_of\s+date\s+DEFAULT NULL/);
+    assert.match(base, /AND \(p_as_of IS NULL OR \(t\.status = 'posted' AND t\.transaction_date <= p_as_of\)\)/);
+  }
 });
 
 test('legacy repair include resolves and database image bundles historical migrations', () => {

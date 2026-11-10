@@ -1752,6 +1752,7 @@ import {
   isTrueIncome as _isTrueIncome,
   isSpendingCredit as _isSpendingCredit,
   isIncomeDebit as _isIncomeDebit,
+  isSettledTransaction as _isSettledTransaction,
   toDateString,
   getTodayString,
 } from "../utils/helpers";
@@ -1798,7 +1799,12 @@ function sortPlanVsActualCategories(a, b) {
  * `services/budgets.js` used pre-Phase-3, but reads from IndexedDB instead
  * of paginating Supabase.  Used as the offline fallback.
  */
-async function computePlanVsActualFromCache({ month, year, ytd = false }) {
+async function computePlanVsActualFromCache({
+  month,
+  year,
+  ytd = false,
+  asOf = null,
+}) {
   const startDate = `${year}-01-01`;
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const endMonth = month === 12 ? 1 : month + 1;
@@ -1832,7 +1838,8 @@ async function computePlanVsActualFromCache({ month, year, ytd = false }) {
     (t) =>
       !t.deleted_at &&
       t.transaction_date >= lowerBound &&
-      t.transaction_date < endDate,
+      t.transaction_date < endDate &&
+      _isSettledTransaction(t, asOf),
   );
 
   const map = {};
@@ -1890,17 +1897,19 @@ async function computePlanVsActualFromCache({ month, year, ytd = false }) {
  * in the background.  When the fresh result arrives we notify the
  * `budget_items` table so the React Query bridge refetches subscribed hooks.
  */
-export async function getPlanVsActualOffline({ month, year }) {
-  const cacheKey = `pva:m:${year}-${month}`;
+export async function getPlanVsActualOffline({ month, year, asOf = null }) {
+  const cacheKey = `pva:m:${year}-${month}${asOf ? `:asof:${asOf}` : ""}`;
   return swrRead({
     key: cacheKey,
     // RPC-derived; no notifyTable to avoid the bridge → invalidate → refetch
     // → bg-revalidate → notifyTable loop.
     readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
-      const result = await tryOnline(() => _getPlanVsActual({ month, year }));
+      const result = await tryOnline(() =>
+        _getPlanVsActual({ month, year, asOf }),
+      );
       if (!result.offline) return result.data;
-      return computePlanVsActualFromCache({ month, year, ytd: false });
+      return computePlanVsActualFromCache({ month, year, ytd: false, asOf });
     },
     writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
@@ -1910,20 +1919,25 @@ export async function getPlanVsActualOffline({ month, year }) {
 /**
  * Plan-vs-Actual YTD — SWR over the `get_plan_vs_actual_ytd` RPC.
  */
-export async function getPlanVsActualYTDOffline({ year, throughMonth }) {
-  const cacheKey = `pva:ytd:${year}-${throughMonth}`;
+export async function getPlanVsActualYTDOffline({
+  year,
+  throughMonth,
+  asOf = null,
+}) {
+  const cacheKey = `pva:ytd:${year}-${throughMonth}${asOf ? `:asof:${asOf}` : ""}`;
   return swrRead({
     key: cacheKey,
     readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() =>
-        _getPlanVsActualYTD({ year, throughMonth }),
+        _getPlanVsActualYTD({ year, throughMonth, asOf }),
       );
       if (!result.offline) return result.data;
       return computePlanVsActualFromCache({
         month: throughMonth,
         year,
         ytd: true,
+        asOf,
       });
     },
     writeCache: (value) => writeRpcCache(cacheKey, value),
@@ -1933,7 +1947,10 @@ export async function getPlanVsActualYTDOffline({ year, throughMonth }) {
 
 // ── Spending trends ────────────────────────────────────────────────────────
 
-function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
+function aggregateTrendFromCacheRows(
+  rows,
+  { months, endMonth, endYear, asOf = null },
+) {
   const anchorEnd =
     endMonth != null && endYear != null
       ? new Date(endYear, endMonth, 0)
@@ -1950,6 +1967,7 @@ function aggregateTrendFromCacheRows(rows, { months, endMonth, endYear }) {
   for (const t of rows) {
     if (t.deleted_at) continue;
     if (t.transaction_date < startStr || t.transaction_date > endStr) continue;
+    if (!_isSettledTransaction(t, asOf)) continue;
     const cat = t.categories;
     if (cat?.type === "transfer") continue;
 
@@ -1995,7 +2013,7 @@ export async function getMonthlySpendingTrendOffline(opts = {}) {
   const m = opts.months ?? 6;
   const em = opts.endMonth ?? "";
   const ey = opts.endYear ?? "";
-  const cacheKey = `trend:m:${m}:${ey}-${em}`;
+  const cacheKey = `trend:m:${m}:${ey}-${em}${opts.asOf ? `:asof:${opts.asOf}` : ""}`;
   return swrRead({
     key: cacheKey,
     readCache: () => readRpcCache(cacheKey),
@@ -2007,6 +2025,7 @@ export async function getMonthlySpendingTrendOffline(opts = {}) {
         months: opts.months ?? 6,
         endMonth: opts.endMonth,
         endYear: opts.endYear,
+        asOf: opts.asOf ?? null,
       });
     },
     writeCache: (value) => writeRpcCache(cacheKey, value),
@@ -2018,7 +2037,7 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
   const yrs = opts.years ?? 2;
   const em = opts.endMonth ?? "";
   const ey = opts.endYear ?? "";
-  const cacheKey = `trend:y:${yrs}:${ey}-${em}`;
+  const cacheKey = `trend:y:${yrs}:${ey}-${em}${opts.asOf ? `:asof:${opts.asOf}` : ""}`;
   return swrRead({
     key: cacheKey,
     readCache: () => readRpcCache(cacheKey),
@@ -2042,6 +2061,7 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
         if (t.deleted_at) continue;
         if (t.transaction_date < startStr || t.transaction_date > endStr)
           continue;
+        if (!_isSettledTransaction(t, opts.asOf ?? null)) continue;
         const cat = t.categories;
         if (cat?.type === "transfer") continue;
         const y = new Date(t.transaction_date).getUTCFullYear();

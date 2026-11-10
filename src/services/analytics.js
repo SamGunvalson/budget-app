@@ -14,7 +14,8 @@ import {
  * (transfers excluded; spending-credits subtract from `spent`; income-debits
  * subtract from `income`) and returns one row per month already aggregated.
  *
- * @param {{ months?: number, endMonth?: number, endYear?: number }} opts
+ * @param {{ months?: number, endMonth?: number, endYear?: number, asOf?: string|null }} opts
+ *   `asOf` (YYYY-MM-DD) limits totals to posted rows dated on or before it.
  * @returns {Promise<Array<{ key: string, label: string, year: number, month: number, spent: number, income: number, count: number }>>}
  *   `spent` and `income` are in cents.  Sorted oldest → newest.
  */
@@ -22,11 +23,13 @@ export async function getMonthlySpendingTrend({
   months = 6,
   endMonth,
   endYear,
+  asOf,
 } = {}) {
   const { data, error } = await supabase.rpc("get_monthly_spending_trend", {
     p_months: months,
     p_end_month: endMonth ?? null,
     p_end_year: endYear ?? null,
+    ...(asOf ? { p_as_of: asOf } : {}),
   });
   if (error) throw error;
   return (data || []).map((r) => ({
@@ -48,18 +51,20 @@ export async function getMonthlySpendingTrend({
  *
  * Backed by the `get_yearly_spending_trend` Postgres RPC (Phase 3).
  *
- * @param {{ years?: number, endMonth?: number, endYear?: number }} opts
+ * @param {{ years?: number, endMonth?: number, endYear?: number, asOf?: string|null }} opts
  * @returns {Promise<Array<{ year: number, spent: number, income: number, count: number }>>}
  */
 export async function getYearlySpendingTrend({
   years = 2,
   endMonth,
   endYear,
+  asOf,
 } = {}) {
   const { data, error } = await supabase.rpc("get_yearly_spending_trend", {
     p_years: years,
     p_end_month: endMonth ?? null,
     p_end_year: endYear ?? null,
+    ...(asOf ? { p_as_of: asOf } : {}),
   });
   if (error) throw error;
   return (data || []).map((r) => ({

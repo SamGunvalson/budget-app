@@ -290,10 +290,14 @@ export function useSplitExpenses(partnershipId, userId, { enabled = true } = {})
  * query key is keyed under `budget_items` so any budget mutation
  * invalidates it automatically through the bridge.
  */
-export function usePlanVsActual(month, year, { enabled = true } = {}) {
+export function usePlanVsActual(
+  month,
+  year,
+  { enabled = true, asOf = null } = {},
+) {
   return useQuery({
-    queryKey: ["budget_items", "planVsActual", { month, year }],
-    queryFn: () => getPlanVsActualOffline({ month, year }),
+    queryKey: ["budget_items", "planVsActual", { month, year, asOf }],
+    queryFn: () => getPlanVsActualOffline({ month, year, asOf }),
     enabled: enabled && month != null && year != null,
   });
 }
@@ -304,11 +308,11 @@ export function usePlanVsActual(month, year, { enabled = true } = {}) {
 export function usePlanVsActualYTD(
   year,
   throughMonth,
-  { enabled = true } = {},
+  { enabled = true, asOf = null } = {},
 ) {
   return useQuery({
-    queryKey: ["budget_items", "planVsActualYTD", { year, throughMonth }],
-    queryFn: () => getPlanVsActualYTDOffline({ year, throughMonth }),
+    queryKey: ["budget_items", "planVsActualYTD", { year, throughMonth, asOf }],
+    queryFn: () => getPlanVsActualYTDOffline({ year, throughMonth, asOf }),
     enabled: enabled && year != null && throughMonth != null,
   });
 }
@@ -332,7 +336,7 @@ export function useTemplatesForAccount(accountId, { enabled = true } = {}) {
  * keep working unchanged.
  */
 export function useMonthlySpendingTrend(opts, { enabled = true } = {}) {
-  const { months, endMonth, endYear } = opts ?? {};
+  const { months, endMonth, endYear, asOf } = opts ?? {};
   return useQuery({
     queryKey: [
       "transactions",
@@ -341,6 +345,7 @@ export function useMonthlySpendingTrend(opts, { enabled = true } = {}) {
         months: months ?? null,
         endMonth: endMonth ?? null,
         endYear: endYear ?? null,
+        asOf: asOf ?? null,
       },
     ],
     queryFn: () => getMonthlySpendingTrendOffline(opts),
@@ -353,7 +358,7 @@ export function useMonthlySpendingTrend(opts, { enabled = true } = {}) {
  * Postgres RPC.  Returns rows shaped like the old `aggregateByYear` output.
  */
 export function useYearlySpendingTrend(opts, { enabled = true } = {}) {
-  const { years, endMonth, endYear } = opts ?? {};
+  const { years, endMonth, endYear, asOf } = opts ?? {};
   return useQuery({
     queryKey: [
       "transactions",
@@ -362,6 +367,7 @@ export function useYearlySpendingTrend(opts, { enabled = true } = {}) {
         years: years ?? null,
         endMonth: endMonth ?? null,
         endYear: endYear ?? null,
+        asOf: asOf ?? null,
       },
     ],
     queryFn: () => getYearlySpendingTrendOffline(opts),

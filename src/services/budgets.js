@@ -118,13 +118,17 @@ export async function upsertBudgetItem({
  * Categories are returned already sorted income → needs → wants → savings,
  * then by sort_order, then name.  All amounts in cents.
  *
- * @param {{ month: number, year: number }} params
+ * When `asOf` (YYYY-MM-DD) is set, actuals only count posted transactions
+ * dated on or before it; null counts every live row.
+ *
+ * @param {{ month: number, year: number, asOf?: string|null }} params
  * @returns {Promise<{ categories: Array, plannedIncome: number, actualIncome: number }>}
  */
-export async function getPlanVsActual({ month, year }) {
+export async function getPlanVsActual({ month, year, asOf = null }) {
   const { data, error } = await supabase.rpc("get_plan_vs_actual", {
     p_month: month,
     p_year: year,
+    ...(asOf ? { p_as_of: asOf } : {}),
   });
   if (error) throw error;
   return coercePlanVsActualPayload(data);
@@ -150,13 +154,14 @@ function coercePlanVsActualPayload(payload) {
  * Backed by the `get_plan_vs_actual_ytd` Postgres RPC (Phase 3).  Same shape
  * and accounting rules as `getPlanVsActual`, just summed across months 1..N.
  *
- * @param {{ year: number, throughMonth: number }} params
+ * @param {{ year: number, throughMonth: number, asOf?: string|null }} params
  * @returns {Promise<{ categories: Array, plannedIncome: number, actualIncome: number }>}
  */
-export async function getPlanVsActualYTD({ year, throughMonth }) {
+export async function getPlanVsActualYTD({ year, throughMonth, asOf = null }) {
   const { data, error } = await supabase.rpc("get_plan_vs_actual_ytd", {
     p_year: year,
     p_through_month: throughMonth,
+    ...(asOf ? { p_as_of: asOf } : {}),
   });
   if (error) throw error;
   return coercePlanVsActualPayload(data);
