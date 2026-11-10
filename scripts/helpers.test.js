@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   CATEGORY_TYPE_LABELS,
   CATEGORY_TYPE_ORDER,
+  isSettledTransaction,
   toDateString,
 } from '../src/utils/helpers.js';
 
@@ -11,6 +12,20 @@ test('shared category order and labels preserve all five UI groups', () => {
   assert.deepEqual(CATEGORY_TYPE_ORDER, ['income', 'needs', 'wants', 'savings', 'transfer']);
   assert.deepEqual(CATEGORY_TYPE_ORDER.map((type) => CATEGORY_TYPE_LABELS[type]),
     ['Income', 'Needs', 'Wants', 'Savings', 'Transfer']);
+});
+
+test('settled-transaction filter keeps only posted rows dated on or before as-of', () => {
+  const asOf = '2026-11-10';
+  const tx = (status, transaction_date) => ({ status, transaction_date });
+  assert.equal(isSettledTransaction(tx('posted', '2026-11-10'), asOf), true);
+  assert.equal(isSettledTransaction(tx('posted', '2026-01-01'), asOf), true);
+  assert.equal(isSettledTransaction(tx(undefined, '2026-11-09'), asOf), true);
+  assert.equal(isSettledTransaction(tx('posted', '2026-11-11'), asOf), false);
+  assert.equal(isSettledTransaction(tx('pending', '2026-11-01'), asOf), false);
+  assert.equal(isSettledTransaction(tx('projected', '2026-12-01'), asOf), false);
+  for (const status of ['posted', 'pending', 'projected']) {
+    assert.equal(isSettledTransaction(tx(status, '2027-06-01'), null), true);
+  }
 });
 
 test('local date formatting pads fields and preserves leap days', () => {

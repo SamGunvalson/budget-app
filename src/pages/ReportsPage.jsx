@@ -19,11 +19,19 @@ import {
   useMonthlySpendingTrend,
 } from '../hooks/queries';
 import { computeTrendSummary } from '../services/analytics';
-import { getMonthName, isTrueIncome, isSpendingCredit, isIncomeDebit } from '../utils/helpers';
+import {
+  getMonthName,
+  getTodayString,
+  isTrueIncome,
+  isSpendingCredit,
+  isIncomeDebit,
+  isSettledTransaction,
+} from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
+import IncludePendingToggle from '../components/reports/IncludePendingToggle';
 
 // Skeleton placeholder shown while a lazy chart chunk is downloading.
 function ChartFallback() {
@@ -43,6 +51,12 @@ export default function ReportsPage() {
   // Trend-specific state — owned here so TrendSummary stays in sync
   const [trendRange, setTrendRange] = useSessionState('reportsTrendRange', '6m'); // '6m' | '12m' | 'yoy'
 
+  // Reports count only settled activity (posted, dated today or earlier) unless
+  // the user opts in to projected/pending/future-dated rows. Shared by every
+  // tab except Calendar, which always shows upcoming items.
+  const [includePending, setIncludePending] = useSessionState('reportsIncludePending', false);
+  const asOf = includePending ? null : getTodayString();
+
   // Drill-down state: { name: string, type: 'income' | 'expense' } or null
   const [expandedChart, setExpandedChart] = useState(null);
 
@@ -52,6 +66,10 @@ export default function ReportsPage() {
   const categoriesQuery = useCategories();
   const pendingQuery = usePendingReviewCount();
   const allTransactions = useMemo(() => ytdQuery.data ?? [], [ytdQuery.data]);
+  const reportTransactions = useMemo(
+    () => allTransactions.filter((t) => isSettledTransaction(t, asOf)),
+    [allTransactions, asOf],
+  );
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const pendingReviewCount = pendingQuery.data ?? 0;
   const isLoading =
@@ -100,7 +118,7 @@ export default function ReportsPage() {
     const ytdIncomeMap = {};
     const ytdExpenseMap = {};
 
-    for (const t of allTransactions) {
+    for (const t of reportTransactions) {
       if (t.categories?.type === 'transfer') continue;
 
       const catId = t.category_id || 'uncategorized';
@@ -161,7 +179,7 @@ export default function ReportsPage() {
       ytdIncomeCategoryData: sortDesc(ytdIncomeMap),
       ytdExpenseCategoryData: sortDesc(ytdExpenseMap),
     };
-  }, [allTransactions, month, year]);
+  }, [reportTransactions, month, year]);
 
   // Trend data: backed by Phase 3 server-side aggregation RPCs via React
   // Query.  All three ranges return monthly buckets (yoy = 24 months) so
@@ -171,6 +189,7 @@ export default function ReportsPage() {
     months: trendMonths,
     endMonth: month,
     endYear: year,
+    asOf,
   });
   const trendMonthlyData = useMemo(() => trendQuery.data ?? [], [trendQuery.data]);
   const trendLoading = trendQuery.isLoading;
@@ -210,7 +229,7 @@ export default function ReportsPage() {
         return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
       };
 
-      return allTransactions.filter((t) => {
+      return reportTransactions.filter((t) => {
         if (t.categories?.type === 'transfer') return false;
         // Match income/expense — spending credits belong with expenses, not income
         const txBelongsToIncome = isTrueIncome(t) || isIncomeDebit(t);
@@ -224,7 +243,7 @@ export default function ReportsPage() {
         return true;
       });
     },
-    [allTransactions, viewMode, month, year, reportData],
+    [reportTransactions, viewMode, month, year, reportData],
   );
 
   // Render function passed to CategoryChart
@@ -330,6 +349,10 @@ export default function ReportsPage() {
                 </button>
               ))}
             </div>
+            {/* Pending/upcoming toggle — every tab except Calendar */}
+            {activeView !== 'calendar' && (
+              <IncludePendingToggle checked={includePending} onChange={setIncludePending} />
+            )}
             {/* Month/year selector for Trends view */}
             {activeView === 'trends' && (
               <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent="sky" />
@@ -395,7 +418,7 @@ export default function ReportsPage() {
             {activeView === 'calendar' ? (
               <CalendarView month={month} year={year} />
             ) : activeView === 'annualActuals' ? (
-              <AnnualActualsTable year={year} />
+              <AnnualActualsTable year={year} asOf={asOf} />
             ) : activeView === 'trends' ? (
               <Suspense fallback={<ChartFallback />}>
                 <TrendChart
@@ -415,6 +438,7 @@ export default function ReportsPage() {
                   viewMode={viewMode}
                   onMonthChange={handleMonthChange}
                   showSelector={false}
+                  asOf={asOf}
                 />
               </Suspense>
             ) : (

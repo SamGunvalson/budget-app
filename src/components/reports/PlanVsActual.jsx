@@ -12,7 +12,7 @@ import {
   usePlanVsActual,
   usePlanVsActualYTD,
 } from '../../hooks/queries';
-import { formatCurrency, getMonthName } from '../../utils/helpers';
+import { formatCurrency, getMonthName, isSettledTransaction } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
@@ -30,7 +30,11 @@ import useThresholds from '../../hooks/useThresholds';
  *   viewMode?: 'monthly' | 'ytd',
  *   onMonthChange?: (month: number, year: number) => void,
  *   showSelector?: boolean,
+ *   asOf?: string | null,
  * }} props
+ *
+ * `asOf` (YYYY-MM-DD) limits actuals and drill-downs to posted transactions
+ * dated on or before it; null/omitted counts every live transaction.
  */
 export default function PlanVsActual({
   month: externalMonth,
@@ -38,6 +42,7 @@ export default function PlanVsActual({
   viewMode = 'monthly',
   onMonthChange,
   showSelector = true,
+  asOf = null,
 }) {
   const isYTD = viewMode === 'ytd';
   const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
@@ -51,8 +56,8 @@ export default function PlanVsActual({
   // Plan-vs-actual aggregated server-side (Phase 3 RPC), exactly one of the
   // two hooks runs based on viewMode.  React Query handles loading state and
   // background invalidation when transactions or budget items mutate.
-  const monthlyPvaQuery = usePlanVsActual(month, year, { enabled: !isYTD });
-  const ytdPvaQuery = usePlanVsActualYTD(year, month, { enabled: isYTD });
+  const monthlyPvaQuery = usePlanVsActual(month, year, { enabled: !isYTD, asOf });
+  const ytdPvaQuery = usePlanVsActualYTD(year, month, { enabled: isYTD, asOf });
   const data = (isYTD ? ytdPvaQuery.data : monthlyPvaQuery.data)
     ?? { categories: [], plannedIncome: 0, actualIncome: 0 };
   const isPlanLoading = isYTD ? ytdPvaQuery.isLoading : monthlyPvaQuery.isLoading;
@@ -73,8 +78,9 @@ export default function PlanVsActual({
   const ytdTxQuery = useTransactionsYTD(year, month, { enabled: isYTD });
   const categoriesQuery = useCategories();
   const rawTransactions = useMemo(
-    () => (isYTD ? ytdTxQuery.data : monthlyTxQuery.data) ?? [],
-    [isYTD, ytdTxQuery.data, monthlyTxQuery.data],
+    () => ((isYTD ? ytdTxQuery.data : monthlyTxQuery.data) ?? [])
+      .filter((tx) => isSettledTransaction(tx, asOf)),
+    [isYTD, ytdTxQuery.data, monthlyTxQuery.data, asOf],
   );
   const allCategories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const queryClient = useQueryClient();

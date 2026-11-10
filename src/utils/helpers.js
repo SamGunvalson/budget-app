@@ -139,6 +139,27 @@ export function isIncomeDebit(transaction) {
 }
 
 /**
+ * Returns true when a transaction counts as settled for reporting: it is
+ * `posted` (rows without a status are treated as posted) and dated on or
+ * before `asOf`. Projected/pending recurring rows and future-dated posted
+ * rows are excluded. Pass `asOf = null` to treat every row as settled.
+ *
+ * Must stay in sync with the `p_as_of` filter in the report RPCs
+ * (sql_scripts/supabase_phase3_aggregations.sql).
+ *
+ * @param {{ status?: string, transaction_date: string }} transaction
+ * @param {string|null} asOf - YYYY-MM-DD local date, or null for no filter
+ * @returns {boolean}
+ */
+export function isSettledTransaction(transaction, asOf) {
+  if (asOf == null) return true;
+  return (
+    (transaction.status ?? "posted") === "posted" &&
+    transaction.transaction_date <= asOf
+  );
+}
+
+/**
  * Convert dollars to cents
  * @param {number} dollars - Amount in dollars
  * @returns {number} Amount in cents

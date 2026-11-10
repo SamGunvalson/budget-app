@@ -582,7 +582,11 @@ $$;
 
 DROP FUNCTION IF EXISTS get_plan_vs_actual(integer, integer);
 
-CREATE OR REPLACE FUNCTION get_plan_vs_actual(p_month integer, p_year integer)
+CREATE OR REPLACE FUNCTION get_plan_vs_actual(
+  p_month integer,
+  p_year  integer,
+  p_as_of date DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -642,6 +646,9 @@ BEGIN
       AND t.transaction_date >= v_start
       AND t.transaction_date <  v_end
       AND COALESCE(c.type, 'expense') <> 'transfer'
+      -- p_as_of set: only posted rows dated on/before it (excludes projected,
+      -- pending, and future-dated rows). NULL keeps every live row.
+      AND (p_as_of IS NULL OR (t.status = 'posted' AND t.transaction_date <= p_as_of))
     GROUP BY t.category_id, c.name, c.color, c.type, c.sort_order
   ),
   merged AS (
@@ -699,7 +706,11 @@ $$;
 
 DROP FUNCTION IF EXISTS get_plan_vs_actual_ytd(integer, integer);
 
-CREATE OR REPLACE FUNCTION get_plan_vs_actual_ytd(p_year integer, p_through_month integer)
+CREATE OR REPLACE FUNCTION get_plan_vs_actual_ytd(
+  p_year          integer,
+  p_through_month integer,
+  p_as_of         date DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -762,6 +773,9 @@ BEGIN
       AND t.transaction_date >= v_start
       AND t.transaction_date <  v_end
       AND COALESCE(c.type, 'expense') <> 'transfer'
+      -- p_as_of set: only posted rows dated on/before it (excludes projected,
+      -- pending, and future-dated rows). NULL keeps every live row.
+      AND (p_as_of IS NULL OR (t.status = 'posted' AND t.transaction_date <= p_as_of))
     GROUP BY t.category_id, c.name, c.color, c.type, c.sort_order
   ),
   merged AS (
@@ -823,7 +837,8 @@ DROP FUNCTION IF EXISTS get_monthly_spending_trend(integer, integer, integer);
 CREATE OR REPLACE FUNCTION get_monthly_spending_trend(
   p_months    integer,
   p_end_month integer DEFAULT NULL,
-  p_end_year  integer DEFAULT NULL
+  p_end_year  integer DEFAULT NULL,
+  p_as_of     date    DEFAULT NULL
 )
 RETURNS TABLE (
   key         text,
@@ -880,6 +895,9 @@ AS $$
       AND t.deleted_at IS NULL
       AND t.transaction_date >= b.start_d
       AND t.transaction_date <= b.anchor_end
+      -- p_as_of set: only posted rows dated on/before it (excludes projected,
+      -- pending, and future-dated rows). NULL keeps every live row.
+      AND (p_as_of IS NULL OR (t.status = 'posted' AND t.transaction_date <= p_as_of))
   )
   SELECT
     to_char(make_date(y, m, 1), 'YYYY-MM') AS key,
@@ -905,7 +923,8 @@ DROP FUNCTION IF EXISTS get_yearly_spending_trend(integer, integer, integer);
 CREATE OR REPLACE FUNCTION get_yearly_spending_trend(
   p_years     integer,
   p_end_month integer DEFAULT NULL,
-  p_end_year  integer DEFAULT NULL
+  p_end_year  integer DEFAULT NULL,
+  p_as_of     date    DEFAULT NULL
 )
 RETURNS TABLE (
   year      integer,
@@ -957,6 +976,9 @@ AS $$
       AND t.deleted_at IS NULL
       AND t.transaction_date >= b.start_d
       AND t.transaction_date <= b.anchor_end
+      -- p_as_of set: only posted rows dated on/before it (excludes projected,
+      -- pending, and future-dated rows). NULL keeps every live row.
+      AND (p_as_of IS NULL OR (t.status = 'posted' AND t.transaction_date <= p_as_of))
   )
   SELECT
     y AS year,

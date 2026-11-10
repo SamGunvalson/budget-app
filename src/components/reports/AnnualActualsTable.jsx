@@ -1,5 +1,10 @@
 import { useMemo, Fragment } from 'react';
-import { formatCurrency, isTrueIncome, isSpendingCredit } from '../../utils/helpers';
+import {
+  formatCurrency,
+  isTrueIncome,
+  isSpendingCredit,
+  isSettledTransaction,
+} from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
@@ -94,13 +99,20 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
  *
  * Mirrors the AnnualBudgetTable grid layout (sticky header/footer/left column,
  * type-group sections, annual totals column).
+ *
+ * `asOf` (YYYY-MM-DD) limits actuals to posted transactions dated on or
+ * before it; null/omitted counts every live transaction.
  */
-export default function AnnualActualsTable({ year: yearProp }) {
+export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
   const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
   const year = yearProp ?? ctxYear;
   const { thresholds } = useThresholds();
   const { years } = useAvailableYears();
   const transactionsQuery = useTransactionsForYear(year);
+  const transactions = useMemo(
+    () => (transactionsQuery.data ?? []).filter((tx) => isSettledTransaction(tx, asOf)),
+    [transactionsQuery.data, asOf],
+  );
   const categoriesQuery = useCategories();
   const typeOrderQuery = useUserPreference('type_group_order');
   const budgetQuery = useAnnualBudgetData(year);
@@ -120,7 +132,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
   }, [savedTypeOrder]);
   const actualData = useMemo(() => {
     const actuals = Object.fromEntries(MONTHS.map((month) => [month, {}]));
-    for (const tx of transactionsQuery.data ?? []) {
+    for (const tx of transactions) {
       if (tx.categories?.type === 'transfer') continue;
 
       const date = new Date(`${tx.transaction_date}T00:00:00`);
@@ -134,7 +146,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
       else actuals[month][categoryId] += Math.abs(tx.amount);
     }
     return actuals;
-  }, [transactionsQuery.data]);
+  }, [transactions]);
   const budgetData = budgetQuery.data ?? {};
   const isLoading = [
     transactionsQuery,
@@ -151,7 +163,7 @@ export default function AnnualActualsTable({ year: yearProp }) {
 
   // ── Group categories by type (exclude transfers) ──
   const activityIds = new Set([
-    ...(transactionsQuery.data ?? []).map((tx) => tx.category_id),
+    ...transactions.map((tx) => tx.category_id),
     ...Object.values(budgetData).flatMap((data) => Object.keys(data.allocations ?? {})),
   ]);
   const budgetableCategories = categories.filter((c) =>

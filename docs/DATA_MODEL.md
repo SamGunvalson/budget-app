@@ -302,13 +302,19 @@ queries in components. SQL return declarations and service joins define exact sh
 | `get_account_balances` | `p_projected_to_date DATE DEFAULT NULL` | Account rows plus `transaction_net`, `balance`, `pending_net`, `projected_balance`, `is_asset` |
 | `get_net_worth_history` | `p_projected_to_date DATE DEFAULT NULL` | JSONB history consumed by account services |
 | `get_account_balance_history` | `p_account_ids UUID[]`, `p_start DATE`, `p_end DATE` | Rows `{date, balances JSONB, total BIGINT}` |
-| `get_plan_vs_actual` | `p_month INTEGER`, `p_year INTEGER` | JSONB category plan/actual breakdown |
-| `get_plan_vs_actual_ytd` | `p_year INTEGER`, `p_through_month INTEGER` | JSONB year-to-date breakdown |
-| `get_monthly_spending_trend` | `p_months INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL` | Rows `{key, label, year, month, spent, income, tx_count}` |
-| `get_yearly_spending_trend` | `p_years INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL` | Rows `{year, spent, income, tx_count}` |
+| `get_plan_vs_actual` | `p_month INTEGER`, `p_year INTEGER`, `p_as_of DATE DEFAULT NULL` | JSONB category plan/actual breakdown |
+| `get_plan_vs_actual_ytd` | `p_year INTEGER`, `p_through_month INTEGER`, `p_as_of DATE DEFAULT NULL` | JSONB year-to-date breakdown |
+| `get_monthly_spending_trend` | `p_months INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL`, `p_as_of DATE DEFAULT NULL` | Rows `{key, label, year, month, spent, income, tx_count}` |
+| `get_yearly_spending_trend` | `p_years INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL`, `p_as_of DATE DEFAULT NULL` | Rows `{year, spent, income, tx_count}` |
 | `bulk_update_transactions` | `p_updates JSONB` array | JSONB updated rows with category/account joins; absent keys unchanged, explicit null handled per field |
 | `bulk_update_category_sort_order` | `p_items JSONB` array of ID/sort-order objects | Void |
 | `upsert_recurring_group` | `p_parent_id UUID`, `p_parent JSONB`, `p_children JSONB` | Parent UUID; service refetches nested/joined templates |
+
+For the four report RPCs, a non-null `p_as_of` (the client's local date)
+limits actuals to `posted` rows dated on or before it, excluding projected,
+pending, and future-dated rows; NULL counts every live row. The client
+equivalent is `isSettledTransaction` in the [helpers](../src/utils/helpers.js).
+Reports exclude these rows by default and offer an "Include upcoming" toggle.
 
 The aggregation script also defines immutable `_is_asset_account(p_type TEXT)`.
 The mutation script defines invoker `assert_account_open()` and its transaction
