@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --experimental-vm-modules --test --test-reporter=dot scripts/calculator.test.js scripts/category-archive.test.js scripts/helpers.test.js scripts/recurring-cleanup.test.js scripts/sql-layout.test.js",
+    "verify": "npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "audit:security": "npm audit --audit-level=high",
     "build:android": "vite build --mode android && cap sync android"

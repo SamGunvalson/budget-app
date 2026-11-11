@@ -369,7 +369,7 @@ Read hooks use `[tableName, ...specifics]` keys. Offline mutations notify table
 changes; [queryBridge](../src/services/queryBridge.js) invalidates the seven
 mirrored namespaces plus explicitly configured derived dependencies.
 Non-mirrored partnership/split queries retain their existing invalidation paths.
-See [contributor instructions](../.github/copilot-instructions.md) for read/write rules.
+See [contributor instructions](../.github/AGENTS.md) for read/write rules.
 
 ## SQL migration scripts
 
@@ -413,7 +413,7 @@ fresh volume. Existing self-hosted volumes require explicit release-specific
 ## Database change workflow
 
 Update this reference, the applicable base/migration SQL, and affected services
-together. Follow the [database checklist](../.github/copilot-instructions.md#database-change-workflow)
+together. Follow the [database checklist](../.github/AGENTS.md#database-change-workflow)
 for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.

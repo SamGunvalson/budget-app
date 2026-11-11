@@ -6,7 +6,7 @@ Give the assistant a bounded task, the relevant existing implementation, and mea
 
 | Work | Reference |
 | --- | --- |
-| Architecture, helpers, and coding invariants | [Contributor instructions](../.github/copilot-instructions.md) |
+| Architecture, helpers, and coding invariants | [Contributor instructions](../.github/AGENTS.md) |
 | Database fields, relationships, and RPCs | [Data model](./DATA_MODEL.md) |
 | Component patterns and both themes | [Style guide](./STYLE_GUIDE.md) |
 | Auth, RLS, imports, offline cleanup, and deployment boundaries | [Security model](./SECURITY.md) and [checklist](./SECURITY_CHECKLIST.md) |

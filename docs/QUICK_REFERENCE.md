@@ -9,7 +9,7 @@ Use the [README](../README.md) for the feature overview and repository map. Each
 | Build, sign, or update the Android app | [Android guide](./android-app.md) |
 | Check database columns, constraints, RLS/RPC contracts, or migrations | [Data model](./DATA_MODEL.md) |
 | Choose fresh-install SQL versus historical fixes | [SQL setup](../sql_scripts/README.md) and [migration guide](../sql_scripts/migrations/README.md) |
-| Follow the read/write architecture and coding invariants | [Contributor instructions](../.github/copilot-instructions.md) |
+| Follow the read/write architecture and coding invariants | [Contributor instructions](../.github/AGENTS.md) |
 | Build components, navigation, charts, or dark-mode styles | [Style guide](./STYLE_GUIDE.md) |
 | Understand current security boundaries | [Security model](./SECURITY.md) |
 | Review changes against security invariants | [Security checklist](./SECURITY_CHECKLIST.md) |

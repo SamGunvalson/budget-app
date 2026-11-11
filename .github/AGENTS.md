@@ -8,7 +8,8 @@ A personal budget tracking PWA built with React 19 + Vite, with a selectable Sup
 npm run dev       # Start dev server at http://localhost:5173
 npm run build     # Production build
 npm run lint      # ESLint
-node --test scripts/category-archive.test.js scripts/helpers.test.js # Fast helper regressions
+npm test          # Fast unit tests (no Docker or database needed)
+npm run verify    # lint + unit tests + build
 ```
 
 Use Node.js 22.12+ for frontend development. Auth-service and deployment tests
