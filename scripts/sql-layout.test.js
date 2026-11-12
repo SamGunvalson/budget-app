@@ -28,6 +28,7 @@ const migrationScripts = [
   'supabase_accounts_closed.sql',
   'supabase_asymmetric_transfer.sql',
   'supabase_custom_interval.sql',
+  'supabase_partnership_hardening_rls.sql',
   'supabase_partnership_seen.sql',
   'supabase_recurring_occurrence_date.sql',
   'supabase_recurring_projection_cleanup.sql',
@@ -35,6 +36,7 @@ const migrationScripts = [
   'supabase_split_dedup.sql',
   'supabase_split_fix_rls.sql',
   'supabase_split_recurring.sql',
+  'supabase_split_soft_delete_rpc.sql',
   'supabase_transactions_soft_delete_rls.sql',
 ];
 const readSqlFile = (file) => readFileSync(join(sqlDirectory, file), 'utf8');
@@ -107,6 +109,18 @@ test('fresh base already supplies the soft-delete RPC and grants from the legacy
   assert.ok(base);
   assert.ok(migration);
   assert.equal(base, migration);
+});
+
+test('fresh split setup and upgrade supply the same split soft-delete RPC', () => {
+  const rpc = /CREATE OR REPLACE FUNCTION public\.soft_delete_split_expense\([\s\S]*?GRANT EXECUTE ON FUNCTION public\.soft_delete_split_expense\(uuid, uuid\) TO authenticated;/;
+  const setup = readSqlFile('supabase_split_expenses.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/supabase_split_soft_delete_rpc.sql').match(rpc)?.[0];
+  assert.ok(setup);
+  assert.equal(setup, migration);
+  assert.match(setup, /SECURITY DEFINER\s+SET search_path = public/);
+  assert.match(setup, /AND s\.deleted_at IS NULL/);
+  assert.match(setup, /auth\.uid\(\) IN \(p\.user_a_id, p\.user_b_id\)/);
+  assert.match(setup, /REVOKE EXECUTE[\s\S]*FROM PUBLIC, anon;/);
 });
 
 test('fresh setup and recurring cleanup upgrade supply the same restricted RPC', () => {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
-import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
+import { toCents, toDollars, formatCurrency, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
 
@@ -385,7 +385,7 @@ export default function RecurringForm({
             ? <p className={errorClass}>{errors.toAmountForAccount}</p>
             : toAmountForAccount !== '' && !isNaN(parseFloat(toAmountForAccount)) && parseFloat(toAmountForAccount) < parseFloat(amount) && (
               <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                ${(parseFloat(amount) - parseFloat(toAmountForAccount)).toFixed(2)} will not be credited to any account (e.g. interest)
+                {formatCurrency(toCents(parseFloat(amount)) - toCents(parseFloat(toAmountForAccount)))} will not be credited to any account (e.g. interest)
               </p>
             )
           }

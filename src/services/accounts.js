@@ -104,12 +104,14 @@ export async function getAccount(id) {
  * @param {{ name: string, type: string, starting_balance: number }} account
  * @returns {Promise<Object>} Created account
  */
-export async function createAccount({ name, type, starting_balance = 0 }) {
+export async function createAccount({ name, type, starting_balance = 0, id }) {
   const user = await getCurrentUser();
 
   const { data, error } = await supabase
     .from("accounts")
     .insert({
+      // Optional client-generated id so a retry of the same create is idempotent.
+      ...(id ? { id } : {}),
       user_id: user.id,
       name: name.trim(),
       type,

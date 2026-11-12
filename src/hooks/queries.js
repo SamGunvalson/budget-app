@@ -174,9 +174,13 @@ export function useAccountBalanceHistory(opts, { enabled = true } = {}) {
 }
 
 export function useUpcomingTransactions(opts, { enabled = true } = {}) {
-  const { accountIds } = opts ?? {};
+  const { accountIds, endDate } = opts ?? {};
   return useQuery({
-    queryKey: ["transactions", "upcoming", { accountIds: accountIds ?? null }],
+    queryKey: [
+      "transactions",
+      "upcoming",
+      { accountIds: accountIds ?? null, endDate: endDate ?? null },
+    ],
     queryFn: () => getUpcomingTransactionsOffline(opts),
     enabled: enabled && Array.isArray(accountIds) && accountIds.length > 0,
   });

@@ -1,6 +1,8 @@
+import { formatCurrency } from '../../utils/helpers';
+
 export default function BalanceSummary({ balance, partnerEmail, onSettleUp, loading, expenseCount }) {
   const absBalance = Math.abs(balance);
-  const dollars = (absBalance / 100).toFixed(2);
+  const amountLabel = formatCurrency(absBalance);
   const isSettled = balance === 0;
   const partnerOwes = balance > 0;
 
@@ -18,12 +20,12 @@ export default function BalanceSummary({ balance, partnerEmail, onSettleUp, load
           ) : partnerOwes ? (
             <p className="text-2xl font-bold text-teal-600 dark:text-teal-400">
               <span className="text-stone-500 dark:text-stone-400 text-base font-medium">{partnerEmail} owes you</span>{' '}
-              ${dollars}
+              {amountLabel}
             </p>
           ) : (
             <p className="text-2xl font-bold text-red-500 dark:text-red-400">
               <span className="text-stone-500 dark:text-stone-400 text-base font-medium">You owe {partnerEmail}</span>{' '}
-              ${dollars}
+              {amountLabel}
             </p>
           )}
           {!loading && expenseCount != null && (

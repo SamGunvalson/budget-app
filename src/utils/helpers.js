@@ -1,4 +1,5 @@
 // Currency formatting utilities
+import { parseCsvText } from "./csvParser.js";
 
 // ── Safe-mode masking (module-level flag set by SafeModeProvider) ──
 
@@ -77,6 +78,16 @@ export function formatAxisDollar(v) {
 export function formatAxisDollarSigned(v) {
   const val = _safeModeEnabled ? scrambleDollars(v) : v;
   return `${val < 0 ? "-" : ""}$${Math.abs(val).toLocaleString()}`;
+}
+
+/**
+ * Axis formatter for chart values that were ALREADY masked when the chart
+ * data was built (i.e. produced by `toDollars(cents)` without `{ raw: true }`).
+ * Never masks again, so tick labels agree with the drawn geometry. Do not
+ * pass real (raw) dollars to this — use `formatAxisDollar` for those.
+ */
+export function formatPreMaskedAxisDollar(v) {
+  return `$${v.toLocaleString()}`;
 }
 
 // ── Category type constants (shared across components) ──
@@ -169,6 +180,26 @@ export const toCents = (dollars) => {
 };
 
 /**
+ * Resolve the optional "amount override" field of a manual recurring payment.
+ * An empty field means "no override" (null); zero, negative and non-numeric
+ * input is rejected rather than being recorded as a $0 payment.
+ * @param {string|number|null} input - Raw dollars as typed by the user
+ * @param {number} defaultCents - The template's default amount (absolute cents)
+ * @param {boolean} [isGroupParent=false] - Group parents never take an override
+ * @returns {{ amountOverride: number|null, error: string|null }}
+ */
+export const resolveAmountOverride = (input, defaultCents, isGroupParent = false) => {
+  if (isGroupParent) return { amountOverride: null, error: null };
+  const text = input == null ? '' : String(input).trim();
+  if (text === '') return { amountOverride: null, error: null };
+  const cents = toCents(text);
+  if (!Number.isFinite(cents) || cents <= 0) {
+    return { amountOverride: null, error: 'Enter an amount greater than zero, or leave it blank to use the default.' };
+  }
+  return { amountOverride: cents === defaultCents ? null : cents, error: null };
+};
+
+/**
  * Convert cents to dollars
  * @param {number} cents - Amount in cents
  * @param {object} [opts]
@@ -203,6 +234,29 @@ export const formatCurrency = (
     options.maximumFractionDigits = 0;
   }
   return new Intl.NumberFormat("en-US", options).format(dollars);
+};
+
+/**
+ * Format a dollar value that was ALREADY masked when it was computed (chart
+ * data built with `toDollars(cents)` without `{ raw: true }`). Never masks
+ * again, so chart labels/tooltips show the same number the geometry draws:
+ * `formatPreMaskedDollars(toDollars(c)) === formatCurrency(c)`.
+ * Do not pass real (raw) values to this — use `formatCurrency(cents)`.
+ * @param {number} maskedDollars - Dollars as returned by `toDollars(cents)`
+ * @param {string} currency - ISO currency code (default: 'USD')
+ * @returns {string} Formatted currency string
+ */
+export const formatPreMaskedDollars = (
+  maskedDollars,
+  currency = "USD",
+  { hideCents = false } = {},
+) => {
+  const options = { style: "currency", currency };
+  if (hideCents) {
+    options.minimumFractionDigits = 0;
+    options.maximumFractionDigits = 0;
+  }
+  return new Intl.NumberFormat("en-US", options).format(Number(maskedDollars));
 };
 
 /**
@@ -281,6 +335,7 @@ const FULL_MONTHS = [
 ];
 
 const SHORT_MONTHS_MAP = {
+  sept: 8,
   jan: 0,
   feb: 1,
   mar: 2,
@@ -299,11 +354,12 @@ const SHORT_MONTHS_MAP = {
  * Try to map a header string to a month index 0-11, or return -1.
  */
 function headerToMonthIndex(header) {
-  const h = header.trim().toLowerCase();
+  // Exact match only (full name or abbreviation, optional trailing "."), so
+  // headers such as "Marketing" or "Notes" are not mistaken for months.
+  const h = header.trim().toLowerCase().replace(/\.$/, "");
   const fullIdx = FULL_MONTHS.indexOf(h);
   if (fullIdx !== -1) return fullIdx;
-  const shortKey = h.slice(0, 3);
-  if (shortKey in SHORT_MONTHS_MAP) return SHORT_MONTHS_MAP[shortKey];
+  if (Object.hasOwn(SHORT_MONTHS_MAP, h)) return SHORT_MONTHS_MAP[h];
   return -1;
 }
 
@@ -324,11 +380,11 @@ export function parseBudgetCSV(csvText) {
     return { rows: [], error: "File is empty." };
   }
 
-  // Split into lines, trim, drop empties
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  // Tokenize with quoted-field support ("$1,234" stays one cell). Blank rows
+  // are dropped; empty cells are left unset, so default them to "".
+  const lines = parseCsvText(csvText).map((cells) =>
+    Array.from(cells, (cell) => (cell ?? "").trim()),
+  );
 
   if (lines.length < 2) {
     return {
@@ -338,7 +394,7 @@ export function parseBudgetCSV(csvText) {
   }
 
   // Parse header
-  const headers = lines[0].split(",").map((h) => h.trim());
+  const headers = lines[0];
   if (headers.length < 2) {
     return {
       rows: [],
@@ -367,7 +423,7 @@ export function parseBudgetCSV(csvText) {
   const errors = [];
 
   for (let r = 1; r < lines.length; r++) {
-    const cells = lines[r].split(",").map((c) => c.trim());
+    const cells = lines[r];
     const categoryName = cells[0];
     if (!categoryName) {
       errors.push(`Row ${r + 1}: missing category name.`);

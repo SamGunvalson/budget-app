@@ -22,7 +22,13 @@ export function resolveCategoryId(categories, selectedId) {
 
 export function budgetCategoryIds(monthData) {
   return new Set(
-    Object.values(monthData).flatMap((data) => Object.keys(data.allocations ?? {})),
+    Object.values(monthData).flatMap((data) =>
+      // Saving writes a $0 item for every category, so only non-zero amounts
+      // count as real usage that should keep an archived category visible.
+      Object.entries(data.allocations ?? {})
+        .filter(([, amount]) => Number(amount) !== 0)
+        .map(([categoryId]) => categoryId),
+    ),
   );
 }
 

@@ -11,7 +11,7 @@ import {
   CartesianGrid,
   Legend,
 } from 'recharts';
-import { toDollars, formatCurrency, formatAxisDollar } from '../../utils/helpers';
+import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
 
 /* ------------------------------------------------------------------ */
 /*  Custom tooltip                                                     */
@@ -23,7 +23,7 @@ function TrendTooltip({ active, payload, label }) {
       <p className="mb-1 text-sm font-semibold text-stone-700 dark:text-stone-300">{label}</p>
       {payload.map((p) => (
         <p key={p.dataKey} className="text-sm" style={{ color: p.color }}>
-          {p.name}: <span className="font-bold">{formatCurrency(Math.round(p.value * 100))}</span>
+          {p.name}: <span className="font-bold">{formatPreMaskedDollars(p.value)}</span>
         </p>
       ))}
     </div>
@@ -40,7 +40,7 @@ function YoYTooltip({ active, payload, label }) {
       <p className="mb-1 text-sm font-semibold text-stone-700 dark:text-stone-300">{label}</p>
       {payload.map((p) => (
         <p key={p.dataKey} className="text-sm" style={{ color: p.color }}>
-          {p.name}: <span className="font-bold">{formatCurrency(Math.round(p.value * 100))}</span>
+          {p.name}: <span className="font-bold">{formatPreMaskedDollars(p.value)}</span>
         </p>
       ))}
     </div>
@@ -68,6 +68,9 @@ function YoYTooltip({ active, payload, label }) {
  * }} props
  */
 export default function TrendChart({ range, setRange, monthlyData = [], isLoading, error }) {
+  // Safe mode: chart values are masked ONCE here (toDollars) so the drawn
+  // shapes stay scrambled; tooltips and axes therefore use the
+  // formatPreMasked* helpers, which do not mask a second time.
   /* ---- area chart data (6m / 12m) ---- */
   const areaData = useMemo(
     () =>
@@ -161,7 +164,7 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
                 tickLine={false}
               />
               <YAxis
-                tickFormatter={formatAxisDollar}
+                tickFormatter={formatPreMaskedAxisDollar}
                 tick={{ fill: '#78716c', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
@@ -216,7 +219,7 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
                 tickLine={false}
               />
               <YAxis
-                tickFormatter={formatAxisDollar}
+                tickFormatter={formatPreMaskedAxisDollar}
                 tick={{ fill: '#78716c', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}

@@ -5,6 +5,7 @@ import BulkActionBar from '../transactions/BulkActionBar';
 import Modal, { ConfirmDeleteModal } from '../common/Modal';
 import useTransactionManager from '../../hooks/useTransactionManager';
 import { formatCurrency } from '../../utils/helpers';
+import { signedCategoryTotal } from '../../utils/reportRules';
 
 /**
  * Expandable drill-down panel that shows the full-featured TransactionList
@@ -78,7 +79,8 @@ export default function CategoryDrillDown({
     return result;
   }, [transactions, mgr.sortColumn, mgr.sortDirection]);
 
-  const totalAmount = transactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  // Signed by classification so refunds / income debits subtract, matching the parent row.
+  const totalAmount = signedCategoryTotal(transactions);
 
   return (
     <div className="animate-fade-in-up mt-3 overflow-hidden rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-inner dark:border-amber-800/60 dark:bg-amber-950/30">

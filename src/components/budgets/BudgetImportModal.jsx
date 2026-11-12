@@ -1,13 +1,14 @@
 import { useState, useRef, useMemo } from 'react';
 import { categoryLabel } from '../../utils/categoryArchive';
 import { parseBudgetCSV, formatCurrency, toCents } from '../../utils/helpers';
+import { planBudgetImportMonth } from '../../utils/reportRules';
 import { useCategories } from '../../hooks/queries';
 import { createCategoryOffline as createCategory } from '../../services/offlineAware';
 import {
   getBudgetPlan,
   createBudgetPlan,
   updateBudgetPlan,
-  deleteBudgetItemsForPlan,
+  getBudgetItems,
   upsertBudgetItems,
 } from '../../services/budgets';
 
@@ -158,36 +159,34 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
         // Get or create the budget plan
         let plan = await getBudgetPlan(monthNum, year);
 
-        // Compute total income for this month
-        const totalIncome = rows.reduce((sum, r) => {
-          const cat = allCats[r.categoryName.toLowerCase()];
-          if (cat && cat.type === 'income') return sum + Math.max(0, toCents(r.monthAmounts[mi]));
-          return sum;
-        }, 0);
+        // De-duplicate rows by category (last row wins) and derive the total
+        // from that same set, so total_income matches the items written.
+        const existingItems = plan ? await getBudgetItems(plan.id) : [];
+        const { items: plannedItems, staleCategoryIds, totalIncome } = planBudgetImportMonth({
+          rows,
+          monthIndex: mi,
+          categoriesByName: allCats,
+          existingItems,
+        });
 
-        if (!plan) {
+        const isNewPlan = !plan;
+        if (isNewPlan) {
           plan = await createBudgetPlan({ month: monthNum, year, total_income: totalIncome });
-        } else {
-          // Clear existing items (replace mode)
-          await deleteBudgetItemsForPlan(plan.id);
-          await updateBudgetPlan(plan.id, { total_income: totalIncome });
         }
 
-        // Build items array, deduplicating by category_id (last row wins)
-        const itemMap = new Map();
-        rows.forEach((r) => {
-          const cat = allCats[r.categoryName.toLowerCase()];
-          if (!cat) return;
-          itemMap.set(cat.id, {
-            budget_plan_id: plan.id,
-            category_id: cat.id,
-            planned_amount: Math.max(0, toCents(r.monthAmounts[mi])),
-          });
-        });
-        const items = [...itemMap.values()];
+        // Replace mode without a destructive window: write the new amounts and
+        // zero out categories no longer in the CSV in ONE upsert. Nothing is
+        // deleted first, so a failure leaves the existing month untouched.
+        const items = [
+          ...plannedItems,
+          ...staleCategoryIds.map((category_id) => ({ category_id, planned_amount: 0 })),
+        ].map((item) => ({ ...item, budget_plan_id: plan.id }));
 
         if (items.length) {
           await upsertBudgetItems(items);
+        }
+        if (!isNewPlan) {
+          await updateBudgetPlan(plan.id, { total_income: totalIncome });
         }
 
         monthsImported++;

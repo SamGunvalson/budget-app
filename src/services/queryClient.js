@@ -39,3 +39,24 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Drop cached query data that belongs to the previous user. Most query keys
+ * carry no user id, so without this a second user in the same tab would be
+ * served the first user's lists until a refetch.
+ *
+ * @param {'none'|'signed-in'|'signed-out'|'switched'} change
+ *   Result of `classifySessionChange` (contexts/authContextValue.js).
+ * @param {QueryClient} [client]
+ */
+export function resetQueryCacheForSessionChange(change, client = queryClient) {
+  if (change === "signed-out") {
+    // Protected pages unmount on sign-out, so nothing is left to refetch.
+    client.clear();
+  } else if (change === "switched") {
+    // Pages may still be mounted: drop the old user's data everywhere and
+    // refetch the active queries as the new user.
+    client.getMutationCache().clear();
+    client.resetQueries().catch(() => {});
+  }
+}

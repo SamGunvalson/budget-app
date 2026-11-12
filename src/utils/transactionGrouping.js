@@ -165,3 +165,29 @@ export function computeGroupNet(children) {
   }
   return net;
 }
+
+/**
+ * Net amount for a recurring group *template* from its child templates
+ * (which carry `is_transfer` rather than a joined category type).
+ *
+ * Uses the same mixed-group rule as computeGroupNet: income adds, expense
+ * subtracts, outflow transfers (is_income=false) are subtracted so the net is
+ * the leftover in the base account; inflow transfers are excluded. Shared by
+ * the recurring template card, the upcoming list and the recurring calendar
+ * so the three always agree.
+ *
+ * @param {Array<{ amount: number, is_income: boolean, is_transfer?: boolean }>} children
+ * @returns {number} net amount in cents (positive = net inflow / leftover)
+ */
+export function computeTemplateGroupNet(children) {
+  let net = 0;
+  for (const c of children || []) {
+    const amount = Math.abs(c.amount || 0);
+    if (c.is_transfer) {
+      if (!c.is_income) net -= amount;
+      continue;
+    }
+    net += c.is_income ? amount : -amount;
+  }
+  return net;
+}

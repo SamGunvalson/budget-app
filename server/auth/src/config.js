@@ -3,6 +3,26 @@ const int = (v, d) => {
   return Number.isFinite(n) ? n : d;
 };
 
+// Private/loopback peers only: the Nginx container that fronts this service.
+export const DEFAULT_TRUST_PROXY = "loopback,linklocal,uniquelocal";
+
+// TRUST_PROXY accepts: true/false, a hop count, or a comma-separated list of
+// IPs, CIDRs, or proxy-addr range names. Fastify treats a hop count as "trust
+// nothing" (every request then shares the proxy's IP), so prefer a list.
+export function parseTrustProxy(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return DEFAULT_TRUST_PROXY;
+  const lower = raw.toLowerCase();
+  if (lower === "true") return true;
+  if (lower === "false") return false;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(",") || DEFAULT_TRUST_PROXY;
+}
+
 export function loadConfig(env = process.env) {
   return {
     databaseUrl: env.DATABASE_URL,
@@ -15,7 +35,7 @@ export function loadConfig(env = process.env) {
     bcryptCost: int(env.BCRYPT_COST, 12),
     port: int(env.PORT, 3001),
     host: env.HOST || "0.0.0.0",
-    trustProxy: String(env.TRUST_PROXY ?? "true").toLowerCase() !== "false",
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
     rateLimitMax: int(env.RATE_LIMIT_MAX, 100),
     authRateLimitMax: int(env.AUTH_RATE_LIMIT_MAX, 10),
     rateLimitWindowMs: int(env.RATE_LIMIT_WINDOW_MS, 60_000),

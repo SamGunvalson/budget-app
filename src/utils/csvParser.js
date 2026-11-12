@@ -11,7 +11,7 @@ function loadExcelJs() {
 
 /**
  * Parse a CSV or Excel file into an array of row objects.
- * Uses ExcelJS to handle both .csv and .xlsx/.xls formats.
+ * CSV text is tokenized directly; ExcelJS handles .xlsx.
  *
  * @param {File} file - Browser File object
  * @returns {Promise<{ headers: string[], rows: object[], error: string|null }>}
@@ -30,43 +30,20 @@ export async function parseSpreadsheetFile(file) {
         error: "File is too large. Maximum allowed size is 10 MB.",
       };
     }
-    const ExcelJS = await loadExcelJs();
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = new ExcelJS.Workbook();
-
-    // Read the file based on extension
-    if (file.name.toLowerCase().endsWith(".csv")) {
-      await workbook.csv.read(arrayBuffer);
-    } else {
-      await workbook.xlsx.load(arrayBuffer);
-    }
-
-    const worksheet = workbook.getWorksheet(1);
-    if (!worksheet) {
-      return { headers: [], rows: [], error: "The file contains no sheets." };
-    }
-
     // Convert to array-of-arrays for processing
-    const aoa = [];
-    worksheet.eachRow((row) => {
-      const rowValues = [];
-      row.eachCell((cell, colNumber) => {
-        // Handle different cell types
-        let value = cell.value;
-        if (cell.type === ExcelJS.ValueType.Date) {
-          value = new Date(value);
-        } else if (
-          typeof value === "object" &&
-          value !== null &&
-          value.result
-        ) {
-          // Handle formulas
-          value = value.result;
-        }
-        rowValues[colNumber - 1] = value || "";
-      });
-      aoa.push(rowValues);
-    });
+    let aoa;
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      // exceljs' csv.read() needs a Node stream and cannot take an ArrayBuffer,
+      // so CSV text is tokenized here. Cells stay strings; normalizeDate and
+      // normalizeAmount interpret them later.
+      const text = new TextDecoder("utf-8").decode(await file.arrayBuffer());
+      aoa = parseCsvText(text);
+    } else {
+      aoa = await readXlsxRows(await file.arrayBuffer());
+      if (!aoa) {
+        return { headers: [], rows: [], error: "The file contains no sheets." };
+      }
+    }
 
     if (aoa.length < 2) {
       return {
@@ -76,7 +53,15 @@ export async function parseSpreadsheetFile(file) {
       };
     }
 
-    const rawHeaders = aoa[0].map((h) => String(h).trim());
+    // Build headers densely: aoa rows are sparse (empty cells are unset), and
+    // a blank header cell ("Date,,Amount", or a leading index column) must
+    // still get a usable name rather than a hole.
+    const rawHeaders = Array.from({ length: aoa[0].length }, (_, idx) => {
+      const cell = aoa[0][idx];
+      const name =
+        cell === undefined || cell === null ? "" : String(cell).trim();
+      return name || `Column ${idx + 1}`;
+    });
 
     // Reject headers that would clobber Object.prototype when used as keys.
     // Belt-and-braces: rows are also constructed via Object.create(null) below,
@@ -114,6 +99,109 @@ export async function parseSpreadsheetFile(file) {
       error: `Failed to parse file: ${err.message || "Unknown error"}`,
     };
   }
+}
+
+/**
+ * Tokenize CSV text (RFC 4180: quoted fields, "" escapes, embedded commas and
+ * newlines, CRLF/LF/CR line endings) into the same sparse array-of-arrays
+ * shape the xlsx path produces: empty cells are left unset and rows with no
+ * non-empty cell are dropped.
+ *
+ * @param {string} text
+ * @returns {string[][]}
+ */
+export function parseCsvText(text) {
+  const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const rows = [];
+  let row = [];
+  let field = "";
+  let col = 0;
+  let inQuotes = false;
+  let wasQuoted = false;
+  let rowHasValue = false;
+
+  const endField = () => {
+    const value = wasQuoted ? field : field.trim();
+    if (value !== "") {
+      row[col] = value;
+      rowHasValue = true;
+    }
+    field = "";
+    wasQuoted = false;
+    col++;
+  };
+  const endRow = () => {
+    endField();
+    if (rowHasValue) rows.push(row);
+    row = [];
+    col = 0;
+    rowHasValue = false;
+  };
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"' && field.trim() === "" && !wasQuoted) {
+      field = "";
+      inQuotes = true;
+      wasQuoted = true;
+    } else if (ch === ",") {
+      endField();
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && src[i + 1] === "\n") i++;
+      endRow();
+    } else if (!wasQuoted || ch.trim() !== "") {
+      field += ch;
+    }
+  }
+  if (inQuotes) throw new Error("Unterminated quoted field in CSV.");
+  if (field !== "" || wasQuoted || col > 0) endRow();
+
+  return rows;
+}
+
+// Read the first worksheet of an .xlsx file into an array-of-arrays, or null
+// when the workbook has no sheets.
+async function readXlsxRows(arrayBuffer) {
+  const ExcelJS = await loadExcelJs();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+
+  const worksheet = workbook.getWorksheet(1);
+  if (!worksheet) return null;
+
+  const aoa = [];
+  worksheet.eachRow((row) => {
+    const rowValues = [];
+    row.eachCell((cell, colNumber) => {
+      // Handle different cell types
+      let value = cell.value;
+      if (cell.type === ExcelJS.ValueType.Date) {
+        value = new Date(value);
+      } else if (
+        typeof value === "object" &&
+        value !== null &&
+        value.result
+      ) {
+        // Handle formulas
+        value = value.result;
+      }
+      // Keep a numeric 0 so it is reported as a zero amount, not an empty one.
+      rowValues[colNumber - 1] = value === 0 ? 0 : value || "";
+    });
+    aoa.push(rowValues);
+  });
+  return aoa;
 }
 
 // ── Column-type guessing heuristics ──
@@ -253,6 +341,11 @@ export function normalizeDate(value) {
     return { date: formatISODate(value), error: null };
   }
 
+  // A bare number is not a date (and Date.parse would turn "0" into 2000).
+  if (typeof value === "number") {
+    return { date: null, error: `Cannot parse date: "${value}"` };
+  }
+
   const str = String(value).trim();
   if (!str) return { date: null, error: "Empty date" };
 
@@ -263,41 +356,51 @@ export function normalizeDate(value) {
     const y = +isoMatch[1],
       m = +isoMatch[2],
       d = +isoMatch[3];
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return {
-        date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-        error: null,
-      };
-    }
+    return isRealDate(y, m, d)
+      ? { date: formatYMD(y, m, d), error: null }
+      : { date: null, error: `Not a real calendar date: "${str}"` };
   }
 
   // Try US format: MM/DD/YYYY or MM-DD-YYYY
   // Format directly from capture groups to avoid Date constructor timezone issues
-  const usMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  const usMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d+)/);
   if (usMatch) {
+    // Only 2- or 4-digit years; "3/5/202" is a typo, not the year 202.
+    if (usMatch[3].length !== 2 && usMatch[3].length !== 4) {
+      return { date: null, error: `Cannot parse date: "${str}"` };
+    }
     let year = +usMatch[3];
     if (year < 100) year += 2000;
     const m = +usMatch[1],
       d = +usMatch[2];
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      return {
-        date: `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-        error: null,
-      };
-    }
+    return isRealDate(year, m, d)
+      ? { date: formatYMD(year, m, d), error: null }
+      : { date: null, error: `Not a real calendar date: "${str}"` };
   }
 
-  // Try Date.parse as last resort
+  // Try Date.parse as last resort. Non-ISO strings ("Mar 5, 2024") are parsed
+  // as local time, so read the local calendar parts back.
   const parsed = new Date(str);
-  if (!isNaN(parsed.getTime()))
-    return { date: formatISODate(parsed), error: null };
+  if (!isNaN(parsed.getTime())) {
+    return {
+      date: formatYMD(
+        parsed.getFullYear(),
+        parsed.getMonth() + 1,
+        parsed.getDate(),
+      ),
+      error: null,
+    };
+  }
 
   return { date: null, error: `Cannot parse date: "${str}"` };
 }
 
+const MAX_AMOUNT_CENTS = 99_999_999;
+
 /**
  * Normalize an amount value from a spreadsheet cell into cents (integer).
- * Handles: "$1,234.56", "(100.50)", "-50", "1234", etc.
+ * Handles: "$1,234.56", "(100.50)", "-50", "$-50", "50-", "1234", etc.
+ * cents is always the non-negative magnitude; the sign is in isNegative.
  *
  * @param {*} value
  * @returns {{ cents: number|null, isNegative: boolean, error: string|null }}
@@ -307,39 +410,52 @@ export function normalizeAmount(value) {
     return { cents: null, isNegative: false, error: "Empty amount" };
   }
 
-  // If already a number
-  if (typeof value === "number") {
-    const cents = Math.round(Math.abs(value) * 100);
-    return { cents, isNegative: value < 0, error: null };
-  }
+  const invalid = () => ({
+    cents: null,
+    isNegative: false,
+    error: `Not a valid number: "${value}"`,
+  });
 
-  let str = String(value).trim();
-  if (!str) return { cents: null, isNegative: false, error: "Empty amount" };
-
-  // Check for parenthetical negatives: (123.45)
+  let num;
   let isNegative = false;
-  if (str.startsWith("(") && str.endsWith(")")) {
-    isNegative = true;
-    str = str.slice(1, -1);
-  } else if (str.startsWith("-")) {
-    isNegative = true;
-    str = str.slice(1);
-  }
 
-  // Strip currency symbols, commas, whitespace
-  str = str.replace(/[$€£¥,\s]/g, "");
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return invalid();
+    isNegative = value < 0;
+    num = Math.abs(value);
+  } else {
+    let str = String(value).trim();
+    if (!str) return { cents: null, isNegative: false, error: "Empty amount" };
 
-  const num = parseFloat(str);
-  if (isNaN(num)) {
-    return {
-      cents: null,
-      isNegative: false,
-      error: `Not a valid number: "${value}"`,
-    };
+    // Parenthetical negatives: (123.45)
+    if (str.startsWith("(") && str.endsWith(")")) {
+      isNegative = true;
+      str = str.slice(1, -1);
+    }
+
+    // Strip currency symbols and whitespace first so the sign is found
+    // wherever it sits relative to the symbol: "-$5", "$-5", "5.00-".
+    str = str.replace(/[$€£¥\s]/g, "");
+    if (str.startsWith("-")) {
+      isNegative = true;
+      str = str.slice(1);
+    } else if (str.startsWith("+")) {
+      str = str.slice(1);
+    } else if (str.endsWith("-")) {
+      isNegative = true;
+      str = str.slice(0, -1);
+    }
+
+    // Plain digits or correctly grouped thousands, with an optional decimal
+    // part. Anything else (dates, "1.2.3", "1e5", "12,5") is rejected rather
+    // than partially parsed.
+    if (!/^(?=.*\d)(\d{1,3}(,\d{3})+|\d*)(\.\d*)?$/.test(str)) return invalid();
+    num = Number(str.replace(/,/g, ""));
+    if (!Number.isFinite(num)) return invalid();
   }
 
   const cents = Math.round(num * 100);
-  if (cents > 99_999_999) {
+  if (cents > MAX_AMOUNT_CENTS) {
     return {
       cents: null,
       isNegative: false,
@@ -353,10 +469,21 @@ export function normalizeAmount(value) {
 // ── Helpers ──
 
 function formatISODate(d) {
-  // Use UTC methods to avoid timezone shifts — dates from spreadsheet parsers
-  // (ExcelJS, Date.parse of ISO strings) are stored as UTC midnight.
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  // Date objects only come from the xlsx reader, which stores date cells as
+  // UTC midnight — read UTC parts so the calendar day does not shift.
+  return formatYMD(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
+function formatYMD(y, m, d) {
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+// True only when y-m-d exists on the calendar (rejects 2024-02-31, month 13).
+function isRealDate(y, m, d) {
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  return (
+    probe.getUTCFullYear() === y &&
+    probe.getUTCMonth() === m - 1 &&
+    probe.getUTCDate() === d
+  );
 }

@@ -10,9 +10,20 @@
  *
  * This keeps the original service modules untouched — all offline logic lives here.
  */
-import db, { putOffline, readRpcCache, writeRpcCache } from "./offlineDb";
-import { enqueue } from "../utils/syncQueue";
+import db, {
+  putOffline,
+  putOfflineMany,
+  cacheServerRows,
+  noteLocalWrite,
+  writtenSince,
+  readRpcCache,
+  writeRpcCache,
+  clearRpcCache,
+} from "./offlineDb";
+import { enqueue as addToSyncQueue } from "../utils/syncQueue";
+import { newId } from "../utils/ids";
 import { swrRead, notifyTable } from "./cache";
+import { requestSync, schedulePush } from "./sync";
 import { isAvailableCategory } from "../utils/categoryArchive";
 
 // ── SWR helpers ──
@@ -36,6 +47,48 @@ async function assertCachedCategoryAvailable(categoryId) {
   }
 }
 
+// Message fragments browsers and HTTP stacks use for "the request never got
+// an answer": Chrome "Failed to fetch", Safari "Load failed", Firefox
+// "NetworkError when attempting to fetch resource", React Native / Capacitor
+// "Network request failed", plus timeouts, aborts and gateway errors. The
+// PostgREST client reports a failed fetch as a plain `{ message, code: "" }`
+// object whose message starts with the original error's name, so the name
+// alone cannot be relied on.
+const CONNECTIVITY_MESSAGE =
+  /failed to fetch|load failed|network|timed? ?out|\babort(ed)?\b|aborterror|bad gateway|service unavailable|gateway time-?out|jwt expired|invalid token/i;
+
+/**
+ * Did this error come from not reaching the backend (so the write should be
+ * queued), as opposed to the backend rejecting the request (so the user must
+ * see the error — queueing it would only fail again on every sync)?
+ *
+ * Checked in order of reliability: HTTP status, then the backend's error
+ * code, then the error name, and only then the message text.
+ */
+export function isConnectivityError(err) {
+  if (!navigator.onLine) return true;
+  if (!err) return false;
+
+  const status = typeof err.status === "number" ? err.status : null;
+  // 0 = no response; 502–504 = a proxy could not reach the backend;
+  // 401 = expired session, which the local cache can ride out.
+  if (status === 0 || status === 401 || (status >= 502 && status <= 504)) {
+    return true;
+  }
+  // Any other 4xx/5xx is the backend's considered answer.
+  if (status !== null && status >= 400) return false;
+
+  const code = typeof err.code === "string" ? err.code : "";
+  // PGRST301 = JWT expired; PGRST000–003 = PostgREST cannot reach the database.
+  if (code === "PGRST301" || /^PGRST00[0-3]$/.test(code)) return true;
+  // A SQLSTATE (constraint, RLS, check violation…) or another PostgREST code
+  // is a real rejection, whatever its message happens to contain.
+  if (/^[0-9A-Z]{5}$/.test(code) || code.startsWith("PGRST")) return false;
+
+  if (err.name === "AbortError" || err.name === "TimeoutError") return true;
+  return CONNECTIVITY_MESSAGE.test(String(err.message ?? ""));
+}
+
 /**
  * Try an async fn; if we're offline or it throws a network error,
  * return { offline: true }. Otherwise return { data }.
@@ -46,20 +99,201 @@ async function tryOnline(fn) {
     const data = await fn();
     return { data };
   } catch (err) {
-    // Detect network errors (fetch failures, timeout, etc.)
-    if (
-      !navigator.onLine ||
-      err?.message?.includes("Failed to fetch") ||
-      err?.message?.includes("NetworkError") ||
-      err?.message?.includes("network") ||
-      err?.code === "PGRST301" ||
-      err?.status === 401 ||
-      /jwt expired|invalid token/i.test(err?.message || "") // expired auth can use the local cache
-    ) {
-      return { offline: true, error: err };
-    }
+    if (isConnectivityError(err)) return { offline: true, error: err };
     throw err; // Real Supabase error — let caller handle
   }
+}
+
+async function hasPendingRows(table, ids) {
+  const keys = ids.filter(Boolean);
+  if (!keys.length) return false;
+  const rows = await db.table(table).bulkGet(keys);
+  return rows.some((row) => row?._offline === 1);
+}
+
+// How long a write waits for the queue to flush before it is queued instead.
+// A sync already in flight may be in the middle of a full pull; a save should
+// not hang on that.
+const FLUSH_WAIT_MS = 4000;
+
+async function flushQueue() {
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(resolve, FLUSH_WAIT_MS);
+  });
+  try {
+    await Promise.race([requestSync({ skipPull: true }), timedOut]);
+  } catch {
+    // A failed flush leaves the rows pending; the caller re-checks.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The single entry point for backend writes to a mirrored table. Every
+ * update/delete wrapper goes through it, and so do creates that reference
+ * other mirrored rows.
+ *
+ * A row that is still waiting to sync (`_offline === 1`) holds a change the
+ * server has not seen. Writing to the backend and then caching the response
+ * over that row would drop the queued change; for an unsynced create the
+ * backend write fails because the row does not exist there yet; and a write
+ * that references an unsynced account or category fails its foreign key. So
+ * when any target or referenced row is pending:
+ *
+ *  1. flush the queue first (push only, bounded wait), which also creates
+ *     unsynced rows;
+ *  2. if one is still pending afterwards (offline, slow, or its push failed),
+ *     report `{ offline: true }` so the caller takes its queued path and
+ *     merges the new change into the pending row instead of overwriting it.
+ *     Queued rows are pushed in dependency order, and `enqueue` schedules
+ *     that push when the app is online.
+ *
+ * Otherwise this behaves exactly like `tryOnline`.
+ *
+ * @param {string} table — mirrored table name
+ * @param {string[]} ids — primary keys of the existing rows the write touches
+ * @param {() => Promise<any>} fn — the backend write
+ * @param {Record<string, string[]>} [refs] — rows in other tables the write
+ *   references, as `{ tableName: ids }`
+ */
+async function tryOnlineWrite(table, ids, fn, refs = {}) {
+  const targets = [[table, ids], ...Object.entries(refs)];
+  const anyPending = async () => {
+    for (const [name, keys] of targets) {
+      if (await hasPendingRows(name, keys)) return true;
+    }
+    return false;
+  };
+
+  if (await anyPending()) {
+    if (!isOnline()) return { offline: true };
+    await flushQueue();
+    if (await anyPending()) return { offline: true, pending: true };
+  }
+  return tryOnline(fn);
+}
+
+/**
+ * Flag a locally written row for sync. Every queued write goes through here.
+ * When the app is online the queued change would otherwise wait for the next
+ * `online` or tab-visibility event, so ask the sync engine for a push shortly
+ * afterwards.
+ */
+async function enqueue(table, id, action) {
+  await addToSyncQueue(table, id, action);
+  // Server-computed values no longer include this change (see `rpcRead`).
+  await clearRpcCache();
+  if (isOnline()) schedulePush();
+}
+
+/**
+ * Store locally changed rows as pending and queue them for sync, all or
+ * nothing. A row that is already pending keeps its queued action when the
+ * new change is an update, so an unsynced create is still pushed as a create.
+ */
+async function queueRows(table, rows, action) {
+  const stored = await putOfflineMany(table, rows, action);
+  for (const row of stored) await enqueue(table, row.id, row._action);
+}
+
+/**
+ * Mirror rows returned by a backend write into Dexie. A row that became
+ * pending while the backend call was in flight is left alone: it holds a
+ * newer local change that is still queued, and overwriting it would clear
+ * its flags and drop that change.
+ */
+async function cacheWritten(table, rows) {
+  await cacheServerRows(table, rows);
+  notifyTable(table);
+}
+
+/**
+ * Attach the `categories` / `accounts` join objects that backend reads
+ * return, built from the live local tables.
+ *
+ * The join stored on a cached row is a snapshot from when the row was
+ * fetched. The local tables are newer whenever a category or account was
+ * renamed, recoloured or retyped, or the row was moved to another one, so
+ * they take precedence. The stored join is only a fallback for a row whose
+ * category or account is not mirrored (e.g. deactivated), and only while it
+ * still describes the id the row points at.
+ *
+ * Every cache read that returns joined rows goes through this.
+ */
+async function attachJoins(rows, { accounts = true } = {}) {
+  const cats = Object.fromEntries(
+    (await db.categories.toArray()).map((c) => [
+      c.id,
+      { id: c.id, name: c.name, color: c.color, type: c.type },
+    ]),
+  );
+  const accts = accounts
+    ? Object.fromEntries(
+        (await db.accounts.toArray()).map((a) => [
+          a.id,
+          { id: a.id, name: a.name, type: a.type },
+        ]),
+      )
+    : null;
+  const stored = (join, id) => (join && join.id === id ? join : null);
+  return rows.map((r) => {
+    const next = {
+      ...r,
+      categories:
+        cats[r.category_id] || stored(r.categories, r.category_id) || null,
+    };
+    if (accts) {
+      next.accounts =
+        accts[r.account_id] || stored(r.accounts, r.account_id) || null;
+    }
+    return next;
+  });
+}
+
+// ── RPC-derived reads (balances, plan vs actual, trends, years) ──
+//
+// `rpc_cache` holds what the server computed. Two rules keep it honest:
+//
+//  * only a value that really came from the server is stored. When the
+//    backend call fails, `fetchFresh` answers with a fold over the local
+//    tables so the screen is not blank, but that fold is not the server's
+//    answer and must not be served later as if it were;
+//  * a queued local write makes every stored value stale, so `enqueue`
+//    clears the cache. Until the server can be asked again, reads fall back
+//    to the local fold, which includes the queued change.
+const serverResults = new WeakSet();
+
+/** Mark a value as the backend's own answer (see `writeServerRpcCache`). */
+function fromServer(value) {
+  if (value !== null && typeof value === "object") serverResults.add(value);
+  return value;
+}
+
+function isFromServer(value) {
+  return value !== null && typeof value === "object" && serverResults.has(value);
+}
+
+async function writeServerRpcCache(key, value) {
+  if (isFromServer(value)) await writeRpcCache(key, value);
+}
+
+/**
+ * SWR read of an RPC-derived value. `fetchFresh` returns
+ * `fromServer(result)` when the backend answered and the local fold
+ * otherwise. Offline with nothing stored, the fold is what is shown.
+ */
+function rpcRead({ key, fetchFresh, ...rest }) {
+  return swrRead({
+    isEmpty: (v) => v == null,
+    ...rest,
+    key,
+    fetchFresh,
+    readCache: async () =>
+      (await readRpcCache(key)) ?? (isOnline() ? null : fetchFresh()),
+    writeCache: (value) => writeServerRpcCache(key, value),
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -71,8 +305,16 @@ import {
   createTransaction as _createTransaction,
   updateTransaction as _updateTransaction,
   deleteTransaction as _deleteTransaction,
+  createAdjustment as _createAdjustment,
+  createTransfer as _createTransfer,
+  updateTransfer as _updateTransfer,
+  createLinkedTransfer as _createLinkedTransfer,
+  updateLinkedTransfer as _updateLinkedTransfer,
   createAsymmetricTransfer as _createAsymmetricTransfer,
   updateAsymmetricTransfer as _updateAsymmetricTransfer,
+  bulkUpdateTransactions as _bulkUpdateTransactions,
+  bulkConfirmTransactions as _bulkConfirmTransactions,
+  bulkSkipTransactions as _bulkSkipTransactions,
   getTransactionsYTD as _getTransactionsYTD,
   getTransactionsForYear as _getTransactionsForYear,
   getPendingReviewCount as _getPendingReviewCount,
@@ -92,7 +334,7 @@ export async function getTransactionsOffline(filters = {}) {
     table: "transactions",
     readCache: () => readTransactionsFromCache(filters),
     fetchFresh: () => _getTransactions(filters),
-    writeCache: (rows) => cacheTransactions(rows, filters),
+    writeCache: (rows, meta) => cacheTransactions(rows, filters, meta),
   });
 }
 
@@ -116,23 +358,7 @@ async function readTransactionsFromCache(filters = {}) {
   // Attach cached category/account joins so the shape matches Supabase output.
   // (Without this, components that read tx.categories.color crash on the
   // first paint when the row was written by a non-joining mutation path.)
-  const cats = Object.fromEntries(
-    (await db.categories.toArray()).map((c) => [
-      c.id,
-      { id: c.id, name: c.name, color: c.color, type: c.type },
-    ]),
-  );
-  const accts = Object.fromEntries(
-    (await db.accounts.toArray()).map((a) => [
-      a.id,
-      { id: a.id, name: a.name, type: a.type },
-    ]),
-  );
-  rows = rows.map((r) => ({
-    ...r,
-    categories: r.categories || cats[r.category_id] || null,
-    accounts: r.accounts || accts[r.account_id] || null,
-  }));
+  rows = await attachJoins(rows);
 
   // Sort newest first
   rows.sort((a, b) =>
@@ -178,15 +404,23 @@ function matchesTransactionScope(tx, filters = {}) {
   return true;
 }
 
-async function cacheTransactions(data, filters = {}) {
+async function cacheTransactions(data, filters = {}, { fetchStartedAt } = {}) {
   // Don't wipe the whole table — only upsert fetched rows to preserve offline-pending ones
   const pending = await db.transactions
     .where("_offline")
     .equals(1)
     .primaryKeys();
   const pendingSet = new Set(pending);
-  const toCache = data.filter((r) => !pendingSet.has(r.id));
-  if (toCache.length) await db.transactions.bulkPut(toCache);
+  // A row written locally after this fetch was issued (created or edited by
+  // the user, pushed by sync, or pulled) is newer than the response: the
+  // response can neither replace it nor prove that it was deleted.
+  const isNewer = (id) =>
+    fetchStartedAt != null && writtenSince("transactions", id, fetchStartedAt);
+  const toCache = data.filter((r) => !pendingSet.has(r.id) && !isNewer(r.id));
+  if (toCache.length) {
+    await db.transactions.bulkPut(toCache);
+    noteLocalWrite("transactions", toCache.map((r) => r.id));
+  }
 
   // Reconcile stale rows for this fetch scope so soft-deleted rows removed on
   // the server don't linger locally and appear as duplicates.
@@ -197,69 +431,188 @@ async function cacheTransactions(data, filters = {}) {
       (row) =>
         matchesTransactionScope(row, filters) &&
         !pendingSet.has(row.id) &&
-        !freshIds.has(row.id),
+        !freshIds.has(row.id) &&
+        !isNewer(row.id),
     )
     .map((row) => row.id);
   if (staleIds.length) await db.transactions.bulkDelete(staleIds);
+}
+
+// ── Transaction write helpers ──
+//
+// Every transaction write below follows one shape: `tryOnlineWrite` (or
+// `tryOnline` for creates) performs the backend call and the result is
+// mirrored into Dexie; otherwise the same change is applied to Dexie through
+// `queueRows` so sync replays it row by row.
+
+/**
+ * Refresh a transaction's display joins from the local cache. A stored join
+ * that describes a different category / account than the row now points at
+ * is dropped rather than left stale.
+ */
+async function withLocalJoins(row) {
+  const next = { ...row };
+  const cat = row.category_id ? await db.categories.get(row.category_id) : null;
+  if (cat) {
+    next.categories = {
+      id: cat.id,
+      name: cat.name,
+      color: cat.color,
+      type: cat.type,
+    };
+  } else if (next.categories && next.categories.id !== row.category_id) {
+    next.categories = null;
+  }
+  const acct = row.account_id ? await db.accounts.get(row.account_id) : null;
+  if (acct) {
+    next.accounts = { id: acct.id, name: acct.name, type: acct.type };
+  } else if (next.accounts && next.accounts.id !== row.account_id) {
+    next.accounts = null;
+  }
+  return next;
+}
+
+/** Live local legs sharing a transaction's transfer_group_id (itself included). */
+async function getLocalTransferLegs(id) {
+  const existing = await db.transactions.get(id);
+  if (!existing) return { existing: null, legs: [] };
+  if (!existing.transfer_group_id) return { existing, legs: [existing] };
+  const legs = await db.transactions
+    .where("transfer_group_id")
+    .equals(existing.transfer_group_id)
+    .filter((tx) => !tx.deleted_at)
+    .toArray();
+  return { existing, legs };
+}
+
+/** Shape the account / category ids a transaction write references. */
+function transactionRefs(...sources) {
+  const accounts = [];
+  const categories = [];
+  for (const source of sources) {
+    if (!source) continue;
+    accounts.push(
+      source.account_id,
+      source.from_account_id,
+      source.to_account_id,
+      source.linked_account_id,
+    );
+    categories.push(source.category_id);
+  }
+  return { accounts, categories };
+}
+
+/** Queue brand-new transaction rows (already carrying their ids). */
+async function queueNewTransactions(rows) {
+  const queued = [];
+  for (const row of rows) {
+    queued.push(
+      await withLocalJoins({
+        user_id: null, // Filled on sync
+        payee: null,
+        status: "posted",
+        transfer_group_id: null,
+        recurring_template_id: null,
+        deleted_at: null,
+        categories: null,
+        accounts: null,
+        ...row,
+      }),
+    );
+  }
+  // One transaction for all rows: a transfer is never queued with one leg.
+  await queueRows("transactions", queued, "create");
+  return queued;
+}
+
+/** Queue an update to existing local transaction rows; returns the new rows. */
+async function queueTransactionUpdates(changes) {
+  const now = new Date().toISOString();
+  const queued = [];
+  for (const { row, fields } of changes) {
+    queued.push(await withLocalJoins({ ...row, ...fields, updated_at: now }));
+  }
+  await queueRows("transactions", queued, "update");
+  return queued;
+}
+
+/** Queue a soft-delete of existing local transaction rows. */
+async function queueTransactionDeletes(rows) {
+  const now = new Date().toISOString();
+  await queueRows(
+    "transactions",
+    rows.map((row) => ({ ...row, deleted_at: now })),
+    "delete",
+  );
+  return rows.map((row) => row.id);
+}
+
+/** Mirror backend-returned transaction rows into Dexie. */
+async function cacheWrittenTransactions(rows) {
+  await cacheWritten("transactions", rows);
+}
+
+/** Mirror backend soft-deletes into Dexie. */
+async function cacheDeletedTransactions(ids) {
+  const now = new Date().toISOString();
+  for (const id of ids) {
+    await db.transactions.update(id, { deleted_at: now });
+  }
+  notifyTable("transactions");
+}
+
+async function createSingleTransaction(txData, createOnline) {
+  await assertCachedCategoryAvailable(txData.category_id);
+  const id = newId();
+  const result = await tryOnlineWrite(
+    "transactions",
+    [],
+    () => createOnline({ ...txData, id }),
+    transactionRefs(txData),
+  );
+
+  if (!result.offline) {
+    await cacheWritten("transactions", [result.data]);
+    return result.data;
+  }
+
+  // Offline (or the response was lost): queue the row under the same id
+  const now = new Date().toISOString();
+  const [row] = await queueNewTransactions([
+    {
+      id,
+      account_id: txData.account_id,
+      category_id: txData.category_id,
+      amount: txData.amount,
+      description: txData.description?.trim() ?? "",
+      payee: txData.payee?.trim() || null,
+      transaction_date: txData.transaction_date,
+      is_income: txData.is_income,
+      status: txData.status || "posted",
+      transfer_group_id: txData.transfer_group_id || null,
+      recurring_template_id: txData.recurring_template_id || null,
+      created_at: now,
+      updated_at: now,
+    },
+  ]);
+  return row;
 }
 
 /**
  * Create a transaction — dual-write when online, IndexedDB-only when offline.
  */
 export async function createTransactionOffline(txData) {
-  await assertCachedCategoryAvailable(txData.category_id);
-  const result = await tryOnline(() => _createTransaction(txData));
+  return createSingleTransaction(txData, _createTransaction);
+}
 
-  if (!result.offline) {
-    // Also store in IndexedDB (no offline flags)
-    await db.transactions.put(result.data);
-    notifyTable("transactions");
-    return result.data;
-  }
-
-  // Offline: generate a temporary UUID and store locally
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const row = {
-    id,
-    user_id: null, // Will be filled on sync
-    account_id: txData.account_id,
-    category_id: txData.category_id,
-    amount: txData.amount,
-    description: txData.description?.trim() ?? "",
-    payee: txData.payee?.trim() || null,
-    transaction_date: txData.transaction_date,
-    is_income: txData.is_income,
-    status: txData.status || "posted",
-    transfer_group_id: txData.transfer_group_id || null,
-    recurring_template_id: txData.recurring_template_id || null,
-    deleted_at: null,
-    created_at: now,
-    updated_at: now,
-    // Attach joined data from local cache for display
-    categories: null,
-    accounts: null,
-  };
-
-  // Try to resolve category/account from local cache for display
-  if (txData.category_id) {
-    const cat = await db.categories.get(txData.category_id);
-    if (cat)
-      row.categories = {
-        id: cat.id,
-        name: cat.name,
-        color: cat.color,
-        type: cat.type,
-      };
-  }
-  if (txData.account_id) {
-    const acct = await db.accounts.get(txData.account_id);
-    if (acct) row.accounts = { id: acct.id, name: acct.name, type: acct.type };
-  }
-
-  await putOffline("transactions", row, "create");
-  await enqueue("transactions", id, "create");
-  return row;
+/**
+ * Create a single-account balance adjustment (one row, no transfer group).
+ */
+export async function createAdjustmentOffline(values) {
+  return createSingleTransaction(
+    { ...values, recurring_template_id: null, transfer_group_id: null },
+    _createAdjustment,
+  );
 }
 
 /**
@@ -272,11 +625,15 @@ export async function updateTransactionOffline(id, updates) {
       await assertCachedCategoryAvailable(updates.category_id);
     }
   }
-  const result = await tryOnline(() => _updateTransaction(id, updates));
+  const result = await tryOnlineWrite(
+    "transactions",
+    [id],
+    () => _updateTransaction(id, updates),
+    transactionRefs(updates),
+  );
 
   if (!result.offline) {
-    await db.transactions.put(result.data);
-    notifyTable("transactions");
+    await cacheWritten("transactions", [result.data]);
     return result.data;
   }
 
@@ -284,11 +641,11 @@ export async function updateTransactionOffline(id, updates) {
   const existing = await db.transactions.get(id);
   if (!existing) throw new Error(`Transaction ${id} not found locally`);
 
-  const updated = {
+  const updated = await withLocalJoins({
     ...existing,
     ...updates,
     updated_at: new Date().toISOString(),
-  };
+  });
   await putOffline(
     "transactions",
     updated,
@@ -303,30 +660,320 @@ export async function updateTransactionOffline(id, updates) {
 }
 
 /**
+ * Update a single-account balance adjustment (a plain transaction update).
+ */
+export async function updateAdjustmentOffline(id, updates) {
+  return updateTransactionOffline(id, updates);
+}
+
+/**
  * Delete (soft-delete) a transaction.
  */
 export async function deleteTransactionOffline(id) {
-  const result = await tryOnline(() => _deleteTransaction(id));
+  // Mirrors the service: a transfer's live companion legs (same
+  // transfer_group_id) are deleted with it, because sync replays one
+  // soft-delete RPC per queued row and never runs the companion lookup.
+  const { existing, legs } = await getLocalTransferLegs(id);
+  const targets = existing
+    ? [existing, ...legs.filter((tx) => tx.id !== id)]
+    : [];
+
+  const result = await tryOnlineWrite(
+    "transactions",
+    [id, ...targets.map((tx) => tx.id)],
+    () => _deleteTransaction(id),
+  );
 
   if (!result.offline) {
-    // Mark deleted locally too
-    await db.transactions.update(id, { deleted_at: new Date().toISOString() });
-    notifyTable("transactions");
+    // Mark deleted locally too. The service returns every id it deleted —
+    // for a transfer that includes the companion leg.
+    await cacheDeletedTransactions(result.data?.length ? result.data : [id]);
     return result.data;
   }
 
   // Offline soft-delete
-  const existing = await db.transactions.get(id);
-  if (existing) {
-    const now = new Date().toISOString();
-    await putOffline(
-      "transactions",
-      { ...existing, deleted_at: now },
-      "delete",
-    );
-    await enqueue("transactions", id, "delete");
+  if (!targets.length) return [id];
+  return queueTransactionDeletes(targets);
+}
+
+/**
+ * Bulk soft-delete transactions (each with its transfer companions).
+ *
+ * @param {string[]} ids
+ * @returns {Promise<string[]>} every id that was deleted
+ */
+export async function bulkDeleteTransactionsOffline(ids) {
+  const targets = new Map();
+  for (const id of ids) {
+    const { existing, legs } = await getLocalTransferLegs(id);
+    if (existing) targets.set(existing.id, existing);
+    for (const leg of legs) targets.set(leg.id, leg);
   }
-  return [id];
+
+  const result = await tryOnlineWrite(
+    "transactions",
+    [...ids, ...targets.keys()],
+    () => Promise.all(ids.map((id) => _deleteTransaction(id))),
+  );
+
+  if (!result.offline) {
+    const deleted = [...new Set(result.data.flat())];
+    await cacheDeletedTransactions(deleted);
+    return deleted;
+  }
+
+  return queueTransactionDeletes([...targets.values()]);
+}
+
+/**
+ * Resolve what a confirm / skip of `ids` acts on locally, as the service
+ * does: the requested rows, plus the live legs sharing a requested row's
+ * transfer_group_id that are still `projected` or `pending`. Posted
+ * companions are left alone.
+ *
+ * @returns {Promise<{ requested: Object[], companions: Object[] }>} the
+ *   requested rows found locally (in order) and the extra companion rows
+ */
+async function getLocalStatusTargets(ids) {
+  const requestedIds = new Set(ids);
+  const requested = [];
+  const companions = new Map();
+  for (const id of ids) {
+    const { existing, legs } = await getLocalTransferLegs(id);
+    if (!existing) continue;
+    requested.push(existing);
+    for (const leg of legs) {
+      if (requestedIds.has(leg.id)) continue;
+      if (leg.status !== "projected" && leg.status !== "pending") continue;
+      companions.set(leg.id, leg);
+    }
+  }
+  return { requested, companions: [...companions.values()] };
+}
+
+/**
+ * Skip (soft-delete) one projected or pending transaction. If it is one leg
+ * of a transfer or linked transfer, the other unposted leg(s) are skipped
+ * with it; posted companions are left alone.
+ *
+ * @returns {Promise<string[]>} every skipped id, the requested one first
+ */
+export async function skipTransactionOffline(id) {
+  return bulkSkipTransactionsOffline([id]);
+}
+
+/**
+ * Bulk-skip (soft-delete) projected or pending transactions, each with its
+ * unposted transfer companions.
+ *
+ * @param {string[]} ids
+ * @returns {Promise<string[]>} the requested ids, in order, followed by any
+ *   companion legs that were skipped with them
+ */
+export async function bulkSkipTransactionsOffline(ids) {
+  const { requested, companions } = await getLocalStatusTargets(ids);
+  const companionIds = companions.map((row) => row.id);
+  const result = await tryOnlineWrite(
+    "transactions",
+    [...ids, ...companionIds],
+    () => _bulkSkipTransactions(ids),
+  );
+
+  if (!result.offline) {
+    // The service reports every id it skipped, companions included.
+    const skipped = result.data?.length ? result.data : ids;
+    await cacheDeletedTransactions(skipped);
+    return skipped;
+  }
+
+  // One transaction for all rows, so a pair is never queued half-skipped.
+  await queueTransactionDeletes([
+    ...requested.filter((row) => !row.deleted_at),
+    ...companions,
+  ]);
+  return [...ids, ...companionIds];
+}
+
+/**
+ * Confirm a pending transaction → posted. If it is one leg of a transfer or
+ * linked transfer, the other unposted leg(s) are confirmed with it (and
+ * mirrored locally), but only the requested row is returned.
+ *
+ * @returns {Promise<Object>} the updated transaction
+ */
+export async function confirmTransactionOffline(id) {
+  const [confirmed] = await bulkConfirmTransactionsOffline([id]);
+  if (confirmed?.id !== id) throw new Error(`Transaction ${id} not found locally`);
+  return confirmed;
+}
+
+/**
+ * Bulk-confirm pending transactions → posted, each with its unposted
+ * transfer companions.
+ *
+ * @param {string[]} ids
+ * @returns {Promise<Object[]>} the updated transactions: the requested ones,
+ *   in order, followed by any companion legs confirmed with them
+ */
+export async function bulkConfirmTransactionsOffline(ids) {
+  const { requested, companions } = await getLocalStatusTargets(ids);
+  const result = await tryOnlineWrite(
+    "transactions",
+    [...ids, ...companions.map((row) => row.id)],
+    () => _bulkConfirmTransactions(ids),
+  );
+
+  if (!result.offline) {
+    await cacheWrittenTransactions(result.data);
+    return result.data;
+  }
+
+  return queueTransactionUpdates(
+    [...requested.filter((row) => !row.deleted_at), ...companions].map(
+      (row) => ({ row, fields: { status: "posted" } }),
+    ),
+  );
+}
+
+// Columns `bulk_update_transactions` honours; anything else is ignored there.
+const BULK_UPDATE_FIELDS = [
+  "account_id",
+  "category_id",
+  "amount",
+  "description",
+  "payee",
+  "transaction_date",
+  "is_income",
+  "status",
+];
+
+/**
+ * Bulk-update transactions. Each item is `{ id, ...fields }`; fields that are
+ * absent or undefined are left alone.
+ *
+ * @param {Array<{id: string, [key: string]: any}>} updates
+ * @returns {Promise<Object[]>} the updated transactions
+ */
+export async function bulkUpdateTransactionsOffline(updates) {
+  if (!Array.isArray(updates) || updates.length === 0) return [];
+
+  const result = await tryOnlineWrite(
+    "transactions",
+    updates.map((u) => u.id),
+    () => _bulkUpdateTransactions(updates),
+    transactionRefs(...updates),
+  );
+
+  if (!result.offline) {
+    await cacheWrittenTransactions(result.data);
+    return result.data;
+  }
+
+  // Offline: apply the same field semantics the RPC uses, row by row.
+  const changes = [];
+  for (const { id, ...input } of updates) {
+    const row = await db.transactions.get(id);
+    if (!row || row.deleted_at) continue; // the RPC skips missing/deleted rows
+    const fields = {};
+    for (const key of BULK_UPDATE_FIELDS) {
+      const value = input[key];
+      if (value === undefined) continue;
+      if (key === "description") {
+        fields[key] = typeof value === "string" ? value.trim() : (value ?? "");
+      } else if (key === "payee") {
+        fields[key] = (typeof value === "string" ? value.trim() : value) || null;
+      } else {
+        fields[key] = value;
+      }
+    }
+    changes.push({ row, fields });
+  }
+  return queueTransactionUpdates(changes);
+}
+
+// Ids for a new two-row transfer, chosen before the backend is tried.
+function newTransferIds() {
+  return {
+    transfer_group_id: newId(),
+    outgoing_id: newId(),
+    incoming_id: newId(),
+  };
+}
+
+// Build the two rows of a transfer for the queued path.
+function buildTransferLegs({
+  from_account_id,
+  to_account_id,
+  from_amount,
+  to_amount,
+  description,
+  payee,
+  transaction_date,
+  category_id,
+  status,
+  transfer_group_id,
+  outgoing_id,
+  incoming_id,
+}) {
+  const now = new Date().toISOString();
+  const base = {
+    category_id,
+    description: description?.trim() ?? "",
+    payee: payee?.trim() || null,
+    transaction_date,
+    transfer_group_id,
+    status: status || "posted",
+    created_at: now,
+    updated_at: now,
+  };
+  return [
+    {
+      ...base,
+      id: outgoing_id,
+      account_id: from_account_id,
+      amount: from_amount,
+      is_income: false,
+    },
+    {
+      ...base,
+      id: incoming_id,
+      account_id: to_account_id,
+      amount: to_amount,
+      is_income: true,
+    },
+  ];
+}
+
+/**
+ * Create both legs of a same-amount transfer between two accounts.
+ *
+ * @param {Object} params - same shape accepted by createTransfer
+ * @returns {Promise<Object[]>} [outgoing, incoming]
+ */
+export async function createTransferOffline(params) {
+  await assertCachedCategoryAvailable(params.category_id);
+  const ids = newTransferIds();
+  const result = await tryOnlineWrite(
+    "transactions",
+    [],
+    () => _createTransfer({ ...params, ...ids }),
+    transactionRefs(params),
+  );
+
+  if (!result.offline) {
+    await cacheWrittenTransactions(result.data);
+    return result.data;
+  }
+
+  return queueNewTransactions(
+    buildTransferLegs({
+      ...params,
+      ...ids,
+      from_amount: params.amount,
+      to_amount: params.amount,
+      status: undefined, // createTransfer does not take a status
+    }),
+  );
 }
 
 /**
@@ -338,84 +985,180 @@ export async function deleteTransactionOffline(id) {
  */
 export async function createAsymmetricTransferOffline(params) {
   await assertCachedCategoryAvailable(params.category_id);
-  const result = await tryOnline(() => _createAsymmetricTransfer(params));
+  const ids = newTransferIds();
+  const result = await tryOnlineWrite(
+    "transactions",
+    [],
+    () => _createAsymmetricTransfer({ ...params, ...ids }),
+    transactionRefs(params),
+  );
 
   if (!result.offline) {
-    const [outgoing, incoming] = result.data;
-    await db.transactions.put(outgoing);
-    await db.transactions.put(incoming);
-    notifyTable("transactions");
+    await cacheWrittenTransactions(result.data);
     return result.data;
   }
 
-  // Offline: generate UUIDs for both legs and store locally
-  const {
-    from_account_id,
-    to_account_id,
-    from_amount,
-    to_amount,
-    description,
-    payee,
-    transaction_date,
-    category_id,
-    status,
-  } = params;
+  return queueNewTransactions(buildTransferLegs({ ...params, ...ids }));
+}
 
-  const transfer_group_id = crypto.randomUUID();
+// The companion leg of a linked transfer always uses the user's
+// "Account Transfer" category (type 'transfer'), as in the service.
+async function findLocalTransferCategoryId() {
+  const categories = await db.categories.toArray();
+  const match = categories.find(
+    (cat) =>
+      cat.type === "transfer" &&
+      cat.name?.toLowerCase() === "account transfer" &&
+      isAvailableCategory(cat),
+  );
+  if (!match) {
+    throw new Error(
+      'No available "Account Transfer" category found. Create or restore it in Categories.',
+    );
+  }
+  return match.id;
+}
+
+/**
+ * Create a linked transfer: a budget-impacting main leg plus a neutral
+ * companion leg on the linked account.
+ *
+ * @param {Object} params - same shape accepted by createLinkedTransfer
+ * @returns {Promise<Object[]>} [mainLeg, companionLeg]
+ */
+export async function createLinkedTransferOffline(params) {
+  await assertCachedCategoryAvailable(params.category_id);
+  const ids = { transfer_group_id: newId(), id: newId(), companion_id: newId() };
+  const result = await tryOnlineWrite(
+    "transactions",
+    [],
+    () => _createLinkedTransfer({ ...params, ...ids }),
+    transactionRefs(params),
+  );
+
+  if (!result.offline) {
+    await cacheWrittenTransactions(result.data);
+    return result.data;
+  }
+
+  const { amount, companion_amount, is_income } = params;
+  const companionCategoryId = await findLocalTransferCategoryId();
   const now = new Date().toISOString();
-
-  // Resolve category/account joins from local cache for display
-  const cat = category_id ? await db.categories.get(category_id) : null;
-  const catJoin = cat
-    ? { id: cat.id, name: cat.name, color: cat.color, type: cat.type }
-    : null;
-  const fromAcct = from_account_id
-    ? await db.accounts.get(from_account_id)
-    : null;
-  const toAcct = to_account_id ? await db.accounts.get(to_account_id) : null;
-
-  const base = {
-    user_id: null, // Filled on sync
-    category_id,
-    description: description?.trim() ?? "",
-    payee: payee?.trim() || null,
-    transaction_date,
-    transfer_group_id,
-    status: status || "posted",
-    deleted_at: null,
+  const shared = {
+    description: params.description?.trim() ?? "",
+    payee: params.payee?.trim() || null,
+    transaction_date: params.transaction_date,
+    transfer_group_id: ids.transfer_group_id,
     created_at: now,
     updated_at: now,
-    categories: catJoin,
   };
+  return queueNewTransactions([
+    {
+      ...shared,
+      id: ids.id,
+      account_id: params.account_id,
+      category_id: params.category_id,
+      is_income,
+      amount,
+    },
+    {
+      ...shared,
+      id: ids.companion_id,
+      account_id: params.linked_account_id,
+      category_id: companionCategoryId,
+      is_income: !is_income,
+      amount:
+        companion_amount != null && companion_amount !== amount
+          ? companion_amount
+          : amount,
+    },
+  ]);
+}
 
-  const outgoing = {
-    ...base,
-    id: crypto.randomUUID(),
-    account_id: from_account_id,
-    amount: from_amount,
-    is_income: false,
-    accounts: fromAcct
-      ? { id: fromAcct.id, name: fromAcct.name, type: fromAcct.type }
-      : null,
+// Shared by the two-leg transfer updates: run the backend update unless a leg
+// is pending, otherwise queue the per-leg changes `planLocal` works out.
+async function updateTransferLegs(id, updates, updateOnline, planLocal) {
+  const { existing, legs } = await getLocalTransferLegs(id);
+  // As in updateTransactionOffline: a category the transfer does not already
+  // use must still be available (not archived or deleted).
+  if (
+    updates.category_id &&
+    !legs.some((leg) => leg.category_id === updates.category_id)
+  ) {
+    await assertCachedCategoryAvailable(updates.category_id);
+  }
+  const result = await tryOnlineWrite(
+    "transactions",
+    [id, ...legs.map((leg) => leg.id)],
+    updateOnline,
+    transactionRefs(updates),
+  );
+
+  if (!result.offline) {
+    await cacheWrittenTransactions(result.data);
+    return result.data;
+  }
+
+  // Offline: resolve both legs from Dexie via transfer_group_id
+  if (!existing) throw new Error(`Transaction ${id} not found locally`);
+  if (!existing.transfer_group_id)
+    throw new Error("Transaction is not part of a transfer.");
+  if (legs.length < 2) throw new Error("Transfer companion not found locally.");
+
+  return queueTransactionUpdates(await planLocal(legs));
+}
+
+function planOutgoingIncoming(legs, updates) {
+  const outgoingLeg = legs.find((l) => !l.is_income);
+  const incomingLeg = legs.find((l) => l.is_income);
+  if (!outgoingLeg || !incomingLeg)
+    throw new Error("Transfer legs are malformed.");
+
+  const shared = {
+    category_id: updates.category_id,
+    description: updates.description?.trim() ?? "",
+    payee: updates.payee?.trim() || null,
+    transaction_date: updates.transaction_date,
   };
+  return [
+    {
+      row: outgoingLeg,
+      fields: {
+        ...shared,
+        account_id: updates.from_account_id,
+        amount: updates.from_amount,
+      },
+    },
+    {
+      row: incomingLeg,
+      fields: {
+        ...shared,
+        account_id: updates.to_account_id,
+        amount: updates.to_amount,
+      },
+    },
+  ];
+}
 
-  const incoming = {
-    ...base,
-    id: crypto.randomUUID(),
-    account_id: to_account_id,
-    amount: to_amount,
-    is_income: true,
-    accounts: toAcct
-      ? { id: toAcct.id, name: toAcct.name, type: toAcct.type }
-      : null,
-  };
-
-  await putOffline("transactions", outgoing, "create");
-  await enqueue("transactions", outgoing.id, "create");
-  await putOffline("transactions", incoming, "create");
-  await enqueue("transactions", incoming.id, "create");
-  notifyTable("transactions");
-  return [outgoing, incoming];
+/**
+ * Update both legs of a same-amount transfer.
+ *
+ * @param {string} id - ID of either leg of the transfer
+ * @param {Object} updates - same shape accepted by updateTransfer
+ * @returns {Promise<Object[]>} [updatedOutgoing, updatedIncoming]
+ */
+export async function updateTransferOffline(id, updates) {
+  return updateTransferLegs(
+    id,
+    updates,
+    () => _updateTransfer(id, updates),
+    (legs) =>
+      planOutgoingIncoming(legs, {
+        ...updates,
+        from_amount: updates.amount,
+        to_amount: updates.amount,
+      }),
+  );
 }
 
 /**
@@ -427,79 +1170,71 @@ export async function createAsymmetricTransferOffline(params) {
  * @returns {Promise<Object[]>} [updatedOutgoing, updatedIncoming]
  */
 export async function updateAsymmetricTransferOffline(id, updates) {
-  const result = await tryOnline(() => _updateAsymmetricTransfer(id, updates));
-
-  if (!result.offline) {
-    const [updatedOut, updatedIn] = result.data;
-    await db.transactions.put(updatedOut);
-    await db.transactions.put(updatedIn);
-    notifyTable("transactions");
-    return result.data;
-  }
-
-  // Offline: resolve both legs from Dexie via transfer_group_id
-  const existing = await db.transactions.get(id);
-  if (!existing) throw new Error(`Transaction ${id} not found locally`);
-  if (!existing.transfer_group_id)
-    throw new Error("Transaction is not part of a transfer.");
-
-  const legs = await db.transactions
-    .where("transfer_group_id")
-    .equals(existing.transfer_group_id)
-    .filter((t) => !t.deleted_at)
-    .toArray();
-  if (legs.length < 2) throw new Error("Transfer companion not found locally.");
-
-  const outgoingLeg = legs.find((l) => !l.is_income);
-  const incomingLeg = legs.find((l) => l.is_income);
-  if (!outgoingLeg || !incomingLeg)
-    throw new Error("Transfer legs are malformed.");
-
-  const now = new Date().toISOString();
-  const shared = {
-    category_id: updates.category_id,
-    description: updates.description?.trim() ?? "",
-    payee: updates.payee?.trim() || null,
-    transaction_date: updates.transaction_date,
-    updated_at: now,
-  };
-
-  const updatedOut = {
-    ...outgoingLeg,
-    ...shared,
-    account_id: updates.from_account_id,
-    amount: updates.from_amount,
-  };
-  const updatedIn = {
-    ...incomingLeg,
-    ...shared,
-    account_id: updates.to_account_id,
-    amount: updates.to_amount,
-  };
-
-  await putOffline(
-    "transactions",
-    updatedOut,
-    outgoingLeg._offline ? outgoingLeg._action : "update",
+  return updateTransferLegs(
+    id,
+    updates,
+    () => _updateAsymmetricTransfer(id, updates),
+    (legs) => planOutgoingIncoming(legs, updates),
   );
-  await enqueue(
-    "transactions",
-    outgoingLeg.id,
-    outgoingLeg._offline ? outgoingLeg._action : "update",
-  );
-  await putOffline(
-    "transactions",
-    updatedIn,
-    incomingLeg._offline ? incomingLeg._action : "update",
-  );
-  await enqueue(
-    "transactions",
-    incomingLeg.id,
-    incomingLeg._offline ? incomingLeg._action : "update",
-  );
+}
 
-  notifyTable("transactions");
-  return [updatedOut, updatedIn];
+/**
+ * Update both legs of a linked transfer. The main leg keeps the user's
+ * category; the companion keeps its transfer category.
+ *
+ * @param {string} id - ID of either leg
+ * @param {Object} updates - same shape accepted by updateLinkedTransfer
+ * @returns {Promise<Object[]>} [updatedMain, updatedCompanion]
+ */
+export async function updateLinkedTransferOffline(id, updates) {
+  return updateTransferLegs(
+    id,
+    updates,
+    () => _updateLinkedTransfer(id, updates),
+    async (legs) => {
+      // Main leg = non-transfer category, companion = transfer category.
+      const typed = [];
+      for (const leg of legs) {
+        const cat = await db.categories.get(leg.category_id);
+        typed.push({ leg, type: cat?.type ?? leg.categories?.type });
+      }
+      const mainLeg = typed.find((t) => t.type !== "transfer")?.leg;
+      const companionLeg = typed.find((t) => t.type === "transfer")?.leg;
+      if (!mainLeg || !companionLeg)
+        throw new Error("Linked transfer legs are malformed.");
+
+      const { amount, companion_amount, is_income } = updates;
+      const shared = {
+        description: updates.description?.trim() || "",
+        payee: updates.payee?.trim() || null,
+        transaction_date: updates.transaction_date,
+      };
+      return [
+        {
+          row: mainLeg,
+          fields: {
+            ...shared,
+            amount,
+            account_id: updates.account_id,
+            category_id: updates.category_id,
+            is_income,
+          },
+        },
+        {
+          row: companionLeg,
+          fields: {
+            ...shared,
+            amount:
+              companion_amount != null && companion_amount !== amount
+                ? companion_amount
+                : amount,
+            account_id: updates.linked_account_id,
+            is_income: !is_income,
+          },
+        },
+      ];
+    },
+  );
 }
 
 /**
@@ -511,7 +1246,8 @@ export async function getTransactionsYTDOffline({ year, throughMonth }) {
     table: "transactions",
     readCache: () => readTransactionsYTDFromCache({ year, throughMonth }),
     fetchFresh: () => _getTransactionsYTD({ year, throughMonth }),
-    writeCache: (rows) => cacheTransactions(rows, { year, throughMonth }),
+    writeCache: (rows, meta) =>
+      cacheTransactions(rows, { year, throughMonth }, meta),
   });
 }
 
@@ -529,23 +1265,7 @@ async function readTransactionsYTDFromCache({ year, throughMonth }) {
       r.transaction_date < endDate,
   );
 
-  const cats = Object.fromEntries(
-    (await db.categories.toArray()).map((c) => [
-      c.id,
-      { id: c.id, name: c.name, color: c.color, type: c.type },
-    ]),
-  );
-  const accts = Object.fromEntries(
-    (await db.accounts.toArray()).map((a) => [
-      a.id,
-      { id: a.id, name: a.name, type: a.type },
-    ]),
-  );
-  rows = rows.map((r) => ({
-    ...r,
-    categories: r.categories || cats[r.category_id] || null,
-    accounts: r.accounts || accts[r.account_id] || null,
-  }));
+  rows = await attachJoins(rows);
 
   rows.sort((a, b) =>
     (b.transaction_date || "").localeCompare(a.transaction_date || ""),
@@ -562,7 +1282,7 @@ export async function getTransactionsForYearOffline({ year }) {
     table: "transactions",
     readCache: () => readTransactionsForYearFromCache({ year }),
     fetchFresh: () => _getTransactionsForYear({ year }),
-    writeCache: (rows) => cacheTransactions(rows, { year }),
+    writeCache: (rows, meta) => cacheTransactions(rows, { year }, meta),
   });
 }
 
@@ -578,23 +1298,7 @@ async function readTransactionsForYearFromCache({ year }) {
       r.transaction_date < endDate,
   );
 
-  const cats = Object.fromEntries(
-    (await db.categories.toArray()).map((c) => [
-      c.id,
-      { id: c.id, name: c.name, color: c.color, type: c.type },
-    ]),
-  );
-  const accts = Object.fromEntries(
-    (await db.accounts.toArray()).map((a) => [
-      a.id,
-      { id: a.id, name: a.name, type: a.type },
-    ]),
-  );
-  rows = rows.map((r) => ({
-    ...r,
-    categories: r.categories || cats[r.category_id] || null,
-    accounts: r.accounts || accts[r.account_id] || null,
-  }));
+  rows = await attachJoins(rows);
 
   rows.sort((a, b) =>
     (b.transaction_date || "").localeCompare(a.transaction_date || ""),
@@ -698,11 +1402,13 @@ export async function getAccountBalancesOffline({ projectedToDate } = {}) {
       const result = await tryOnline(() =>
         _getAccountBalances({ projectedToDate }),
       );
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
       // Genuinely offline — compute from whatever transactions are in Dexie.
       return computeAccountBalancesFromCache({ projectedToDate });
     },
     writeCache: async (rows) => {
+      // A local fold (backend unreachable) is not the server's answer.
+      if (!isFromServer(rows)) return;
       // Store the full result (including computed balance fields) in rpc_cache
       // so subsequent readCache calls serve the correct server-computed values.
       await writeRpcCache(cacheKey, rows);
@@ -1011,13 +1717,12 @@ export async function getMaxProjectedDateOffline() {
 }
 
 export async function createAccountOffline(acctData) {
-  const result = await tryOnline(() => _createAccount(acctData));
+  const id = newId();
+  const result = await tryOnline(() => _createAccount({ ...acctData, id }));
   if (!result.offline) {
-    await db.accounts.put(result.data);
-    notifyTable("accounts");
+    await cacheWritten("accounts", [result.data]);
     return result.data;
   }
-  const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const row = {
     id,
@@ -1035,10 +1740,11 @@ export async function createAccountOffline(acctData) {
 }
 
 export async function updateAccountOffline(id, updates) {
-  const result = await tryOnline(() => _updateAccount(id, updates));
+  const result = await tryOnlineWrite("accounts", [id], () =>
+    _updateAccount(id, updates),
+  );
   if (!result.offline) {
-    await db.accounts.put(result.data);
-    notifyTable("accounts");
+    await cacheWritten("accounts", [result.data]);
     return result.data;
   }
   const existing = await db.accounts.get(id);
@@ -1062,7 +1768,7 @@ export async function updateAccountOffline(id, updates) {
 }
 
 export async function deleteAccountOffline(id) {
-  const result = await tryOnline(() => _deleteAccount(id));
+  const result = await tryOnlineWrite("accounts", [id], () => _deleteAccount(id));
   if (!result.offline) {
     await db.accounts.update(id, { is_active: false });
     notifyTable("accounts");
@@ -1076,7 +1782,9 @@ export async function deleteAccountOffline(id) {
 }
 
 export async function closeAccountOffline(id, closedAt) {
-  const result = await tryOnline(() => _closeAccount(id, closedAt));
+  const result = await tryOnlineWrite("accounts", [id], () =>
+    _closeAccount(id, closedAt),
+  );
   if (!result.offline) {
     await db.accounts.update(id, { closed_at: closedAt });
     notifyTable("accounts");
@@ -1103,7 +1811,7 @@ export async function closeAccountOffline(id, closedAt) {
 }
 
 export async function reopenAccountOffline(id) {
-  const result = await tryOnline(() => _reopenAccount(id));
+  const result = await tryOnlineWrite("accounts", [id], () => _reopenAccount(id));
   if (!result.offline) {
     await db.accounts.update(id, { closed_at: null });
     notifyTable("accounts");
@@ -1246,23 +1954,7 @@ export async function getUpcomingTransactionsOffline(opts) {
   );
 
   // Attach cached category/account data
-  const cats = Object.fromEntries(
-    (await db.categories.toArray()).map((c) => [
-      c.id,
-      { id: c.id, name: c.name, color: c.color, type: c.type },
-    ]),
-  );
-  const accts = Object.fromEntries(
-    (await db.accounts.toArray()).map((a) => [
-      a.id,
-      { id: a.id, name: a.name, type: a.type },
-    ]),
-  );
-  rows = rows.map((r) => ({
-    ...r,
-    categories: r.categories || cats[r.category_id] || null,
-    accounts: r.accounts || accts[r.account_id] || null,
-  }));
+  rows = await attachJoins(rows);
 
   rows.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
   return rows;
@@ -1279,7 +1971,9 @@ import {
 } from "./recurring";
 
 export async function pauseRecurringTemplateOffline(id) {
-  const result = await tryOnline(() => _pauseRecurringTemplate(id));
+  const result = await tryOnlineWrite("recurring_templates", [id], () =>
+    _pauseRecurringTemplate(id),
+  );
   if (!result.offline) {
     await db.recurring_templates.update(id, { is_paused: true });
     notifyTable("recurring_templates");
@@ -1310,7 +2004,9 @@ export async function resumeRecurringTemplateOffline(id) {
       await assertCachedCategoryAvailable(child.category_id);
     }
   }
-  const result = await tryOnline(() => _resumeRecurringTemplate(id));
+  const result = await tryOnlineWrite("recurring_templates", [id], () =>
+    _resumeRecurringTemplate(id),
+  );
   if (!result.offline) {
     await db.recurring_templates.update(id, { is_paused: false });
     notifyTable("recurring_templates");
@@ -1389,13 +2085,12 @@ async function cacheCategoriesHelper(data) {
 }
 
 export async function createCategoryOffline(catData) {
-  const result = await tryOnline(() => _createCategory(catData));
+  const id = newId();
+  const result = await tryOnline(() => _createCategory({ ...catData, id }));
   if (!result.offline) {
-    await db.categories.put(result.data);
-    notifyTable("categories");
+    await cacheWritten("categories", [result.data]);
     return result.data;
   }
-  const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const row = {
     id,
@@ -1414,10 +2109,11 @@ export async function createCategoryOffline(catData) {
 }
 
 export async function updateCategoryOffline(id, updates) {
-  const result = await tryOnline(() => _updateCategory(id, updates));
+  const result = await tryOnlineWrite("categories", [id], () =>
+    _updateCategory(id, updates),
+  );
   if (!result.offline) {
-    await db.categories.put(result.data);
-    notifyTable("categories");
+    await cacheWritten("categories", [result.data]);
     return result.data;
   }
   const existing = await db.categories.get(id);
@@ -1440,7 +2136,7 @@ export async function updateCategoryOffline(id, updates) {
 }
 
 export async function deleteCategoryOffline(id) {
-  const result = await tryOnline(() => _deleteCategory(id));
+  const result = await tryOnlineWrite("categories", [id], () => _deleteCategory(id));
   if (!result.offline) {
     await db.categories.update(id, { is_active: false });
     notifyTable("categories");
@@ -1460,8 +2156,7 @@ export async function archiveCategoryOffline(id) {
     throw new Error("Sync this category's pending changes before archiving it.");
   }
   const row = await _setCategoryArchived(id, true);
-  await db.categories.put(row);
-  notifyTable("categories");
+  await cacheWritten("categories", [row]);
   return row;
 }
 
@@ -1473,8 +2168,7 @@ export async function restoreCategoryOffline(id) {
   if (!existing?._offline) {
     const result = await tryOnline(() => _setCategoryArchived(id, false));
     if (!result.offline) {
-      await db.categories.put(result.data);
-      notifyTable("categories");
+      await cacheWritten("categories", [result.data]);
       return result.data;
     }
   }
@@ -1511,14 +2205,19 @@ export async function getUserPreferenceOffline(key) {
         .where("preference_key")
         .equals(key)
         .first();
-      if (existing) {
+      if (existing?._offline === 1) {
+        // A local change is still queued; the server value is older.
+      } else if (existing) {
         await db.user_preferences.update(existing.id, {
           preference_value: value,
           updated_at: new Date().toISOString(),
         });
       } else if (value != null) {
+        // The service returns only the value, so this is a placeholder row
+        // (local id, no user_id). Sync matches preferences on their natural
+        // key and the next pull replaces the placeholder with the server row.
         await db.user_preferences.put({
-          id: crypto.randomUUID(),
+          id: newId(),
           user_id: null,
           preference_key: key,
           preference_value: value,
@@ -1531,7 +2230,13 @@ export async function getUserPreferenceOffline(key) {
 }
 
 export async function setUserPreferenceOffline(key, value) {
-  const result = await tryOnline(() => _setUserPreference(key, value));
+  const cached = await db.user_preferences
+    .where("preference_key")
+    .equals(key)
+    .first();
+  const result = await tryOnlineWrite("user_preferences", [cached?.id], () =>
+    _setUserPreference(key, value),
+  );
   if (!result.offline) {
     // Also cache
     const existing = await db.user_preferences
@@ -1545,7 +2250,7 @@ export async function setUserPreferenceOffline(key, value) {
       });
     } else {
       await db.user_preferences.put({
-        id: crypto.randomUUID(),
+        id: newId(),
         user_id: null,
         preference_key: key,
         preference_value: value,
@@ -1574,7 +2279,7 @@ export async function setUserPreferenceOffline(key, value) {
       existing._offline ? existing._action : "update",
     );
   } else {
-    const id = crypto.randomUUID();
+    const id = newId();
     await putOffline(
       "user_preferences",
       {
@@ -1613,19 +2318,18 @@ export async function getBudgetPlanOffline(month, year) {
     },
     fetchFresh: () => _getBudgetPlan(month, year),
     writeCache: async (plan) => {
-      if (plan) await db.budget_plans.put(plan);
+      if (plan) await cacheServerRows("budget_plans", [plan]);
     },
   });
 }
 
 export async function createBudgetPlanOffline(planData) {
-  const result = await tryOnline(() => _createBudgetPlan(planData));
+  const id = newId();
+  const result = await tryOnline(() => _createBudgetPlan({ ...planData, id }));
   if (!result.offline) {
-    await db.budget_plans.put(result.data);
-    notifyTable("budget_plans");
+    await cacheWritten("budget_plans", [result.data]);
     return result.data;
   }
-  const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const row = {
     id,
@@ -1642,10 +2346,11 @@ export async function createBudgetPlanOffline(planData) {
 }
 
 export async function updateBudgetPlanOffline(planId, updates) {
-  const result = await tryOnline(() => _updateBudgetPlan(planId, updates));
+  const result = await tryOnlineWrite("budget_plans", [planId], () =>
+    _updateBudgetPlan(planId, updates),
+  );
   if (!result.offline) {
-    await db.budget_plans.put(result.data);
-    notifyTable("budget_plans");
+    await cacheWritten("budget_plans", [result.data]);
     return result.data;
   }
   const existing = await db.budget_plans.get(planId);
@@ -1679,36 +2384,32 @@ export async function getBudgetItemsOffline(budgetPlanId) {
         .toArray();
       // Re-attach the cached category join so consumers see the same shape
       // they get from Supabase (`item.categories.name`, `.color`, `.type`).
-      const cats = Object.fromEntries(
-        (await db.categories.toArray()).map((c) => [
-          c.id,
-          { id: c.id, name: c.name, color: c.color, type: c.type },
-        ]),
-      );
-      return items.map((item) => ({
-        ...item,
-        categories: item.categories || cats[item.category_id] || null,
-      }));
+      return attachJoins(items, { accounts: false });
     },
     fetchFresh: () => _getBudgetItems(budgetPlanId),
     writeCache: async (items) => {
       // Don't trample offline-pending items (e.g. user edited a row offline).
-      const pending = await db.budget_items
-        .where("_offline")
-        .equals(1)
-        .primaryKeys();
-      const pendingSet = new Set(pending);
-      const toCache = items.filter((r) => !pendingSet.has(r.id));
-      if (toCache.length) await db.budget_items.bulkPut(toCache);
+      await cacheServerRows("budget_items", items);
     },
   });
 }
 
 export async function upsertBudgetItemOffline(itemData) {
-  const result = await tryOnline(() => _upsertBudgetItem(itemData));
+  const cached = await db.budget_items
+    .where("[budget_plan_id+category_id]")
+    .equals([itemData.budget_plan_id, itemData.category_id])
+    .first();
+  const result = await tryOnlineWrite(
+    "budget_items",
+    [cached?.id],
+    () => _upsertBudgetItem(itemData),
+    {
+      budget_plans: [itemData.budget_plan_id],
+      categories: [itemData.category_id],
+    },
+  );
   if (!result.offline) {
-    await db.budget_items.put(result.data);
-    notifyTable("budget_items");
+    await cacheWritten("budget_items", [result.data]);
     return result.data;
   }
   // Check if an item with this budget_plan_id+category_id already exists locally
@@ -1731,7 +2432,7 @@ export async function upsertBudgetItemOffline(itemData) {
     );
     return updated;
   }
-  const id = crypto.randomUUID();
+  const id = newId();
   const row = { id, ...itemData };
   await putOffline("budget_items", row, "create");
   await enqueue("budget_items", id, "create");
@@ -1899,19 +2600,17 @@ async function computePlanVsActualFromCache({
  */
 export async function getPlanVsActualOffline({ month, year, asOf = null }) {
   const cacheKey = `pva:m:${year}-${month}${asOf ? `:asof:${asOf}` : ""}`;
-  return swrRead({
+  return rpcRead({
     key: cacheKey,
     // RPC-derived; no notifyTable to avoid the bridge → invalidate → refetch
     // → bg-revalidate → notifyTable loop.
-    readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() =>
         _getPlanVsActual({ month, year, asOf }),
       );
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
       return computePlanVsActualFromCache({ month, year, ytd: false, asOf });
     },
-    writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
   });
 }
@@ -1925,14 +2624,13 @@ export async function getPlanVsActualYTDOffline({
   asOf = null,
 }) {
   const cacheKey = `pva:ytd:${year}-${throughMonth}${asOf ? `:asof:${asOf}` : ""}`;
-  return swrRead({
+  return rpcRead({
     key: cacheKey,
-    readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() =>
         _getPlanVsActualYTD({ year, throughMonth, asOf }),
       );
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
       return computePlanVsActualFromCache({
         month: throughMonth,
         year,
@@ -1940,7 +2638,6 @@ export async function getPlanVsActualYTDOffline({
         asOf,
       });
     },
-    writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
   });
 }
@@ -1996,17 +2693,7 @@ function aggregateTrendFromCacheRows(
 }
 
 async function loadCacheTransactionsWithCategoryJoin() {
-  const allTx = await db.transactions.toArray();
-  const cats = Object.fromEntries(
-    (await db.categories.toArray()).map((c) => [
-      c.id,
-      { id: c.id, name: c.name, color: c.color, type: c.type },
-    ]),
-  );
-  return allTx.map((t) => ({
-    ...t,
-    categories: t.categories || cats[t.category_id] || null,
-  }));
+  return attachJoins(await db.transactions.toArray(), { accounts: false });
 }
 
 export async function getMonthlySpendingTrendOffline(opts = {}) {
@@ -2014,12 +2701,11 @@ export async function getMonthlySpendingTrendOffline(opts = {}) {
   const em = opts.endMonth ?? "";
   const ey = opts.endYear ?? "";
   const cacheKey = `trend:m:${m}:${ey}-${em}${opts.asOf ? `:asof:${opts.asOf}` : ""}`;
-  return swrRead({
+  return rpcRead({
     key: cacheKey,
-    readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() => _getMonthlySpendingTrend(opts));
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
       const rows = await loadCacheTransactionsWithCategoryJoin();
       return aggregateTrendFromCacheRows(rows, {
         months: opts.months ?? 6,
@@ -2028,7 +2714,6 @@ export async function getMonthlySpendingTrendOffline(opts = {}) {
         asOf: opts.asOf ?? null,
       });
     },
-    writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
   });
 }
@@ -2038,12 +2723,11 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
   const em = opts.endMonth ?? "";
   const ey = opts.endYear ?? "";
   const cacheKey = `trend:y:${yrs}:${ey}-${em}${opts.asOf ? `:asof:${opts.asOf}` : ""}`;
-  return swrRead({
+  return rpcRead({
     key: cacheKey,
-    readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() => _getYearlySpendingTrend(opts));
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
 
       // Fold from cached transactions with the same accounting rules.
       const rows = await loadCacheTransactionsWithCategoryJoin();
@@ -2080,7 +2764,6 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
       }
       return Object.values(map).sort((a, b) => a.year - b.year);
     },
-    writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
   });
 }
@@ -2092,12 +2775,11 @@ export async function getYearlySpendingTrendOffline(opts = {}) {
  */
 export async function getTransactionYearsOffline() {
   const cacheKey = "tx:years";
-  return swrRead({
+  return rpcRead({
     key: cacheKey,
-    readCache: () => readRpcCache(cacheKey),
     fetchFresh: async () => {
       const result = await tryOnline(() => _getTransactionYears());
-      if (!result.offline) return result.data;
+      if (!result.offline) return fromServer(result.data);
 
       const allTx = await db.transactions.toArray();
       const dates = allTx
@@ -2114,7 +2796,6 @@ export async function getTransactionYearsOffline() {
         (_, i) => minYear + i,
       );
     },
-    writeCache: (value) => writeRpcCache(cacheKey, value),
     isEmpty: (v) => v == null,
   });
 }

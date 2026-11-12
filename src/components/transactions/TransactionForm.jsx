@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
-import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
+import { toCents, toDollars, formatCurrency, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
+import { categoryIdForTransactionType, isToAmountFieldVisible, toAmountForAccountError } from '../../utils/transactionFormRules';
 
 function InfoTip({ text }) {
   return (
@@ -163,6 +164,9 @@ export default function TransactionForm({ categories: allCategories = [], accoun
   const isIncome = transactionType === 'income';
   const isAdjustment = isTransfer && !toAccountId; // single-account balance adjustment
 
+  // "Amount applied to account" is only shown (and validated) with a destination/linked account
+  const showToAmountField = isToAmountFieldVisible({ transactionType, toAccountId, linkedAccountId });
+
   // Whether the user has entered a different "to" amount (asymmetric transfer)
   const toAmountNum = parseFloat(toAmountForAccount);
   const fromAmountNum = parseFloat(amount);
@@ -189,14 +193,17 @@ export default function TransactionForm({ categories: allCategories = [], accoun
     .filter((g) => g.items.length > 0);
 
   function handleTransactionTypeChange(nextType) {
+    if (nextType === transactionType) return;
     setTransactionType(nextType);
-    const nextCategories = nextType === 'transfer'
-      ? categories.filter((c) => c.type === 'transfer')
-      : categories.filter((c) => c.type !== 'transfer');
-    const firstCategory = nextCategories[0];
-    setCategoryId(firstCategory?.id || '');
+    // Keep the category if it still fits the new type, else pick one that does
+    // (an income entry in a spending category would save as a spending credit).
+    const nextCategoryId = categoryIdForTransactionType(categories, effectiveCategoryId, nextType);
+    setCategoryId(nextCategoryId);
+    // The "amount applied to account" value belongs to the previous type's
+    // destination/linked account — never carry it over.
+    setToAmountForAccount('');
     if (nextType === 'transfer') {
-      setPayee(firstCategory?.name || '');
+      setPayee(categories.find((c) => c.id === nextCategoryId)?.name || '');
       setPayeeManuallyEdited(false);
       setLinkedAccountId('');
       setIsSplit(false);
@@ -224,12 +231,9 @@ export default function TransactionForm({ categories: allCategories = [], accoun
     if (isTransfer && !isAdjustment && !toAccountId) errs.toAccountId = 'Please select a destination account.';
     if (isTransfer && !isAdjustment && toAccountId === accountId) errs.toAccountId = 'Destination must be different from source.';
     if (!isTransfer && linkedAccountId && linkedAccountId === accountId) errs.linkedAccountId = 'Linked account must be different from the main account.';
-    // Asymmetric transfer validation
-    if (toAmountForAccount !== '') {
-      const toAmt = parseFloat(toAmountForAccount);
-      if (isNaN(toAmt) || toAmt <= 0) errs.toAmountForAccount = 'Amount must be greater than 0.';
-      else if (!isNaN(numAmount) && toAmt > numAmount) errs.toAmountForAccount = 'Cannot exceed the total payment amount.';
-    }
+    // Asymmetric transfer validation — only while the field is on screen
+    const toAmountError = toAmountForAccountError({ visible: showToAmountField, toAmountForAccount, amount });
+    if (toAmountError) errs.toAmountForAccount = toAmountError;
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -420,7 +424,7 @@ export default function TransactionForm({ categories: allCategories = [], accoun
             </label>
             <select
               value={linkedAccountId}
-              onChange={(e) => setLinkedAccountId(e.target.value)}
+              onChange={(e) => { setLinkedAccountId(e.target.value); setToAmountForAccount(''); }}
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">None</option>
@@ -492,7 +496,7 @@ export default function TransactionForm({ categories: allCategories = [], accoun
             </label>
             <select
               value={toAccountId}
-              onChange={(e) => setToAccountId(e.target.value)}
+              onChange={(e) => { setToAccountId(e.target.value); setToAmountForAccount(''); }}
               className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-3 py-2.5 text-sm text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
             >
               <option value="">None (adjustment)</option>
@@ -597,7 +601,7 @@ export default function TransactionForm({ categories: allCategories = [], accoun
       </div>
 
       {/* Asymmetric field: "Amount applied to account" (pure transfers) or "Amount applied to linked account" (linked transfers) */}
-      {((isTransfer && !isAdjustment && toAccountId) || (!isTransfer && linkedAccountId)) && (
+      {showToAmountField && (
         <div className="space-y-1.5">
           <label className="flex items-center text-sm font-medium text-stone-700 dark:text-stone-300">
             {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
@@ -618,7 +622,7 @@ export default function TransactionForm({ categories: allCategories = [], accoun
           {errors.toAmountForAccount && <p className="text-xs text-red-500">{errors.toAmountForAccount}</p>}
           {(isAsymmetric || isAsymmetricLinked) && !errors.toAmountForAccount && (
             <p className="text-xs text-stone-500 dark:text-stone-400">
-              ${((toCents(fromAmountNum) - toCents(toAmountNum)) / 100).toFixed(2)} will not be credited to any account
+              {formatCurrency(toCents(fromAmountNum) - toCents(toAmountNum))} will not be credited to any account
             </p>
           )}
         </div>

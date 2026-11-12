@@ -96,4 +96,4 @@ Auth and deployment tests require isolated PostgreSQL/Docker resources; see the 
 
 ## Documentation
 
-Start with the [documentation index](./docs/QUICK_REFERENCE.md). The authoritative references are the [data model](./docs/DATA_MODEL.md), [style guide](./docs/STYLE_GUIDE.md), [security model](./docs/SECURITY.md), and [contributor instructions](./.github/copilot-instructions.md).
+Start with the [documentation index](./docs/QUICK_REFERENCE.md). The authoritative references are the [data model](./docs/DATA_MODEL.md), [style guide](./docs/STYLE_GUIDE.md), [security model](./docs/SECURITY.md), and [contributor instructions](./.github/AGENTS.md).

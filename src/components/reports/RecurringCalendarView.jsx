@@ -14,6 +14,7 @@ import {
 } from 'date-fns';
 import { getOccurrencesInRange } from '../../utils/recurringCalculations';
 import { formatCurrency } from '../../utils/helpers';
+import { computeTemplateGroupNet } from '../../utils/transactionGrouping';
 
 const CHIP_LIMIT = 3;
 
@@ -59,10 +60,7 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
         // For groups, compute net from children so stale stored amounts don't mislead
         const children = t.children || [];
         const occurrenceAmount = t.is_group_parent && children.length > 0
-          ? children.reduce((sum, c) => {
-              if (c.is_transfer) return sum;
-              return sum + (c.is_income ? c.amount : -c.amount);
-            }, 0)
+          ? computeTemplateGroupNet(children)
           : t.amount;
         map.get(key).push({
           templateId: t.id,

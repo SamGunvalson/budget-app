@@ -15,6 +15,8 @@ Paths now include `migrations/`.
 | [supabase_partnership_seen.sql](./supabase_partnership_seen.sql) | Adds partnership notification watermarks | Split base |
 | [supabase_split_dedup.sql](./supabase_split_dedup.sql) | Soft-deletes duplicate linked splits and adds uniqueness | Split base index; fresh databases have no old duplicates |
 | [supabase_split_fix_rls.sql](./supabase_split_fix_rls.sql) | Repairs split UPDATE/DELETE policies | Split base and complete RLS |
+| [supabase_partnership_hardening_rls.sql](./supabase_partnership_hardening_rls.sql) | Restricts partnership inserts to pending invites, installs the `partnerships_guard` trigger and one-active-partnership indexes, and requires split payers/linked transactions to belong to the partnership/caller | Split base and complete RLS |
+| [supabase_split_soft_delete_rpc.sql](./supabase_split_soft_delete_rpc.sql) | Installs the member-scoped `soft_delete_split_expense` RPC; direct soft-delete UPDATEs fail the split SELECT policy | Split base |
 | [supabase_transactions_soft_delete_rls.sql](./supabase_transactions_soft_delete_rls.sql) | Atomically replaces legacy transaction policies and installs soft-delete RPC | Core base RPC/policies and complete RLS |
 | [supabase_recurring_projection_cleanup.sql](./supabase_recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
 | [supabase_report_as_of.sql](./supabase_report_as_of.sql) | Replaces plan-vs-actual and spending-trend RPCs with versions taking optional `p_as_of`, so reports can exclude projected/pending/future rows | Phase-3 aggregations |

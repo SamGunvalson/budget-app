@@ -136,6 +136,20 @@ budget.example.com {
 }
 ```
 
+Nginx overwrites `X-Forwarded-For` with the address of its direct peer so
+clients cannot spoof the IP used for auth rate limits. Behind Caddy (or any
+other reverse proxy) that peer is the proxy, so all users share one per-IP
+rate-limit bucket unless you tell Nginx to trust it. To restore per-client
+limits, mount a file at `/etc/nginx/snippets/real-ip.conf` in the `budget-app`
+service containing only your proxy's address or subnet:
+
+```nginx
+set_real_ip_from 172.20.0.0/16;  # the proxynet subnet (or the proxy's IP)
+real_ip_header X-Forwarded-For;
+```
+
+Never list a range that untrusted clients can connect from.
+
 Only the app joins the proxy network; auth, PostgREST, and the database stay on
 the default network. If Caddy is the only entry point, remove the app's `ports:`
 section; Caddy connects over Docker networking without publishing a host port.
@@ -496,8 +510,22 @@ The [dev-container configuration](../.devcontainer/devcontainer.json) uses
 Node 22. Install Docker Desktop and the VS Code Dev Containers extension,
 configure `.env`, then open the repository and choose **Reopen in Container**.
 Dependencies install automatically; run `npm run dev` at the repository root.
-The container includes ESLint, Prettier, Tailwind CSS IntelliSense, GitLens,
+The container includes ESLint, Prettier, Tailwind CSS IntelliSense, Claude,
 and React snippet extensions.
+
+The container also runs its own Docker daemon (the `docker-in-docker` feature)
+and installs `server/auth` dependencies, so the Docker-backed checks in
+[validation](#validation) work inside it. The daemon's image cache is separate
+from the host's and is lost on container rebuild. To run the deployment smoke
+test as CI does:
+
+```bash
+docker build -t thewarguy/budget-app-db:selfhost-test ./sql_scripts
+docker build -t thewarguy/budget-app-auth:selfhost-test ./server/auth
+docker build -t thewarguy/budget-app:selfhost-test .
+node --test scripts/test-selfhost.test.js
+npm --prefix server/auth test
+```
 
 ### Windows troubleshooting
 

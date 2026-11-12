@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run lint -- *)",
+      "Bash(npm run build)",
+      "Bash(npm test)",
+      "Bash(npm run test)",
+      "Bash(npm run verify)",
+      "Bash(npm run audit:security)",
+      "Bash(node --test *)",
+      "Bash(node --experimental-vm-modules --test *)",
+      "Bash(npx eslint *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git ls-files *)",
+      "Bash(git blame *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.selfhost)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./android/keystore.properties)",
+      "Read(./android/**/*.jks)",
+      "Read(./dist/**)",
+      "Read(./android/app/build/**)",
+      "Read(./android/app/src/main/assets/**)",
+      "Read(./package-lock.json)",
+      "Read(./server/auth/package-lock.json)",
+      "Read(./scripts/migrate-from-supabase/package-lock.json)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/lint-edited.sh",
+            "timeout": 30,
+            "statusMessage": "Linting edited file"
+          }
+        ]
+      }
+    ]
+  }
+}

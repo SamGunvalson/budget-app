@@ -75,5 +75,8 @@ service CLI: `echo 'newpass123' | DATABASE_URL=... npm run cli -- reset-password
   lowercased, so make sure `partnerships.invited_email` values are lowercase too; a mixed-case invited email
   will no longer match its owner. Fix with
   `UPDATE partnerships SET invited_email = lower(invited_email) WHERE invited_email <> lower(invited_email);` after migrating.
+- The import bypasses triggers, so the one-active-partnership rule (`partnerships_guard`) is not checked for a
+  user who is `user_a_id` in one active partnership and `user_b_id` in another. After migrating, confirm that no
+  user appears in more than one row with `status = 'active'` and dissolve any extras.
 - Old Supabase sessions/refresh tokens are not migrated; everyone logs in again.
 - Supabase-only schemas (storage, realtime, auth identities, etc.) are not copied.

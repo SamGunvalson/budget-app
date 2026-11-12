@@ -14,7 +14,7 @@ export const getConnectionErrorMessage = (error, fallbackMessage) => {
   const code = error?.code;
   const message = String(error?.message || '').toLowerCase();
   const deviceOffline =
-    typeof navigator !== 'undefined' && Object.hasOwn(navigator, 'onLine') && !navigator.onLine;
+    typeof navigator !== 'undefined' && 'onLine' in navigator && !navigator.onLine;
 
   if (code === 'INVALID_SERVER_URL') {
     return 'Enter a valid server URL (for example: https://budget.example.ts.net).';

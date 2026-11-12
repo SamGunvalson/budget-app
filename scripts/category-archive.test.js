@@ -42,9 +42,15 @@ test('a stale selected category requires a choice instead of silently falling ba
   assert.equal(resolveCategoryId([], ''), '');
 });
 
-test('any saved allocation retains an archived category throughout its budget year', () => {
-  const year = { 1: { allocations: { archived: 0 } }, 6: { allocations: { active: 500 } } };
+test('a non-zero allocation retains an archived category throughout its budget year', () => {
+  const year = { 1: { allocations: { archived: 1200 } }, 6: { allocations: { active: 500 } } };
   assert.deepEqual([...budgetCategoryIds(year)], ['archived', 'active']);
   assert.deepEqual(categoriesForBudget(categories, year), [active, archived]);
   assert.deepEqual(categoriesForBudget(categories, { 1: { allocations: {} } }), [active]);
+});
+
+test('zero-amount saved items do not keep archived categories visible', () => {
+  const year = { 1: { allocations: { archived: 0, active: 500 } }, 2: { allocations: { archived: 0 } } };
+  assert.deepEqual([...budgetCategoryIds(year)], ['active']);
+  assert.deepEqual(categoriesForBudget(categories, year), [active]);
 });

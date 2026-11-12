@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { newId } from '../utils/ids';
 import { Link } from 'react-router-dom';
 import TopBar from '../components/common/TopBar';
 import ExportData from '../components/common/ExportData';
@@ -238,7 +239,7 @@ export default function SettingsPage() {
     }
 
     const template = {
-      id: quickForm.id || crypto.randomUUID(),
+      id: quickForm.id || newId(),
       label: quickForm.label.trim(),
       description: quickForm.description.trim(),
       payee: quickForm.payee.trim(),

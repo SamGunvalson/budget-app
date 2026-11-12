@@ -32,3 +32,6 @@ dist-ssr
 # Android release signing secrets
 android/keystore.properties
 android/*.jks
+
+# Claude Code personal overrides
+.claude/settings.local.json

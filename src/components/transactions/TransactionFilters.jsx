@@ -3,6 +3,8 @@ import { categoryLabel } from '../../utils/categoryArchive';
 import { getMonthName, maskAccountName } from '../../utils/helpers';
 import useAvailableYears from '../../hooks/useAvailableYears';
 import useSessionState from '../../hooks/useSessionState';
+import { filtersWithSearchText } from '../../utils/transactionFormRules';
+import { yearOptionsWithSelected } from '../../utils/reportRules';
 
 const TYPE_OPTIONS = [
   { label: 'All', value: 'all' },
@@ -49,16 +51,28 @@ export default function TransactionFilters({
   const [filtersOpen, setFiltersOpen] = useSessionState('txFiltersOpen', false);
   const debounceRef = useRef(null);
 
-  // Debounce text search
+  // Latest filters/callback for the debounce below, so a filter changed while
+  // the timer is pending is not overwritten with a stale copy.
+  const latestRef = useRef({ filters, onFiltersChange });
+  useEffect(() => {
+    latestRef.current = { filters, onFiltersChange };
+  });
+
+  // Debounce text search — only searchText is updated, and nothing is emitted
+  // when it already matches (e.g. on mount).
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      onFiltersChange({ ...filters, searchText: localSearch });
+      const latest = latestRef.current;
+      const next = filtersWithSearchText(latest.filters, localSearch);
+      if (next) latest.onFiltersChange(next);
     }, 300);
     return () => clearTimeout(debounceRef.current);
-  }, [localSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [localSearch]);
 
-  const { years } = useAvailableYears();
+  const { years: availableYears } = useAvailableYears();
+  // Keep the selected year among the options so the select never shows a different one.
+  const years = yearOptionsWithSelected(availableYears, year);
 
   const hasActiveFilters = filters.searchText || filters.categoryId || filters.accountId || filters.type !== 'all' || filters.statusFilter !== 'all' || filters.amountExact || filters.dateStart || filters.dateEnd;
 

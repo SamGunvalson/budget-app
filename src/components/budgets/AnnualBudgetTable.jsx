@@ -155,8 +155,10 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
         const exactDollars = cents ? toDollars(cents, { raw: true }).toFixed(2) : '';
         const roundedDollars = cents ? String(Math.round(toDollars(cents, { raw: true }))) : '';
         const displayDollars = (isSafeModeActive() && cents) ? Math.round(toDollars(cents)) : roundedDollars;
-        // While this cell is focused, show the raw typed string; otherwise show rounded whole dollars
-        const inputValue = focusedMonth === m ? editValue : roundedDollars;
+        // While this cell is focused, show the raw typed string; otherwise show rounded whole
+        // dollars (masked in safe mode). The unfocused value is display-only: edits always
+        // start from exactDollars (onFocus) or cents (calculator), never from this string.
+        const inputValue = focusedMonth === m ? editValue : String(displayDollars);
         return (
           <td key={m} className="px-0.5 py-0.5">
             {/* Mobile: read-only tap target */}

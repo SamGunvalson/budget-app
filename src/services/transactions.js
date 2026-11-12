@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { newId } from "../utils/ids";
 
 // Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
 // trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
@@ -55,6 +56,13 @@ export async function getTransactions({ month, year, status } = {}) {
   return allData;
 }
 
+// Optional client-generated ids for the two rows of a transfer, so a retry of
+// the same create is idempotent. A bulk insert needs every row to carry the
+// same keys, so ids are used only when both are supplied.
+function clientLegIds(firstId, secondId) {
+  return firstId && secondId ? [{ id: firstId }, { id: secondId }] : [{}, {}];
+}
+
 /**
  * Create a new transaction.
  * @param {{ account_id: string, category_id: string, amount: number, description: string, payee: string, transaction_date: string, is_income: boolean, status?: string, recurring_template_id?: string }} transaction
@@ -70,6 +78,7 @@ export async function createTransaction({
   is_income,
   status,
   recurring_template_id,
+  id,
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
@@ -86,6 +95,8 @@ export async function createTransaction({
   };
   if (status) row.status = status;
   if (recurring_template_id) row.recurring_template_id = recurring_template_id;
+  // Optional client-generated id so a retry of the same create is idempotent.
+  if (id) row.id = id;
 
   const { data, error } = await supabase
     .from("transactions")
@@ -115,6 +126,7 @@ export async function createAdjustment({
   transaction_date,
   is_income,
   status,
+  id,
 }) {
   const user = await getCurrentUser();
 
@@ -130,6 +142,7 @@ export async function createAdjustment({
     // Intentionally no transfer_group_id — single leg by design
   };
   if (status) row.status = status;
+  if (id) row.id = id;
 
   const { data, error } = await supabase
     .from("transactions")
@@ -168,9 +181,12 @@ export async function createTransfer({
   payee,
   transaction_date,
   category_id,
+  transfer_group_id = newId(),
+  outgoing_id,
+  incoming_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(outgoing_id, incoming_id);
 
   const baseTx = {
     user_id: user.id,
@@ -185,8 +201,8 @@ export async function createTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...baseTx, account_id: from_account_id, is_income: false },
-      { ...baseTx, account_id: to_account_id, is_income: true },
+      { ...baseTx, ...legIds[0], account_id: from_account_id, is_income: false },
+      { ...baseTx, ...legIds[1], account_id: to_account_id, is_income: true },
     ])
     .select("*, categories(id, name, color, type), accounts(id, name, type)");
   if (error) throw error;
@@ -218,9 +234,12 @@ export async function createLinkedTransfer({
   transaction_date,
   is_income,
   companion_amount,
+  transfer_group_id = newId(),
+  id,
+  companion_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(id, companion_id);
 
   // Resolve the "Account Transfer" category for the companion leg
   const { data: transferCats, error: catErr } = await supabase
@@ -255,9 +274,10 @@ export async function createLinkedTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...sharedFields, account_id, category_id, is_income, amount },
+      { ...sharedFields, ...legIds[0], account_id, category_id, is_income, amount },
       {
         ...sharedFields,
+        ...legIds[1],
         amount: companionAmt,
         account_id: linked_account_id,
         category_id: companionCategoryId,
@@ -491,9 +511,12 @@ export async function createAsymmetricTransfer({
   transaction_date,
   category_id,
   status,
+  transfer_group_id = newId(),
+  outgoing_id,
+  incoming_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(outgoing_id, incoming_id);
 
   const base = {
     user_id: user.id,
@@ -508,8 +531,8 @@ export async function createAsymmetricTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...base, account_id: from_account_id, amount: from_amount, is_income: false },
-      { ...base, account_id: to_account_id, amount: to_amount, is_income: true },
+      { ...base, ...legIds[0], account_id: from_account_id, amount: from_amount, is_income: false },
+      { ...base, ...legIds[1], account_id: to_account_id, amount: to_amount, is_income: true },
     ])
     .select("*, categories(id, name, color, type), accounts(id, name, type)");
   if (error) throw error;
@@ -703,13 +726,16 @@ export async function deleteTransaction(id) {
 
   if (tx.transfer_group_id) {
     // Find the companion leg
-    const { data: companions } = await supabase
+    const { data: companions, error: lookupErr } = await supabase
       .from("transactions")
       .select("id")
       .eq("transfer_group_id", tx.transfer_group_id)
       .eq("user_id", user.id)
       .neq("id", id)
       .is("deleted_at", null);
+    // A pair must not be left half-deleted: if the companion cannot be found
+    // or deleted, fail before touching the original so the caller can retry.
+    if (lookupErr) throw lookupErr;
 
     if (companions?.length) {
       for (const comp of companions) {
@@ -717,9 +743,8 @@ export async function deleteTransaction(id) {
           "soft_delete_transaction",
           { txn_id: comp.id },
         );
-        if (compErr)
-          console.error(`Failed to delete companion ${comp.id}:`, compErr);
-        else deletedIds.push(comp.id);
+        if (compErr) throw compErr;
+        deletedIds.push(comp.id);
       }
     }
   }
@@ -782,55 +807,141 @@ export async function bulkDeleteTransactions(ids) {
 // ── Status lifecycle functions ──
 
 /**
- * Confirm a pending transaction → posted.
+ * Find the live, not-yet-posted companion legs of a transaction (the other
+ * rows sharing its transfer_group_id). Posted companions are left alone:
+ * confirm has nothing to do for them and skip must never remove posted rows.
  * @param {string} id - Transaction UUID
- * @returns {Promise<Object>} Updated transaction
+ * @returns {Promise<string[]>} Companion transaction IDs (empty if unpaired)
  */
-export async function confirmTransaction(id) {
+async function getUnpostedCompanionIds(id) {
+  const { data: tx, error: txErr } = await supabase
+    .from("transactions")
+    .select("id, transfer_group_id")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (txErr) throw txErr;
+  if (!tx?.transfer_group_id) return [];
+
+  const { data: companions, error: compErr } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("transfer_group_id", tx.transfer_group_id)
+    .neq("id", id)
+    .in("status", ["projected", "pending"])
+    .is("deleted_at", null);
+  if (compErr) throw compErr;
+  return (companions || []).map((row) => row.id);
+}
+
+/**
+ * Confirm a transaction and its unposted companion legs. Companions are
+ * confirmed first, so a failure leaves the requested row still pending.
+ * @param {string} id - Transaction UUID
+ * @returns {Promise<Object[]>} Updated rows, the requested transaction first
+ */
+async function confirmWithCompanions(id) {
   const user = await getCurrentUser();
+  const companionIds = await getUnpostedCompanionIds(id);
+  const now = new Date().toISOString();
+
+  let companions = [];
+  if (companionIds.length) {
+    const { data, error: compErr } = await supabase
+      .from("transactions")
+      .update({ status: "posted", updated_at: now })
+      .in("id", companionIds)
+      .eq("user_id", user.id)
+      .select("*, categories(id, name, color, type), accounts(id, name, type)");
+    if (compErr) throw compErr;
+    companions = data || [];
+  }
+
   const { data, error } = await supabase
     .from("transactions")
-    .update({ status: "posted", updated_at: new Date().toISOString() })
+    .update({ status: "posted", updated_at: now })
     .eq("id", id)
     .eq("user_id", user.id)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
     .single();
 
   if (error) throw error;
-  return data;
+  return [data, ...companions];
 }
 
 /**
- * Skip (soft-delete) a projected or pending transaction.
+ * Soft-delete a projected/pending transaction and its unposted companion
+ * legs. Companions go first, so a failure leaves the requested row in place.
+ * @param {string} id - Transaction UUID
+ * @returns {Promise<string[]>} Deleted IDs, the requested transaction first
+ */
+async function skipWithCompanions(id) {
+  const companionIds = await getUnpostedCompanionIds(id);
+  for (const txn_id of [...companionIds, id]) {
+    const { error } = await supabase.rpc("soft_delete_transaction", { txn_id });
+    if (error) throw error;
+  }
+  return [id, ...companionIds];
+}
+
+/** Flatten per-request results: requested items first, then extra companions. */
+function requestedFirst(groups, keyOf) {
+  const seen = new Set();
+  const out = [];
+  for (const item of [
+    ...groups.map((group) => group[0]),
+    ...groups.flatMap((group) => group.slice(1)),
+  ]) {
+    const key = keyOf(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Confirm a pending transaction → posted. If it is one leg of a transfer or
+ * linked transfer, the other unposted leg(s) are confirmed with it.
+ * @param {string} id - Transaction UUID
+ * @returns {Promise<Object>} Updated transaction
+ */
+export async function confirmTransaction(id) {
+  const [confirmed] = await confirmWithCompanions(id);
+  return confirmed;
+}
+
+/**
+ * Skip (soft-delete) a projected or pending transaction. If it is one leg of
+ * a transfer or linked transfer, the other unposted leg(s) are skipped too.
  * @param {string} id - Transaction UUID
  * @returns {Promise<string>} Deleted transaction ID
  */
 export async function skipTransaction(id) {
-  const { error } = await supabase.rpc("soft_delete_transaction", {
-    txn_id: id,
-  });
-  if (error) throw error;
+  await skipWithCompanions(id);
   return id;
 }
 
 /**
  * Bulk-confirm multiple pending transactions → posted.
  * @param {string[]} ids - Array of transaction UUIDs
- * @returns {Promise<Array>} Updated transactions
+ * @returns {Promise<Array>} Updated transactions: one per requested id, in
+ *   order, followed by any companion legs that were confirmed with them
  */
 export async function bulkConfirmTransactions(ids) {
-  const results = await Promise.all(ids.map((id) => confirmTransaction(id)));
-  return results;
+  const groups = await Promise.all(ids.map((id) => confirmWithCompanions(id)));
+  return requestedFirst(groups, (row) => row.id);
 }
 
 /**
  * Bulk-skip (soft-delete) multiple pending/projected transactions.
  * @param {string[]} ids - Array of transaction UUIDs
- * @returns {Promise<string[]>} Array of deleted IDs
+ * @returns {Promise<string[]>} Deleted IDs: the requested ids, in order,
+ *   followed by any companion legs that were skipped with them
  */
 export async function bulkSkipTransactions(ids) {
-  await Promise.all(ids.map((id) => skipTransaction(id)));
-  return ids;
+  const groups = await Promise.all(ids.map((id) => skipWithCompanions(id)));
+  return requestedFirst(groups, (id) => id);
 }
 
 /**

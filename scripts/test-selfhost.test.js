@@ -54,8 +54,18 @@ test("image-only stack initializes, authenticates, enforces RLS, and preserves d
     start();
     await waitForApi();
     assert.equal((await fetch(base)).status, 200);
+    // Locations that declare add_header must re-include the security headers.
+    for (const path of ["/", "/index.html", "/sw.js", "/env-config.js"]) {
+      const page = await fetch(`${base}${path}`);
+      assert.equal(page.status, 200, path);
+      assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'self'/, path);
+      assert.equal(page.headers.get("x-frame-options"), "DENY", path);
+      assert.ok(page.headers.get("cache-control"), path);
+    }
     compose("exec", "-T", "db", "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres",
       "-d", "postgres", "-f", "/sql_scripts/local/tests/transactions_rls.sql");
+    compose("exec", "-T", "db", "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres",
+      "-d", "postgres", "-f", "/sql_scripts/local/tests/partnerships_rls.sql");
     const email = "smoke@example.com";
     const password = randomBytes(24).toString("hex");
     const signup = await request("/auth/v1/signup", { email, password });
