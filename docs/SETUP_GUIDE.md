@@ -510,7 +510,7 @@ The [dev-container configuration](../.devcontainer/devcontainer.json) uses
 Node 22. Install Docker Desktop and the VS Code Dev Containers extension,
 configure `.env`, then open the repository and choose **Reopen in Container**.
 Dependencies install automatically; run `npm run dev` at the repository root.
-The container includes ESLint, Prettier, Tailwind CSS IntelliSense, GitLens,
+The container includes ESLint, Prettier, Tailwind CSS IntelliSense, Claude,
 and React snippet extensions.
 
 The container also runs its own Docker daemon (the `docker-in-docker` feature)
