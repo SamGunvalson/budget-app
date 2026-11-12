@@ -336,7 +336,7 @@ queries in components. SQL return declarations and service joins define exact sh
 | `get_yearly_spending_trend` | `p_years INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL`, `p_as_of DATE DEFAULT NULL` | Rows `{year, spent, income, tx_count}` |
 | `bulk_update_transactions` | `p_updates JSONB` array | JSONB updated rows with category/account joins; absent keys unchanged, explicit null handled per field |
 | `bulk_update_category_sort_order` | `p_items JSONB` array of ID/sort-order objects | Void |
-| `upsert_recurring_group` | `p_parent_id UUID`, `p_parent JSONB`, `p_children JSONB` | Parent UUID; service refetches nested/joined templates |
+| `upsert_recurring_group` | `p_parent_id UUID`, `p_parent JSONB`, `p_children JSONB` | Parent UUID; service refetches nested/joined templates. Children with a known `id` are updated, others inserted; on update, previously active children absent from the input are deactivated (`is_active = false`) |
 
 For the four report RPCs, a non-null `p_as_of` (the client's local date)
 limits actuals to `posted` rows dated on or before it, excluding projected,
@@ -447,6 +447,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.4
+**Document version**: 3.5
 
 **Last updated**: 2026-11-12

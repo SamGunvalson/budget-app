@@ -30,6 +30,7 @@ const migrationScripts = [
   'supabase_custom_interval.sql',
   'supabase_partnership_hardening_rls.sql',
   'supabase_partnership_seen.sql',
+  'supabase_recurring_group_new_children.sql',
   'supabase_recurring_occurrence_date.sql',
   'supabase_recurring_projection_cleanup.sql',
   'supabase_report_as_of.sql',
@@ -193,4 +194,15 @@ test('initializer stops immediately when a setup script fails', () => {
   assert.equal(result.status, 7, result.stderr);
   assert.equal(result.calls.length, applyOrder.indexOf(failedScript) + 1);
   assert.equal(result.calls.at(-1).at(-1), join(sqlDirectory, failedScript));
+});
+
+test('fresh setup and group upgrade supply the same upsert_recurring_group RPC', () => {
+  const rpc = /CREATE OR REPLACE FUNCTION upsert_recurring_group\([\s\S]*?\n\$\$;/;
+  const setup = readSqlFile('supabase_phase4_mutations.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/supabase_recurring_group_new_children.sql').match(rpc)?.[0];
+  assert.ok(setup);
+  assert.equal(setup, migration);
+  // Inserted children must be recorded as kept, or the cleanup step
+  // deactivates rows added while editing a group.
+  assert.match(setup, /INSERT INTO recurring_templates[\s\S]*?RETURNING id INTO v_child_id;\s+END IF;[\s\S]*?v_kept_ids := array_append\(v_kept_ids, v_child_id\);\s+v_idx := v_idx \+ 1;/);
 });

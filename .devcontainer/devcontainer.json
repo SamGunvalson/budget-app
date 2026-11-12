@@ -6,8 +6,12 @@
 
   // Docker-in-Docker (not the host socket): the smoke and auth tests reach
   // published ports on 127.0.0.1, which must be this container's loopback.
+  // moby: false installs Docker CE instead of Moby. The base image is Debian
+  // trixie, which has no moby-cli packages, so the default fails to install.
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": false
+    }
   },
 
   "forwardPorts": [5173],

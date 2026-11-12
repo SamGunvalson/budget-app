@@ -20,6 +20,7 @@ Paths now include `migrations/`.
 | [supabase_transactions_soft_delete_rls.sql](./supabase_transactions_soft_delete_rls.sql) | Atomically replaces legacy transaction policies and installs soft-delete RPC | Core base RPC/policies and complete RLS |
 | [supabase_recurring_projection_cleanup.sql](./supabase_recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
 | [supabase_report_as_of.sql](./supabase_report_as_of.sql) | Replaces plan-vs-actual and spending-trend RPCs with versions taking optional `p_as_of`, so reports can exclude projected/pending/future rows | Phase-3 aggregations |
+| [supabase_recurring_group_new_children.sql](./supabase_recurring_group_new_children.sql) | Replaces `upsert_recurring_group` so children added while editing a group are kept instead of deactivated | Phase-4 mutations |
 
 ## Applying upgrades
 
