@@ -158,18 +158,18 @@ export async function createSettlement({
 /**
  * Soft-delete a split expense.
  * @param {string} id - Split expense ID
- * @param {string} partnershipId - Partnership the expense belongs to (used for defense-in-depth RLS filter)
+ * @param {string} partnershipId - Partnership the expense belongs to (checked by the RPC)
  */
 export async function deleteSplitExpense(id, partnershipId) {
   if (!partnershipId) {
     throw new Error("deleteSplitExpense requires partnershipId");
   }
 
-  const { error } = await supabase
-    .from("split_expenses")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("partnership_id", partnershipId);
+  // RPC, not a direct UPDATE: the SELECT policy rejects the soft-deleted new row.
+  const { error } = await supabase.rpc("soft_delete_split_expense", {
+    p_split_id: id,
+    p_partnership_id: partnershipId,
+  });
 
   if (error) throw error;
 }

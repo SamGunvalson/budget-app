@@ -233,11 +233,28 @@ BEGIN
   GET DIAGNOSTICS affected = ROW_COUNT;
   ASSERT affected = 1, 'Partner must be able to edit a split linked to the other member''s transaction';
 
-  -- No RETURNING: the SELECT policy hides the row once deleted_at is set.
-  UPDATE public.split_expenses SET deleted_at = now()
-  WHERE description = 'Edited by partner';
-  GET DIAGNOSTICS affected = ROW_COUNT;
-  ASSERT affected = 1, 'Partner must be able to soft-delete a shared split';
+  -- A direct UPDATE of deleted_at fails the SELECT policy on the new row,
+  -- so the app soft-deletes through the definer RPC.
+  BEGIN
+    UPDATE public.split_expenses SET deleted_at = now()
+    WHERE description = 'Edited by partner';
+    RAISE EXCEPTION 'Direct soft-delete UPDATE was expected to fail RLS';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
+  -- Wrong partnership ID: no change.
+  PERFORM public.soft_delete_split_expense(
+    (SELECT id FROM public.split_expenses WHERE description = 'Edited by partner'),
+    '31000000-0000-0000-0000-000000000099');
+  ASSERT EXISTS (SELECT 1 FROM public.split_expenses WHERE description = 'Edited by partner'),
+    'Soft-delete RPC must require the matching partnership ID';
+
+  PERFORM public.soft_delete_split_expense(
+    (SELECT id FROM public.split_expenses WHERE description = 'Edited by partner'),
+    '31000000-0000-0000-0000-000000000001');
+  ASSERT NOT EXISTS (SELECT 1 FROM public.split_expenses WHERE description = 'Edited by partner'),
+    'Partner must be able to soft-delete a shared split';
 END;
 $$;
 

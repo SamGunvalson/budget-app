@@ -306,6 +306,12 @@ trigger (`split_expenses_guard()`, BEFORE UPDATE) freezes `partnership_id` and
 `transaction_id` for end users (clearing `transaction_id` stays allowed).
 SELECT/UPDATE `USING` excludes
 deleted rows; UPDATE `WITH CHECK` intentionally does not, allowing soft deletes.
+Because PostgreSQL also checks the SELECT policy against the new row of an
+UPDATE that reads the table, a direct `deleted_at` UPDATE is rejected; clients
+soft-delete through `soft_delete_split_expense(p_split_id UUID, p_partnership_id UUID)`.
+It returns void and, under SECURITY DEFINER with fixed search path, updates only
+a live row in the given partnership when the caller is a member. Execution is
+revoked from PUBLIC/anon and granted to authenticated.
 
 Positive balance means the partner owes the current user. For ordinary expenses,
 add `partner_share` when the user paid and subtract it when the partner paid.
@@ -441,6 +447,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.3
+**Document version**: 3.4
 
-**Last updated**: 2026-11-11
+**Last updated**: 2026-11-12
