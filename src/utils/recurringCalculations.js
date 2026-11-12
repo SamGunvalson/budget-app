@@ -240,23 +240,28 @@ export function getNextOccurrence(template, after) {
  * @param {Object} template
  * @param {Date|string} rangeStart
  * @param {Date|string} rangeEnd
- * @param {number} [maxOccurrences=50] safety limit
+ * @param {number} [maxOccurrences] safety limit; defaults to the number of
+ *   days in the range (a schedule yields at most one occurrence per day), so
+ *   a legitimate range is never truncated but a runaway loop is still bounded
  * @returns {Date[]} array of occurrence dates
  */
 export function getOccurrencesInRange(
   template,
   rangeStart,
   rangeEnd,
-  maxOccurrences = 50,
+  maxOccurrences,
 ) {
   const start = toLocalDate(rangeStart);
   const end = toLocalDate(rangeEnd);
   const occurrences = [];
+  // Rounded so a DST shift inside the range does not drop or add a day.
+  const limit =
+    maxOccurrences ?? Math.max(0, Math.round((end - start) / 86400000) + 1);
 
   // Walk from the day before rangeStart so we catch rangeStart itself
   let cursor = addDays(start, -1);
 
-  for (let i = 0; i < maxOccurrences; i++) {
+  for (let i = 0; i < limit; i++) {
     const next = getNextOccurrence(template, cursor);
     if (!next) break;
     if (isAfter(next, end)) break;

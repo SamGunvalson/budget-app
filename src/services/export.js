@@ -1,4 +1,9 @@
 import { supabase, getCurrentUser } from "./supabase";
+import {
+  isIncomeDebit,
+  isSettledTransaction,
+  isSpendingCredit,
+} from "../utils/helpers";
 
 // Phase 5: code-split the exceljs bundle (~1 MB).  We only need it when the
 // user actually clicks an export button, so defer the import until first use
@@ -74,6 +79,8 @@ function downloadBlob(blob, filename) {
 }
 
 // ── Data fetchers (bypass service layer for full export) ──
+// The category, account and template fetchers deliberately include inactive
+// (archived/closed/deleted) rows: exported transactions still reference them.
 
 async function fetchAllTransactions() {
   const user = await getCurrentUser();
@@ -126,7 +133,6 @@ async function fetchAllCategories() {
     .from("categories")
     .select("*")
     .eq("user_id", user.id)
-    .eq("is_active", true)
     .order("type")
     .order("sort_order")
     .order("name");
@@ -140,7 +146,6 @@ async function fetchAllAccounts() {
     .from("accounts")
     .select("*")
     .eq("user_id", user.id)
-    .eq("is_active", true)
     .order("type")
     .order("name");
   if (error) throw error;
@@ -155,7 +160,6 @@ async function fetchAllRecurringTemplates() {
       "*, categories(id, name, type), accounts(id, name, type), to_account:accounts!to_account_id(id, name, type)",
     )
     .eq("user_id", user.id)
-    .eq("is_active", true)
     .order("description");
   if (error) throw error;
   return data || [];
@@ -167,6 +171,28 @@ async function fetchAllUserPreferences() {
     .from("user_preferences")
     .select("*")
     .eq("user_id", user.id);
+  if (error) throw error;
+  return data || [];
+}
+
+// Partnerships and split expenses are scoped by RLS to the ones the current
+// user belongs to (there is no user_id column to filter on).
+async function fetchAllPartnerships() {
+  const { data, error } = await supabase
+    .from("partnerships")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function fetchAllSplitExpenses() {
+  const { data, error } = await supabase
+    .from("split_expenses")
+    .select("*")
+    .is("deleted_at", null)
+    .order("expense_date", { ascending: true })
+    .order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];
 }
@@ -185,6 +211,8 @@ export async function exportTransactionsCSV() {
     const categoryType = t.categories?.type || "";
     let type = "Expense";
     if (categoryType === "transfer") type = "Transfer";
+    else if (isSpendingCredit(t)) type = "Refund";
+    else if (isIncomeDebit(t)) type = "Income Deduction";
     else if (t.is_income) type = "Income";
 
     return {
@@ -266,6 +294,7 @@ export async function exportBudgetCSV() {
   const ExcelJS = await loadExcelJs();
   const plans = await fetchAllBudgetPlans();
   const transactions = await fetchAllTransactions();
+  const today = datestamp();
 
   const rows = [];
 
@@ -278,18 +307,27 @@ export async function exportBudgetCSV() {
     const endYear = plan.month === 12 ? plan.year + 1 : plan.year;
     const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
 
+    // Only settled rows count as actuals: posted and not dated in the future
+    // (projected/pending recurring rows are plans, not actuals).
     const monthTxns = transactions.filter(
-      (t) => t.transaction_date >= startDate && t.transaction_date < endDate,
+      (t) =>
+        t.transaction_date >= startDate &&
+        t.transaction_date < endDate &&
+        isSettledTransaction(t, today),
     );
 
-    // Aggregate actuals by category (exclude transfers per DATA_MODEL)
+    // Aggregate actuals by category (exclude transfers per DATA_MODEL).
+    // Refunds in a spending category and debits in an income category reduce
+    // that category's actual instead of adding to it.
     const actualsByCat = {};
     for (const t of monthTxns) {
       const catId = t.category_id;
       if (!catId) continue;
       if (t.categories?.type === "transfer") continue;
       if (!actualsByCat[catId]) actualsByCat[catId] = 0;
-      actualsByCat[catId] += Math.abs(t.amount);
+      const amount = Math.abs(t.amount);
+      actualsByCat[catId] +=
+        isSpendingCredit(t) || isIncomeDebit(t) ? -amount : amount;
     }
 
     // Add income row for the plan
@@ -370,7 +408,9 @@ export async function exportBudgetCSV() {
 
 /**
  * Export all user data as a human-readable JSON backup.
- * Includes: categories, accounts, transactions, budget_plans + items, recurring_templates.
+ * Includes: categories, accounts and recurring_templates (inactive ones too,
+ * so ids on exported transactions resolve), live transactions, budget_plans +
+ * items, user_preferences, partnerships and live split_expenses.
  */
 export async function exportFullBackupJSON() {
   const [
@@ -380,6 +420,8 @@ export async function exportFullBackupJSON() {
     plans,
     recurring,
     userPreferences,
+    partnerships,
+    splitExpenses,
   ] = await Promise.all([
     fetchAllCategories(),
     fetchAllAccounts(),
@@ -387,6 +429,8 @@ export async function exportFullBackupJSON() {
     fetchAllBudgetPlans(),
     fetchAllRecurringTemplates(),
     fetchAllUserPreferences(),
+    fetchAllPartnerships(),
+    fetchAllSplitExpenses(),
   ]);
 
   // Fetch budget items for all plans in parallel
@@ -399,7 +443,7 @@ export async function exportFullBackupJSON() {
 
   const backup = {
     exportDate: new Date().toISOString(),
-    version: "1.1",
+    version: "1.2",
     data: {
       categories,
       accounts,
@@ -407,6 +451,8 @@ export async function exportFullBackupJSON() {
       budget_plans: planItems,
       recurring_templates: recurring,
       user_preferences: userPreferences,
+      partnerships,
+      split_expenses: splitExpenses,
     },
   };
 
@@ -421,5 +467,7 @@ export async function exportFullBackupJSON() {
     budgetPlans: plans.length,
     recurringTemplates: recurring.length,
     userPreferences: userPreferences.length,
+    partnerships: partnerships.length,
+    splitExpenses: splitExpenses.length,
   };
 }

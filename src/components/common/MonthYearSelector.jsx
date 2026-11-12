@@ -1,5 +1,6 @@
 import { getMonthName } from '../../utils/helpers';
 import useAvailableYears from '../../hooks/useAvailableYears';
+import { yearOptionsWithSelected } from '../../utils/reportRules';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -40,7 +41,10 @@ export default function MonthYearSelector({ month, year, onChange, accent = 'amb
     else onChange(month + 1, year);
   };
 
-  const { years } = useAvailableYears();
+  const { years: availableYears } = useAvailableYears();
+  // Arrow navigation can move past the available years; keep the selected
+  // year among the options so the select never displays a different one.
+  const years = yearOptionsWithSelected(availableYears, year);
 
   return (
     <div className="flex items-center gap-3">

@@ -726,57 +726,101 @@ export async function bulkDeleteTransactionsOffline(ids) {
 }
 
 /**
- * Skip (soft-delete) one projected or pending transaction. Like the service,
- * this touches only the given row — no companion lookup.
+ * Resolve what a confirm / skip of `ids` acts on locally, as the service
+ * does: the requested rows, plus the live legs sharing a requested row's
+ * transfer_group_id that are still `projected` or `pending`. Posted
+ * companions are left alone.
  *
- * @returns {Promise<string>} the skipped id
+ * @returns {Promise<{ requested: Object[], companions: Object[] }>} the
+ *   requested rows found locally (in order) and the extra companion rows
  */
-export async function skipTransactionOffline(id) {
-  const [skipped] = await bulkSkipTransactionsOffline([id]);
-  return skipped;
+async function getLocalStatusTargets(ids) {
+  const requestedIds = new Set(ids);
+  const requested = [];
+  const companions = new Map();
+  for (const id of ids) {
+    const { existing, legs } = await getLocalTransferLegs(id);
+    if (!existing) continue;
+    requested.push(existing);
+    for (const leg of legs) {
+      if (requestedIds.has(leg.id)) continue;
+      if (leg.status !== "projected" && leg.status !== "pending") continue;
+      companions.set(leg.id, leg);
+    }
+  }
+  return { requested, companions: [...companions.values()] };
 }
 
 /**
- * Bulk-skip (soft-delete) projected or pending transactions.
+ * Skip (soft-delete) one projected or pending transaction. If it is one leg
+ * of a transfer or linked transfer, the other unposted leg(s) are skipped
+ * with it; posted companions are left alone.
+ *
+ * @returns {Promise<string[]>} every skipped id, the requested one first
+ */
+export async function skipTransactionOffline(id) {
+  return bulkSkipTransactionsOffline([id]);
+}
+
+/**
+ * Bulk-skip (soft-delete) projected or pending transactions, each with its
+ * unposted transfer companions.
  *
  * @param {string[]} ids
- * @returns {Promise<string[]>} the skipped ids
+ * @returns {Promise<string[]>} the requested ids, in order, followed by any
+ *   companion legs that were skipped with them
  */
 export async function bulkSkipTransactionsOffline(ids) {
-  const result = await tryOnlineWrite("transactions", ids, () =>
-    _bulkSkipTransactions(ids),
+  const { requested, companions } = await getLocalStatusTargets(ids);
+  const companionIds = companions.map((row) => row.id);
+  const result = await tryOnlineWrite(
+    "transactions",
+    [...ids, ...companionIds],
+    () => _bulkSkipTransactions(ids),
   );
 
   if (!result.offline) {
-    await cacheDeletedTransactions(ids);
-    return ids;
+    // The service reports every id it skipped, companions included.
+    const skipped = result.data?.length ? result.data : ids;
+    await cacheDeletedTransactions(skipped);
+    return skipped;
   }
 
-  const rows = (await db.transactions.bulkGet(ids)).filter(Boolean);
-  await queueTransactionDeletes(rows);
-  return ids;
+  // One transaction for all rows, so a pair is never queued half-skipped.
+  await queueTransactionDeletes([
+    ...requested.filter((row) => !row.deleted_at),
+    ...companions,
+  ]);
+  return [...ids, ...companionIds];
 }
 
 /**
- * Confirm a pending transaction → posted.
+ * Confirm a pending transaction → posted. If it is one leg of a transfer or
+ * linked transfer, the other unposted leg(s) are confirmed with it (and
+ * mirrored locally), but only the requested row is returned.
  *
  * @returns {Promise<Object>} the updated transaction
  */
 export async function confirmTransactionOffline(id) {
   const [confirmed] = await bulkConfirmTransactionsOffline([id]);
-  if (!confirmed) throw new Error(`Transaction ${id} not found locally`);
+  if (confirmed?.id !== id) throw new Error(`Transaction ${id} not found locally`);
   return confirmed;
 }
 
 /**
- * Bulk-confirm pending transactions → posted.
+ * Bulk-confirm pending transactions → posted, each with its unposted
+ * transfer companions.
  *
  * @param {string[]} ids
- * @returns {Promise<Object[]>} the updated transactions
+ * @returns {Promise<Object[]>} the updated transactions: the requested ones,
+ *   in order, followed by any companion legs confirmed with them
  */
 export async function bulkConfirmTransactionsOffline(ids) {
-  const result = await tryOnlineWrite("transactions", ids, () =>
-    _bulkConfirmTransactions(ids),
+  const { requested, companions } = await getLocalStatusTargets(ids);
+  const result = await tryOnlineWrite(
+    "transactions",
+    [...ids, ...companions.map((row) => row.id)],
+    () => _bulkConfirmTransactions(ids),
   );
 
   if (!result.offline) {
@@ -784,11 +828,10 @@ export async function bulkConfirmTransactionsOffline(ids) {
     return result.data;
   }
 
-  const rows = (await db.transactions.bulkGet(ids)).filter(
-    (row) => row && !row.deleted_at,
-  );
   return queueTransactionUpdates(
-    rows.map((row) => ({ row, fields: { status: "posted" } })),
+    [...requested.filter((row) => !row.deleted_at), ...companions].map(
+      (row) => ({ row, fields: { status: "posted" } }),
+    ),
   );
 }
 

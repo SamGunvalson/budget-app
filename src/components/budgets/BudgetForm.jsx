@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import BudgetItemInput from './BudgetItemInput';
 import MonthYearSelector from '../common/MonthYearSelector';
 import { useAnnualBudgetData, useCategories } from '../../hooks/queries';
@@ -51,6 +52,7 @@ export default function BudgetForm() {
   const [allocations, setAllocations] = useState({}); // { [categoryId]: cents }
   const [savedAllocations, setSavedAllocations] = useState({});
 
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -167,6 +169,13 @@ export default function BudgetForm() {
     } catch (err) {
       setError(err.message || 'Failed to save budget');
     } finally {
+      // These writes bypass the *Offline wrappers (no notifyTable), so refresh
+      // Plan vs Actual and the annual grid explicitly — also after a failure,
+      // which may have written the plan but not the items.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['budget_plans'] }),
+        queryClient.invalidateQueries({ queryKey: ['budget_items'] }),
+      ]).catch(() => {});
       setIsSaving(false);
     }
   };

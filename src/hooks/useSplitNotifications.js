@@ -1,10 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-  getSplitExpenses,
   getLastSeenSplitsAt,
   markSplitsSeenLocal,
 } from "../services/splitExpenses";
 import { markSplitsSeenDB } from "../services/partnerships";
+import { useSplitExpenses } from "./queries";
+
+const EMPTY = [];
 
 /**
  * Returns unseen split expenses added by the partner.
@@ -29,54 +31,41 @@ import { markSplitsSeenDB } from "../services/partnerships";
  * }}
  */
 export default function useSplitNotifications({ partnership, currentUserId, isUserA }) {
-  const [allPartnerExpenses, setAllPartnerExpenses] = useState([]);
-  const [unseenExpenses, setUnseenExpenses] = useState([]);
-  const [fetchedForKey, setFetchedForKey] = useState(null);
+  // Bumped by markAsSeen so the locally stored seen timestamp is re-read.
+  const [, setSeenVersion] = useState(0);
 
   const active = !!(partnership?.id && currentUserId);
   const partnershipId = partnership?.id;
-  const fetchKey = active ? `${partnershipId}:${currentUserId}` : null;
+
+  // Shares the `["split_expenses", userId, partnershipId]` cache entry with
+  // the Split Expenses page, so it is fetched once (not on every TopBar
+  // mount) and refreshes whenever a split write invalidates that key.
+  const expensesQuery = useSplitExpenses(partnershipId, currentUserId);
+  const expenses = expensesQuery.data?.expenses;
 
   // DB-side seen_at for this user (comes from the already-loaded partnership object)
   const dbSeenAt = active
     ? (isUserA ? partnership.user_a_seen_at : partnership.user_b_seen_at) ?? null
     : null;
 
-  useEffect(() => {
-    if (!partnershipId || !currentUserId) return;
+  // Most recent of the DB value and the localStorage fallback. Read on every
+  // render (one cheap lookup) so a "seen" mark written elsewhere is honoured.
+  const lastSeenAt = active ? getLastSeenSplitsAt(currentUserId, dbSeenAt) : null;
 
-    let cancelled = false;
-    const key = `${partnershipId}:${currentUserId}`;
+  const allPartnerExpenses = useMemo(
+    () =>
+      expenses
+        ? expenses.filter((e) => e.paid_by_user_id !== currentUserId)
+        : EMPTY,
+    [expenses, currentUserId],
+  );
 
-    getSplitExpenses(partnershipId)
-      .then((expenses) => {
-        if (cancelled) return;
-
-        const partnerAdded = expenses.filter(
-          (e) => e.paid_by_user_id !== currentUserId,
-        );
-
-        const lastSeenAt = getLastSeenSplitsAt(currentUserId, dbSeenAt);
-        const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
-        const unseen = !isNaN(lastSeenMs)
-          ? partnerAdded.filter((e) => Date.parse(e.created_at) > lastSeenMs)
-          : partnerAdded;
-
-        setAllPartnerExpenses(partnerAdded);
-        setUnseenExpenses(unseen);
-        setFetchedForKey(key);
-      })
-      .catch(() => {
-        if (!cancelled) setFetchedForKey(key);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  // dbSeenAt is intentionally excluded — we only want to re-fetch expenses when
-  // the partnership or user changes, not when the seen timestamp updates locally.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partnershipId, currentUserId]);
+  const unseenExpenses = useMemo(() => {
+    const lastSeenMs = lastSeenAt ? Date.parse(lastSeenAt) : NaN;
+    return !isNaN(lastSeenMs)
+      ? allPartnerExpenses.filter((e) => Date.parse(e.created_at) > lastSeenMs)
+      : allPartnerExpenses;
+  }, [allPartnerExpenses, lastSeenAt]);
 
   const markAsSeen = useCallback(() => {
     if (!currentUserId || !partnershipId) return;
@@ -84,7 +73,7 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
     markSplitsSeenLocal(currentUserId);
     // Persist to DB (fire-and-forget; non-critical)
     markSplitsSeenDB(partnershipId, isUserA).catch(() => {});
-    setUnseenExpenses([]);
+    setSeenVersion((v) => v + 1);
   }, [currentUserId, partnershipId, isUserA]);
 
   return {
@@ -92,6 +81,6 @@ export default function useSplitNotifications({ partnership, currentUserId, isUs
     unseenExpenses: active ? unseenExpenses : [],
     allPartnerExpenses: active ? allPartnerExpenses : [],
     markAsSeen,
-    loading: active && fetchedForKey !== fetchKey,
+    loading: active && expensesQuery.isLoading,
   };
 }

@@ -13,6 +13,7 @@ import {
   bulkConfirmTransactionsOffline as bulkConfirmTransactions,
   bulkSkipTransactionsOffline as bulkSkipTransactions,
 } from "../services/offlineAware";
+import { nextSelectAll, resolveBulkIds } from "../utils/selectionRules";
 
 /**
  * Reusable hook that encapsulates transaction list management:
@@ -102,13 +103,11 @@ export default function useTransactionManager({
   const handleSelectAll = useCallback(
     (visibleTransactions) => {
       const visible = visibleTransactions ?? transactions;
-      if (selectedIds.size === visible.length) {
-        setSelectedIds(new Set());
-      } else {
-        setSelectedIds(new Set(visible.map((t) => t.id)));
-      }
+      // Compare membership, not size: the selection may hold rows that the
+      // current filters hide.
+      setSelectedIds(nextSelectAll(selectedIds, visible));
     },
-    [transactions, selectedIds.size],
+    [transactions, selectedIds],
   );
 
   // ---------- Inline edits ----------
@@ -148,10 +147,13 @@ export default function useTransactionManager({
   const handleDiscardEdits = () => setPendingEdits(new Map());
 
   // ---------- Bulk actions ----------
-  const handleBulkRecategorize = async (categoryId) => {
+  // Each bulk handler takes an optional Set/array of ids to act on. Callers
+  // whose list can be filtered pass the visible part of the selection so
+  // hidden rows are never touched; without it the whole selection is used.
+  const handleBulkRecategorize = async (categoryId, idsOverride) => {
     setIsBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = resolveBulkIds(selectedIds, idsOverride);
       const updates = ids.map((id) => ({ id, category_id: categoryId }));
       const results = await bulkUpdateTransactions(updates);
       setTransactions((prev) => {
@@ -167,12 +169,13 @@ export default function useTransactionManager({
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = async (idsOverride) => {
     setIsBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = resolveBulkIds(selectedIds, idsOverride);
+      const idSet = new Set(ids);
       await bulkDeleteTransactions(ids);
-      setTransactions((prev) => prev.filter((t) => !selectedIds.has(t.id)));
+      setTransactions((prev) => prev.filter((t) => !idSet.has(t.id)));
       setSelectedIds(new Set());
       onDataChanged?.();
     } catch (err) {
@@ -266,6 +269,8 @@ export default function useTransactionManager({
   };
 
   // ---------- Confirm / Skip ----------
+  // Resolves to true when the transaction was confirmed, false when it failed
+  // (the error is reported through onError), so callers can skip follow-up work.
   const handleConfirm = async (id) => {
     try {
       const updated = await confirmTransaction(id);
@@ -273,19 +278,23 @@ export default function useTransactionManager({
         prev.map((t) => (t.id === updated.id ? updated : t)),
       );
       onDataChanged?.();
+      return true;
     } catch (err) {
       reportError(err?.message || "Failed to confirm transaction.");
+      return false;
     }
   };
 
   const handleSkip = async (id) => {
     try {
-      await skipTransaction(id);
-      // Remove skipped (soft-deleted) transaction from local state
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      // Skipping one leg of a transfer also skips its unposted companion(s);
+      // the wrapper returns every id it skipped.
+      const skipped = new Set([id, ...(await skipTransaction(id))]);
+      // Remove skipped (soft-deleted) transactions from local state
+      setTransactions((prev) => prev.filter((t) => !skipped.has(t.id)));
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        next.delete(id);
+        for (const skippedId of skipped) next.delete(skippedId);
         return next;
       });
       onDataChanged?.();
@@ -294,10 +303,10 @@ export default function useTransactionManager({
     }
   };
 
-  const handleBulkConfirm = async () => {
+  const handleBulkConfirm = async (idsOverride) => {
     setIsBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
+      const ids = resolveBulkIds(selectedIds, idsOverride);
       const results = await bulkConfirmTransactions(ids);
       setTransactions((prev) => {
         const map = new Map(results.map((r) => [r.id, r]));
@@ -312,12 +321,13 @@ export default function useTransactionManager({
     }
   };
 
-  const handleBulkSkip = async () => {
+  const handleBulkSkip = async (idsOverride) => {
     setIsBulkBusy(true);
     try {
-      const ids = Array.from(selectedIds);
-      await bulkSkipTransactions(ids);
-      setTransactions((prev) => prev.filter((t) => !selectedIds.has(t.id)));
+      const ids = resolveBulkIds(selectedIds, idsOverride);
+      // Includes companion legs that were skipped with the requested rows.
+      const idSet = new Set([...ids, ...(await bulkSkipTransactions(ids))]);
+      setTransactions((prev) => prev.filter((t) => !idSet.has(t.id)));
       setSelectedIds(new Set());
       onDataChanged?.();
     } catch (err) {

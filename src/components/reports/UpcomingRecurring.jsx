@@ -4,6 +4,7 @@ import { getRecurringTemplates, deleteRecurringTemplate, recordManualPayment } f
 import RecurringCalendarView from './RecurringCalendarView';
 import { getOccurrencesInRange, formatSchedule, getNextOccurrence } from '../../utils/recurringCalculations';
 import { formatCurrency, formatDate, toDollars, resolveAmountOverride, maskAccountName } from '../../utils/helpers';
+import { computeTemplateGroupNet } from '../../utils/transactionGrouping';
 
 /**
  * UpcomingRecurring — report widget that shows:
@@ -94,10 +95,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
           // Compute net from children: income minus expenses; outflow transfers
           // are subtracted so the preview shows the leftover in the base account.
           const netAmount = children.length > 0
-            ? children.reduce((sum, c) => {
-                if (c.is_transfer) return c.is_income ? sum : sum - c.amount;
-                return sum + (c.is_income ? c.amount : -c.amount);
-              }, 0)
+            ? computeTemplateGroupNet(children)
             : t.amount;
           items.push({
             templateId: t.id,
@@ -325,10 +323,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
               const isExpanded = expandedGroups.has(t.id);
               // For groups, compute net from children so stale stored amounts don't mislead
               const groupNet = isGroup && t.children?.length > 0
-                ? t.children.reduce((sum, c) => {
-                    if (c.is_transfer) return sum;
-                    return sum + (c.is_income ? c.amount : -c.amount);
-                  }, 0)
+                ? computeTemplateGroupNet(t.children)
                 : t.amount;
 
               return (

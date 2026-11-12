@@ -4,6 +4,7 @@ import { getMonthName, maskAccountName } from '../../utils/helpers';
 import useAvailableYears from '../../hooks/useAvailableYears';
 import useSessionState from '../../hooks/useSessionState';
 import { filtersWithSearchText } from '../../utils/transactionFormRules';
+import { yearOptionsWithSelected } from '../../utils/reportRules';
 
 const TYPE_OPTIONS = [
   { label: 'All', value: 'all' },
@@ -69,7 +70,9 @@ export default function TransactionFilters({
     return () => clearTimeout(debounceRef.current);
   }, [localSearch]);
 
-  const { years } = useAvailableYears();
+  const { years: availableYears } = useAvailableYears();
+  // Keep the selected year among the options so the select never shows a different one.
+  const years = yearOptionsWithSelected(availableYears, year);
 
   const hasActiveFilters = filters.searchText || filters.categoryId || filters.accountId || filters.type !== 'all' || filters.statusFilter !== 'all' || filters.amountExact || filters.dateStart || filters.dateEnd;
 

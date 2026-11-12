@@ -13,6 +13,10 @@ import { computeShares, createSplitExpense } from "./splitExpenses";
 // concurrently (e.g., React StrictMode double-firing useEffect, or multiple
 // browser tabs running initializeRecurringCycle at the same time).
 let _generatingPromise = null;
+// At most one follow-up run queued behind the in-flight one. A caller that
+// arrives mid-run (e.g. a template edit that just cleared projections) needs a
+// run that starts after its own writes; the in-flight run's snapshot is stale.
+let _queuedGenerationPromise = null;
 
 /**
  * How many days ahead to project recurring transactions.
@@ -886,10 +890,25 @@ export async function generateProjectedTransactions({
   windowDays = PROJECTION_WINDOW_DAYS,
   today: todayOverride,
 } = {}) {
-  // Concurrency guard: if a generation run is already in flight, wait for it
-  // and return its result instead of running a second parallel pass.
+  // Concurrency guard: never run two passes in parallel. If a run is already
+  // in flight, queue exactly one follow-up run behind it (shared by every
+  // caller that arrives meanwhile) so changes made after the in-flight run
+  // took its snapshot are still picked up.
   if (_generatingPromise) {
-    return _generatingPromise;
+    if (!_queuedGenerationPromise) {
+      const inFlight = _generatingPromise;
+      _queuedGenerationPromise = inFlight
+        .catch(() => {})
+        .then(() => {
+          _queuedGenerationPromise = null;
+          if (_generatingPromise === inFlight) _generatingPromise = null;
+          return generateProjectedTransactions({
+            windowDays,
+            today: todayOverride,
+          });
+        });
+    }
+    return _queuedGenerationPromise;
   }
 
   const doGenerate = async () => {
@@ -1005,11 +1024,12 @@ export async function generateProjectedTransactions({
     };
   }; // end doGenerate
 
+  const run = doGenerate();
+  _generatingPromise = run;
   try {
-    _generatingPromise = doGenerate();
-    return await _generatingPromise;
+    return await run;
   } finally {
-    _generatingPromise = null;
+    if (_generatingPromise === run) _generatingPromise = null;
   }
 }
 
@@ -1073,7 +1093,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
     const { data: templates, error: tplErr } = await supabase
       .from("recurring_templates")
       .select(
-        "id, auto_confirm, is_transfer, is_split, split_method, split_payer, split_partner_share_pct, amount, description",
+        "id, auto_confirm, is_transfer, is_split, split_method, split_payer, split_partner_share_pct, amount, description, category_id",
       )
       .in("id", templateIds);
     if (tplErr) throw tplErr;
@@ -1101,13 +1121,23 @@ export async function autoConfirmDueTransactions(todayOverride) {
     .in("id", confirmIds)
     .eq("status", "pending")
     .is("deleted_at", null)
-    .select("id, recurring_template_id, transaction_date, description");
+    .select(
+      "id, recurring_template_id, transaction_date, description, amount, category_id, transfer_group_id, categories(type)",
+    );
   if (updateErr) throw updateErr;
 
   // ── Auto-create split expenses for qualifying confirmed transactions ──
+  // A linked-account template creates two legs that share the template id.
+  // Only the main (budget-impacting) leg is split; the companion leg sits in
+  // a transfer category on the linked account.
   const splitTxs = (confirmedTxs || []).filter((tx) => {
     const tpl = splitTemplateMap.get(tx.recurring_template_id);
-    return tpl && tpl.is_split && !tpl.is_transfer;
+    if (!tpl || !tpl.is_split || tpl.is_transfer) return false;
+    const isCompanionLeg =
+      tx.transfer_group_id &&
+      tx.categories?.type === "transfer" &&
+      tx.category_id !== tpl.category_id;
+    return !isCompanionLeg;
   });
 
   if (splitTxs.length > 0) {
@@ -1131,9 +1161,12 @@ export async function autoConfirmDueTransactions(todayOverride) {
 
       for (const tx of splitTxs) {
         const tpl = splitTemplateMap.get(tx.recurring_template_id);
+        // Use the confirmed transaction's amount (it may have been edited or
+        // recorded with an override), falling back to the template's.
+        const totalAmount = Math.abs(tx.amount ?? tpl.amount);
         try {
           const { payerShare, partnerShare, paidByUserId } = computeShares(
-            Math.abs(tpl.amount),
+            totalAmount,
             tpl.split_method,
             tpl.split_payer,
             tpl.split_partner_share_pct,
@@ -1143,7 +1176,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
           await createSplitExpense({
             partnershipId: partnership.id,
             description: tx.description || tpl.description,
-            totalAmount: Math.abs(tpl.amount),
+            totalAmount,
             payerShare,
             partnerShare,
             paidByUserId,

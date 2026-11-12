@@ -91,6 +91,16 @@ export function initQueryBridge() {
       refetchType: "active",
     });
   });
+
+  // The annual budget grid is keyed under `budget_plans` (it is assembled
+  // from the twelve monthly plans) but its allocations are read from
+  // `budget_items`, so item changes must invalidate it too.
+  subscribeTable("budget_items", () => {
+    queryClient.invalidateQueries({
+      queryKey: ["budget_plans", "annual"],
+      refetchType: "active",
+    });
+  });
 }
 
 /**

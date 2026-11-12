@@ -4,6 +4,7 @@ import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
+import { amountInputError, isWholeNumberInRange, linkedAccountError } from '../../utils/reportRules';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
 
 /**
@@ -223,16 +224,14 @@ export default function RecurringGroupForm({
     if (!startDate) errs.startDate = 'Start date is required';
     if (endDate && endDate < startDate) errs.endDate = 'End date must be after start date';
     if (frequency === 'custom') {
-      const iv = parseInt(customInterval, 10);
-      if (isNaN(iv) || iv < 1) errs.customInterval = 'Interval must be at least 1';
+      if (!isWholeNumberInRange(customInterval, 1, 365)) errs.customInterval = 'Interval must be a whole number from 1 to 365';
     }
     if (needsDayOfMonth) {
-      const d = parseInt(dayOfMonth, 10);
-      if (isNaN(d) || d < 1 || d > 31) errs.dayOfMonth = 'Day must be 1–31';
+      if (!isWholeNumberInRange(dayOfMonth, 1, 31)) errs.dayOfMonth = 'Day must be 1–31';
     }
     if (needsDayOfMonth2) {
       const d2 = parseInt(dayOfMonth2, 10);
-      if (isNaN(d2) || d2 < 1 || d2 > 31) errs.dayOfMonth2 = 'Second day must be 1–31';
+      if (!isWholeNumberInRange(dayOfMonth2, 1, 31)) errs.dayOfMonth2 = 'Second day must be 1–31';
       if (!errs.dayOfMonth && !errs.dayOfMonth2 && parseInt(dayOfMonth, 10) === d2) {
         errs.dayOfMonth2 = 'Days must be different';
       }
@@ -243,12 +242,14 @@ export default function RecurringGroupForm({
     const childErrors = {};
     children.forEach((child, i) => {
       const ce = {};
-      const amt = parseFloat(child.amount);
-      if (!child.amount || isNaN(amt) || amt <= 0) ce.amount = 'Required';
+      const amountError = amountInputError(child.amount);
+      if (amountError) ce.amount = amountError;
       if (!getEffectiveChildCategoryId(child, getChildCategories(child))) ce.categoryId = 'Required';
       if (!child.accountId) ce.accountId = 'Required';
       if (child.txType === 'transfer' && !child.toAccountId) ce.toAccountId = 'Required';
       if (child.txType === 'transfer' && child.toAccountId === child.accountId) ce.toAccountId = 'Must differ';
+      const linkedError = linkedAccountError(child);
+      if (linkedError) ce.linkedAccountId = linkedError;
       if (Object.keys(ce).length > 0) childErrors[i] = ce;
     });
     if (Object.keys(childErrors).length > 0) errs.childErrors = childErrors;
@@ -340,8 +341,11 @@ export default function RecurringGroupForm({
     return `${base} bg-blue-500 text-white shadow-sm`;
   };
 
+  // noValidate: each line item renders a desktop and a mobile amount input
+  // (one hidden by CSS); a hidden invalid twin would block native submit
+  // silently. validate() covers every native constraint instead.
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
       {submitError && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
           {submitError}
@@ -818,7 +822,7 @@ export default function RecurringGroupForm({
                         {childErrs.accountId && <span className={cellErrorClass}>{childErrs.accountId}</span>}
                         {childErrs.toAccountId && <span className={cellErrorClass}> {childErrs.toAccountId}</span>}
                       </span>
-                      <span />
+                      <span>{childErrs.linkedAccountId && <span className={cellErrorClass}>{childErrs.linkedAccountId}</span>}</span>
                       <span />
                     </div>
                   )}

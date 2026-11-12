@@ -10,7 +10,8 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { toCents, toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar, maskAccountName } from '../../utils/helpers';
+import { toCents, toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar, maskAccountName, getTodayString } from '../../utils/helpers';
+import { cashflowDateRange } from '../../utils/reportRules';
 import { useAccountBalanceHistory } from '../../hooks/queries';
 import { isLiabilityAccount } from '../../services/accounts';
 
@@ -106,34 +107,19 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
     return s;
   }, [accounts]);
 
-  const now = useMemo(() => new Date(), []);
-  const todayStr = useMemo(() =>
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
-  [now]);
+  // Derived on every render (not memoised once) so it rolls over at midnight.
+  const todayStr = getTodayString();
 
   const { startDate, endDate } = useMemo(() => {
     const preset = RANGE_OPTIONS.find((o) => o.key === range) || RANGE_OPTIONS[1];
     // Future end: prefer the page-level projectedToDate; fall back to range's futureMonths.
-    let e;
-    if (projectedToDate) {
-      e = new Date(projectedToDate + 'T00:00:00');
-    } else {
-      e = new Date(now);
-      e.setMonth(e.getMonth() + preset.futureMonths);
-    }
-    let s;
-    if (preset.pastMonths === null) {
-      s = new Date(now);
-      s.setFullYear(s.getFullYear() - 10);
-    } else {
-      s = new Date(now);
-      s.setMonth(s.getMonth() - preset.pastMonths);
-    }
-    return {
-      startDate: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`,
-      endDate: `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`,
-    };
-  }, [range, now, projectedToDate]);
+    return cashflowDateRange({
+      todayStr,
+      pastMonths: preset.pastMonths,
+      futureMonths: preset.futureMonths,
+      projectedToDate,
+    });
+  }, [range, todayStr, projectedToDate]);
 
   // Per-account daily balance series — cache-first via Phase 2 react-query.
   const balanceQuery = useAccountBalanceHistory({

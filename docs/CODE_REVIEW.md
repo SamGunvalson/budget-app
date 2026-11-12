@@ -18,6 +18,9 @@ nginx and CI configuration. No application code was changed by the review.
 
 ## Progress — 2026-11-12
 
+Not started: DB-3 to DB-13, INF-3 to INF-14, UI-9, UI-10, UI-12, APP-10,
+APP-14, APP-15, RPT-15, SVC-11, SVC-14.
+
 ✅ = fixed in the working tree (uncommitted), ◐ = partly fixed (reason inline).
 Unit tests cover the pure logic; React wiring was verified by reading. Nothing
 needing Docker/PostgreSQL has been run: the auth-service suite, the self-host
@@ -35,6 +38,13 @@ Open decisions for the owner:
   masked labels (RPT-4).
 - Whether edit inputs reveal real values in safe mode (UI-11).
 - Imports without an account column need a default-account picker.
+- Queued update whose server row no longer exists: drop, keep and surface, or
+  re-create the local row — probably per table (OFF follow-up).
+- SVC-7: add a column marking manual payments, or disallow future-dated ones.
+- Recurring group "Net": the form and stored parent amount exclude transfers;
+  the card, calendar and upcoming list now subtract outflow transfers (RPT-10).
+- Modal is now a native dialog (UI-4): Escape closes forms with unsaved input;
+  check nested/stacked modals and the Android back gesture in a browser.
 - Behind an outer proxy (Caddy), auth rate limits share one bucket until a
   `real-ip.conf` snippet is mounted (INF-2).
 
@@ -222,25 +232,25 @@ so a user with safe mode on sees real amounts; preferences also carry over
 between users.
 Fix: key the load on `session?.user?.id` and reset on sign-out.
 
-**APP-6 — medium — reported.** `src/pages/TransactionsPage.jsx:593-596`,
+**✅ APP-6 — medium — reported.** `src/pages/TransactionsPage.jsx:593-596`,
 `src/hooks/useTransactionManager.js:271-281`.
 `handleConfirm` swallows its own error, so `handleConfirmWithSplit` creates
 the split expense even when the confirm failed.
 Fix: return success/failure (or rethrow) and split only on success.
 
-**APP-7 — medium — reported.** `src/hooks/queries.js:176-183, 233`.
+**✅ APP-7 — medium — reported.** `src/hooks/queries.js:176-183, 233`.
 `useUpcomingTransactions` leaves `endDate` out of its key, so changing
 "Project to" on Accounts serves the old list. `useAnnualBudgetData` is keyed
 under `budget_plans` but reads `budget_items`, which the bridge does not
 invalidate for that key.
 Fix: add `endDate` to the key; add the dependency to the bridge.
 
-**APP-8 — medium — reported.** `src/pages/TransactionsPage.jsx:560-574`.
+**✅ APP-8 — medium — reported.** `src/pages/TransactionsPage.jsx:560-574`.
 `handleBulkEditSubmit` discards the RPC's returned rows and merges
 `{...t, ...rest}`, so the embedded `categories` object keeps the old category.
 Fix: use the returned rows as `handleSaveAllEdits` does.
 
-**APP-9 — medium — reported.** `src/pages/TransactionsPage.jsx:357, 441, 609,
+**✅ APP-9 — medium — reported.** `src/pages/TransactionsPage.jsx:357, 441, 609,
 1212-1225`; `src/hooks/useSplitNotifications.js:51`; `src/hooks/queries.js:273`.
 Split writes from the Transactions page never invalidate `["split_expenses",
 …]`. `useSplitNotifications` also fetches the whole table outside React Query
@@ -255,13 +265,13 @@ defeating memoised rows in `TransactionList`.
 Fix: `useCallback` with functional `setTransactions`; refs for `onError` and
 `onDataChanged`.
 
-**APP-11 — medium — reported.** `src/pages/TransactionsPage.jsx:139-148,
+**✅ APP-11 — medium — reported.** `src/pages/TransactionsPage.jsx:139-148,
 891-905`; `src/hooks/useTransactionManager.js:104-114, 332-338`.
 Selection is not reset when filters change, so bulk actions can hit hidden
 rows. `handleSelectAll` compares only set size.
 Fix: intersect `selectedIds` with the visible ids before acting; compare sets.
 
-**APP-12 — medium — reported.** `src/pages/TransactionsPage.jsx:899-902`.
+**✅ APP-12 — medium — reported.** `src/pages/TransactionsPage.jsx:899-902`.
 `hasNonPosted` runs `transactions.find` per selected id on every render
 (about 9M comparisons with 3,000 rows selected).
 Fix: memoise an id-to-status `Map`.
@@ -311,7 +321,7 @@ The search debounce closes over a stale `filters`. A filter changed within
 300 ms of typing is silently reverted, and the effect fires once after mount.
 Fix: update only `searchText` via a functional update or a ref.
 
-**UI-4 — high — reported.** `src/components/common/Modal.jsx:5-27`.
+**✅ UI-4 — high — reported.** `src/components/common/Modal.jsx:5-27`.
 No `role="dialog"`, `aria-modal`, Escape handling, focus move, focus trap or
 focus restore; the close button has no name. `CalculatorModal` already does
 this correctly with native `<dialog>`.
@@ -333,7 +343,7 @@ Error row numbers index the filtered array, so they point at the wrong file
 line once rows are excluded; the file-limit error (`rowIndex: -1`) prints "Row 1".
 Fix: map back to original indices; special-case `-1`.
 
-**UI-8 — medium — reported.** `src/components/transactions/RecurringGroupForm.jsx:705-716,
+**✅ UI-8 — medium — reported.** `src/components/transactions/RecurringGroupForm.jsx:705-716,
 872-883`.
 Each line item renders a desktop and a mobile `AmountInput`, one hidden by
 CSS. An invalid hidden twin blocks native form submit with no visible message.
@@ -376,13 +386,13 @@ Switching Expense to Income sets the category to the first non-transfer
 category, not an income one, so the entry saves as a spending credit.
 Fix: keep the category if still valid, else pick one matching the new type.
 
-**UI-14 — low — reported.** `src/components/common/MonthYearSelector.jsx:73-83`,
+**✅ UI-14 — low — reported.** `src/components/common/MonthYearSelector.jsx:73-83`,
 `TransactionFilters.jsx:113-121`.
 The year select can hold a year that is not among its options and then display
 the wrong one.
 Fix: merge the selected year into the options.
 
-**UI-15 — low — reported.** `src/components/transactions/RecurringGroupForm.jsx:222-251`.
+**✅ UI-15 — low — reported.** `src/components/transactions/RecurringGroupForm.jsx:222-251`.
 Line items do not check that the linked account differs from the item's account.
 Fix: add the check that `RecurringForm` already has.
 
@@ -436,34 +446,34 @@ Fix: store raw names; mask at render.
 The account selector lists real names in safe mode.
 Fix: `maskAccountName(a.name)` in the options.
 
-**RPT-9 — medium — reported.** `src/components/reports/CategoryDrillDown.jsx:81, 95`.
+**✅ RPT-9 — medium — reported.** `src/components/reports/CategoryDrillDown.jsx:81, 95`.
 The header total adds `Math.abs(amount)` for every row, so refunds and income
 debits add instead of subtract and disagree with the parent row.
 Fix: sign by classification, as `AnnualActualsTable.jsx:145-149` does.
 
-**RPT-10 — medium — reported.** Group-net logic exists in three diverging
+**✅ RPT-10 — medium — reported.** Group-net logic exists in three diverging
 copies: `UpcomingRecurring.jsx:96-101` subtracts outflow transfer children;
 `UpcomingRecurring.jsx:318-323` and `RecurringCalendarView.jsx:61-66` skip
 transfers.
 Fix: one shared helper aligned with `computeGroupNet` in
 `src/utils/transactionGrouping.js`.
 
-**RPT-11 — medium — reported.** `src/components/budgets/BudgetForm.jsx:134-172`.
+**✅ RPT-11 — medium — reported.** `src/components/budgets/BudgetForm.jsx:134-172`.
 Saving a budget invalidates no query, so Plan vs Actual and the annual table
 can stay stale for 5 minutes.
 Fix: invalidate as `AnnualBudgetTable.jsx:485-488` does.
 
-**RPT-12 — medium — reported.** `src/components/budgets/BudgetImportModal.jsx:162-186`.
+**◐ RPT-12 (no delete-before-upsert and correct total; stale categories are zeroed, not deleted — needs a targeted delete in services/budgets.js) — medium — reported.** `src/components/budgets/BudgetImportModal.jsx:162-186`.
 Import deletes existing items before upserting, so a failure leaves the month
 empty. `total_income` sums every CSV row while items are de-duplicated by
 category.
 Fix: upsert first, delete only stale items; compute the total from `itemMap`.
 
-**RPT-13 — low — reported.** `src/components/splits/SplitExpenseForm.jsx:42-51, 93-97`.
+**✅ RPT-13 — low — reported.** `src/components/splits/SplitExpenseForm.jsx:42-51, 93-97`.
 A custom split accepts a share above the total, giving a negative partner share.
 Fix: require both shares to be at least 0.
 
-**RPT-14 — low — reported.** `src/components/accounts/CashflowChart.jsx:109-136`.
+**✅ RPT-14 — low — reported.** `src/components/accounts/CashflowChart.jsx:109-136`.
 "Today" is memoised with `[]` and goes stale past midnight; `setMonth` on the
 31st overflows into the next month.
 Fix: derive today per render; use date-fns `addMonths`/`subMonths`.
@@ -506,39 +516,39 @@ batch. Rows can carry null `category_id` or `account_id`. Transfer legs can
 land in different batches, leaving an orphan leg if one batch fails.
 Fix: validate real dates, require both ids, keep pairs in one batch.
 
-**SVC-5 — medium — reported.** `src/services/recurring.js:1107-1160` (with
+**✅ SVC-5 — medium — reported.** `src/services/recurring.js:1107-1160` (with
 580-592).
 A split template with a linked account creates two split expenses per
 occurrence, because both legs share the template id and pass the filter. The
 split uses the template amount, not the transaction's.
 Fix: restrict to the main leg; use the transaction's amount.
 
-**SVC-6 — medium — reported.** `src/services/recurring.js:890-892` with
+**✅ SVC-6 — medium — reported.** `src/services/recurring.js:890-892` with
 `383-392, 441-457`.
 If a generation run is in flight, an edit's regeneration call returns the
 in-flight promise; its stale snapshot does not recreate the cleared rows, so
 the edited template has no projections until the next init.
 Fix: queue a second run after the first.
 
-**SVC-7 — medium — reported.** `src/services/recurring.js:1175-1195, 1271-1285`.
+**◐ SVC-7 (not fixed: manual future payments are indistinguishable from projections without a schema change or a product rule) — medium — reported.** `src/services/recurring.js:1175-1195, 1271-1285`.
 A manual payment dated in the future is treated as an orphan projection by
 `cleanupOrphanedProjections` and soft-deleted on next startup.
 Fix: exclude manually recorded rows from orphan cleanup.
 
-**SVC-8 — medium — reported.** `src/services/export.js:281-293, 187-188`.
+**✅ SVC-8 — medium — reported.** `src/services/export.js:281-293, 187-188`.
 Budget-history "Actual" adds `Math.abs` for every non-transfer row, ignoring
 refunds, income debits and status. The Type column labels spending credits
 "Income".
 Fix: use the classification helpers and filter to posted rows.
 
-**SVC-9 — medium — reported.** `src/services/export.js:123-160`.
+**✅ SVC-9 — medium — reported.** `src/services/export.js:123-160`.
 The "full backup" filters accounts, categories and templates to `is_active`,
 leaving dangling ids on exported transactions; split expenses and partnerships
 are not exported.
 Fix: drop the filter for the backup and include the missing tables, or label
 the file as partial.
 
-**SVC-10 — medium — reported.** `src/utils/helpers.js:341, 370`.
+**✅ SVC-10 — medium — reported.** `src/utils/helpers.js:341, 370`.
 The budget CSV parser splits on every comma, ignoring quoting, so `"$1,234"`
 breaks the row. `headerToMonthIndex` matches any header with a month prefix
 ("Marketing" → March).
@@ -552,7 +562,7 @@ still valid, failing every request; the refresh timer is not re-armed.
 Fix: fall back to the unexpired token and retry with backoff; return
 `session: null` on sign-in errors.
 
-**SVC-12 — medium — reported.** `src/services/transactions.js:714-731, 789-834`.
+**✅ SVC-12 — medium — reported.** `src/services/transactions.js:714-731, 789-834`.
 `deleteTransaction` only logs a failed companion delete and still deletes the
 original. `skipTransaction` and `confirmTransaction` act on one leg of a pair.
 Fix: resolve `transfer_group_id` companions in skip and confirm; throw on a
@@ -572,12 +582,12 @@ report CSV does not escape quotes or formula prefixes.
 Fix: word-boundary matching, exclude transfer categories, index by
 `date|amount`, escape the report.
 
-**SVC-15 — low — reported.** `src/utils/connectionErrors.js:17`.
+**✅ SVC-15 — low — reported.** `src/utils/connectionErrors.js:17`.
 `Object.hasOwn(navigator, 'onLine')` is always false, so the device-offline
 message never shows.
 Fix: `'onLine' in navigator`.
 
-**SVC-16 — low — reported.** `src/utils/recurringCalculations.js`,
+**✅ SVC-16 — low — reported.** `src/utils/recurringCalculations.js`,
 `getOccurrencesInRange`.
 `maxOccurrences = 50` truncates 1-day custom templates to 50 of the 90
 projection days.

@@ -879,10 +879,10 @@ test("APP-1: confirm, skip and bulk delete work offline", async () => {
   assert.deepEqual(bulkConfirmed.map((r) => [r.id, r.status]), [["p2", "posted"]]);
   await assert.rejects(offlineAware.confirmTransactionOffline("missing"), /not found locally/);
 
-  assert.equal(await offlineAware.skipTransactionOffline("p3"), "p3");
+  assert.deepEqual(await offlineAware.skipTransactionOffline("p3"), ["p3"]);
   assert.deepEqual(await offlineAware.bulkSkipTransactionsOffline(["p4"]), ["p4"]);
-  // Skipping one leg leaves the companion alone, as the service does.
-  assert.equal(await offlineAware.skipTransactionOffline("other-group"), "other-group");
+  // A row whose group has no other live leg is skipped on its own.
+  assert.deepEqual(await offlineAware.skipTransactionOffline("other-group"), ["other-group"]);
 
   // Selecting both legs plus a plain row deletes each row once.
   const deleted = await offlineAware.bulkDeleteTransactionsOffline(["out", "in", "plain"]);
@@ -948,7 +948,7 @@ test("APP-1: online actions call the service and mirror the result into Dexie", 
   assert.equal(confirmed.status, "posted");
   assert.equal((await db.transactions.get("t1")).status, "posted");
 
-  assert.equal(await offlineAware.skipTransactionOffline("p3"), "p3");
+  assert.deepEqual(await offlineAware.skipTransactionOffline("p3"), ["p3"]);
   assert.ok((await db.transactions.get("p3")).deleted_at);
 
   const created = await offlineAware.createTransferOffline({ category_id: "c-xfer", amount: 900 });
@@ -2432,4 +2432,182 @@ test("OFF-14: a transfer cannot be moved to an archived category, online or offl
   await db.categories.update("c-xfer", { is_archived: true });
   const [out] = await offlineAware.updateAsymmetricTransferOffline("out", { ...edit, category_id: "c-xfer" });
   assert.equal(out.amount, 6000);
+});
+
+// ── SVC-12: confirm / skip act on unposted transfer companions ──
+
+// A projected transfer (two unposted legs), a half-posted pair, and loners.
+const statusRows = () => [
+  { id: "x-out", transfer_group_id: "gx", status: "projected", amount: 5000, is_income: false, deleted_at: null },
+  { id: "x-in", transfer_group_id: "gx", status: "pending", amount: 5000, is_income: true, deleted_at: null },
+  { id: "y-out", transfer_group_id: "gy", status: "pending", amount: 700, is_income: false, deleted_at: null },
+  { id: "y-in", transfer_group_id: "gy", status: "posted", amount: 700, is_income: true, deleted_at: null },
+  { id: "y-gone", transfer_group_id: "gy", status: "pending", amount: 700, deleted_at: "2026-01-01T00:00:00.000Z" },
+  { id: "solo", transfer_group_id: null, status: "pending", amount: 300, deleted_at: null },
+];
+
+test("SVC-12: skipping one leg offline also queues its unposted companion, atomically", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(statusRows());
+  db.transactionLog.length = 0;
+
+  assert.deepEqual(await offlineAware.skipTransactionOffline("x-out"), ["x-out", "x-in"]);
+  // Both legs went in with one transaction.
+  assert.deepEqual(db.transactionLog, [{ mode: "rw", tables: [db.transactions] }]);
+
+  // A posted companion is left alone; so is an already-deleted leg.
+  assert.deepEqual(await offlineAware.skipTransactionOffline("y-out"), ["y-out"]);
+
+  assert.deepEqual(await pendingActions(db), { "x-out": "delete", "x-in": "delete", "y-out": "delete" });
+  for (const id of ["x-out", "x-in", "y-out"]) {
+    assert.ok((await db.transactions.get(id)).deleted_at, `${id} should be soft-deleted`);
+  }
+  const posted = await db.transactions.get("y-in");
+  assert.equal(posted.deleted_at, null);
+  assert.equal(posted._offline, undefined);
+  assert.equal((await db.transactions.get("y-gone"))._offline, undefined);
+  assert.equal(await offlineDb.getPendingSyncCount(), 3);
+});
+
+test("SVC-12: bulk skip offline returns requested ids first, companions once", async () => {
+  const { offlineAware, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(statusRows());
+
+  // Both legs of one pair requested, plus a loner and one leg of another pair.
+  const skipped = await offlineAware.bulkSkipTransactionsOffline(["solo", "x-in", "x-out", "y-out"]);
+  assert.deepEqual(skipped, ["solo", "x-in", "x-out", "y-out"]);
+
+  const again = await loadOfflineAware();
+  await again.db.transactions.bulkPut(statusRows());
+  assert.deepEqual(await again.offlineAware.bulkSkipTransactionsOffline(["solo", "x-in"]), ["solo", "x-in", "x-out"]);
+  assert.deepEqual(await pendingActions(again.db), { solo: "delete", "x-in": "delete", "x-out": "delete" });
+});
+
+test("SVC-12: a failed offline skip leaves neither leg queued", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(statusRows());
+  db.transactions.failBulkPut = true;
+  await assert.rejects(offlineAware.skipTransactionOffline("x-out"), /bulkPut failed/);
+  db.transactions.failBulkPut = false;
+
+  assert.deepEqual(await pendingActions(db), {});
+  assert.equal((await db.transactions.get("x-out")).deleted_at, null);
+  assert.equal((await db.transactions.get("x-in")).deleted_at, null);
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+});
+
+test("SVC-12: confirming one leg offline also posts its unposted companion", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(statusRows());
+
+  const confirmed = await offlineAware.confirmTransactionOffline("x-in");
+  assert.equal(confirmed.id, "x-in");
+  assert.equal(confirmed.status, "posted");
+  assert.equal((await db.transactions.get("x-out")).status, "posted");
+
+  const bulk = await offlineAware.bulkConfirmTransactionsOffline(["solo", "y-out"]);
+  assert.deepEqual(bulk.map((r) => [r.id, r.status]), [
+    ["solo", "posted"],
+    ["y-out", "posted"],
+  ]);
+
+  assert.deepEqual(await pendingActions(db), {
+    "x-in": "update",
+    "x-out": "update",
+    solo: "update",
+    "y-out": "update",
+  });
+  // The already-posted companion was not touched or queued.
+  assert.deepEqual(await db.transactions.get("y-in"), statusRows()[3]);
+  assert.equal(await offlineDb.getPendingSyncCount(), 4);
+});
+
+test("SVC-12: bulk confirm offline returns requested rows first, then companions", async () => {
+  const { offlineAware, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(statusRows());
+
+  const rows = await offlineAware.bulkConfirmTransactionsOffline(["solo", "x-out"]);
+  assert.deepEqual(rows.map((r) => r.id), ["solo", "x-out", "x-in"]);
+  assert.ok(rows.every((r) => r.status === "posted"));
+});
+
+test("SVC-12: online skip and confirm mirror the companions the service reports", async () => {
+  setOnline(true);
+  const calls = [];
+  const { offlineAware, offlineDb, db } = await loadOfflineAware({
+    services: {
+      "./transactions": {
+        // The service acts on unposted companions and reports them after the requested items.
+        bulkSkipTransactions: async (ids) => {
+          calls.push(["skip", ids]);
+          return ids.includes("x-out") ? [...ids, "x-in"] : ids;
+        },
+        bulkConfirmTransactions: async (ids) => {
+          calls.push(["confirm", ids]);
+          const posted = (id) => ({ id, status: "posted", amount: 5000, deleted_at: null });
+          return ids.includes("x-out") ? [...ids.map(posted), posted("x-in")] : ids.map(posted);
+        },
+      },
+    },
+  });
+  await db.transactions.bulkPut(statusRows());
+
+  const confirmed = await offlineAware.confirmTransactionOffline("x-out");
+  assert.equal(confirmed.id, "x-out");
+  assert.equal((await db.transactions.get("x-in")).status, "posted");
+  const bulk = await offlineAware.bulkConfirmTransactionsOffline(["solo", "x-out"]);
+  assert.deepEqual(bulk.map((r) => r.id), ["solo", "x-out", "x-in"]);
+
+  await db.transactions.bulkPut(statusRows());
+  assert.deepEqual(await offlineAware.skipTransactionOffline("x-out"), ["x-out", "x-in"]);
+  assert.ok((await db.transactions.get("x-in")).deleted_at);
+  assert.deepEqual(await offlineAware.bulkSkipTransactionsOffline(["solo", "y-out"]), ["solo", "y-out"]);
+  assert.equal((await db.transactions.get("y-in")).deleted_at, null);
+
+  assert.deepEqual(calls, [
+    ["confirm", ["x-out"]],
+    ["confirm", ["solo", "x-out"]],
+    ["skip", ["x-out"]],
+    ["skip", ["solo", "y-out"]],
+  ]);
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+});
+
+test("SVC-12: a pending companion sends the whole skip through the queue", async () => {
+  const { offlineAware, db } = await loadOfflineAware({
+    services: { "./transactions": { bulkSkipTransactions: failIfCalled("bulkSkipTransactions") } },
+  });
+  await db.transactions.bulkPut(statusRows());
+  await offlineAware.updateTransactionOffline("x-in", { amount: 5100 }); // queued offline
+
+  setOnline(true); // the flush stub leaves it pending
+  assert.deepEqual(await offlineAware.skipTransactionOffline("x-out"), ["x-out", "x-in"]);
+  assert.deepEqual(await pendingActions(db), { "x-out": "delete", "x-in": "delete" });
+});
+
+test("SVC-12: an offline transfer delete queues both legs or neither", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware();
+  await db.transactions.bulkPut(transferRows());
+  db.transactions.failBulkPut = true;
+  await assert.rejects(offlineAware.deleteTransactionOffline("out"), /bulkPut failed/);
+  await assert.rejects(offlineAware.bulkDeleteTransactionsOffline(["in", "plain"]), /bulkPut failed/);
+  db.transactions.failBulkPut = false;
+
+  assert.deepEqual(await pendingActions(db), {});
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+
+  // Online, a service rejection (companion could not be deleted) leaves the mirror untouched.
+  setOnline(true);
+  const failing = await loadOfflineAware({
+    services: {
+      "./transactions": {
+        deleteTransaction: async () => {
+          throw { message: "permission denied", code: "42501" };
+        },
+      },
+    },
+  });
+  await failing.db.transactions.bulkPut(transferRows());
+  await assert.rejects(failing.offlineAware.deleteTransactionOffline("out"), (err) => err.code === "42501");
+  assert.deepEqual(await failing.db.transactions.toArray(), transferRows());
 });

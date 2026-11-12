@@ -51,6 +51,11 @@ import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, dele
 import { getCurrentUser } from '../services/supabase';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import {
+  visibleSelection,
+  buildStatusMap,
+  hasNonPostedSelection,
+} from '../utils/selectionRules';
+import {
   QUICK_TRANSACTION_TEMPLATES_KEY,
   normalizeQuickTransactionTemplates,
 } from '../services/quickTransactions';
@@ -184,6 +189,12 @@ export default function TransactionsPage() {
   const [quickDate, setQuickDate] = useState(getTodayString());
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState('');
+
+  // Split tables are not Dexie-mirrored, so the query bridge never sees
+  // them: every split write on this page must invalidate explicitly.
+  const invalidateSplitExpenses = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['split_expenses'] });
+  }, [queryClient]);
 
   // Transaction management hook
   const handleError = useCallback((msg) => setMutationError(msg), []);
@@ -329,6 +340,21 @@ export default function TransactionsPage() {
     return result;
   }, [transactions, filters, mgr.sortColumn, mgr.sortDirection]);
 
+  // ---------- Selection limited to what the filters show ----------
+  // mgr.selectedIds survives filter changes, so it can hold rows that are no
+  // longer listed. Everything that displays or acts on the selection uses
+  // this intersection, so bulk actions never touch hidden rows.
+  const visibleSelectedIds = useMemo(
+    () => visibleSelection(mgr.selectedIds, filteredSorted),
+    [mgr.selectedIds, filteredSorted],
+  );
+
+  const statusById = useMemo(() => buildStatusMap(transactions), [transactions]);
+  const hasNonPostedSelected = useMemo(
+    () => hasNonPostedSelection(visibleSelectedIds, statusById),
+    [visibleSelectedIds, statusById],
+  );
+
   // ---------- Group transactions for display ----------
   const groupedItems = useMemo(
     () => groupTransactions(filteredSorted, templateLookup),
@@ -449,6 +475,7 @@ export default function TransactionsPage() {
             transactionId: created.id,
             expenseDate: quickDate,
           });
+          invalidateSplitExpenses();
           setSplitTransactionIds((prev) => new Set([...prev, created.id]));
         }
       }
@@ -558,16 +585,14 @@ export default function TransactionsPage() {
   const handleBulkEditSubmit = async (fields) => {
     if (!bulkEditGroup) return;
     const updates = bulkEditGroup.map((c) => ({ id: c.id, ...fields }));
-    await bulkUpdateTransactions(updates);
-    // Refresh local state
-    setTransactions((prev) =>
-      prev.map((t) => {
-        const update = updates.find((u) => u.id === t.id);
-        if (!update) return t;
-        const { id: _id, ...rest } = update;
-        return { ...t, ...rest };
-      })
-    );
+    // The wrapper returns the updated rows with fresh category/account joins
+    // (online from the RPC, offline from the local tables); use them so the
+    // embedded `categories` object follows a category change.
+    const results = await bulkUpdateTransactions(updates);
+    setTransactions((prev) => {
+      const map = new Map(results.map((r) => [r.id, r]));
+      return prev.map((t) => map.get(t.id) || t);
+    });
     setBulkEditGroup(null);
   };
 
@@ -590,7 +615,9 @@ export default function TransactionsPage() {
   // ---------- Confirm with auto-split ----------
   const handleConfirmWithSplit = useCallback(async (txId) => {
     const tx = transactions.find((t) => t.id === txId);
-    await mgr.handleConfirm(txId);
+    const confirmed = await mgr.handleConfirm(txId);
+    // A failed confirm leaves the row unposted; do not record a split for it.
+    if (!confirmed) return;
     if (tx?.recurring_template_id && partnership && currentUser) {
       try {
         const tpl = await getRecurringTemplateById(tx.recurring_template_id);
@@ -614,6 +641,7 @@ export default function TransactionsPage() {
             transactionId: txId,
             expenseDate: tx.transaction_date,
           });
+          invalidateSplitExpenses();
           setSplitTransactionIds((prev) => new Set([...prev, txId]));
         }
       } catch (err) {
@@ -623,7 +651,7 @@ export default function TransactionsPage() {
     // mgr.handleConfirm is a stable useCallback; depending on it (not on the
     // whole mgr object, whose identity changes each render) is intentional.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, mgr.handleConfirm, partnership, currentUser]);
+  }, [transactions, mgr.handleConfirm, partnership, currentUser, invalidateSplitExpenses]);
   // Keep ref in sync so handleConfirmAll always invokes the latest closure.
   useLayoutEffect(() => {
     handleConfirmWithSplitRef.current = handleConfirmWithSplit;
@@ -833,7 +861,7 @@ export default function TransactionsPage() {
             sortColumn={mgr.sortColumn}
             sortDirection={mgr.sortDirection}
             onSort={mgr.handleSort}
-            selectedIds={mgr.selectedIds}
+            selectedIds={visibleSelectedIds}
             onToggleSelect={mgr.handleToggleSelect}
             onSelectAll={() => mgr.handleSelectAll(filteredSorted)}
             pendingEdits={mgr.pendingEdits}
@@ -888,18 +916,15 @@ export default function TransactionsPage() {
         {/* Bulk action bar */}
         <div className="hidden sm:block">
           <BulkActionBar
-            selectedCount={mgr.selectedIds.size}
+            selectedCount={visibleSelectedIds.size}
             categories={categories}
-            onRecategorize={mgr.handleBulkRecategorize}
-            onDelete={mgr.handleBulkDelete}
+            onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
+            onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
             onDeselectAll={() => mgr.handleSelectAll([])}
             isBusy={mgr.isBulkBusy}
-            hasNonPosted={Array.from(mgr.selectedIds).some((id) => {
-              const tx = transactions.find((t) => t.id === id);
-              return tx && tx.status !== 'posted';
-            })}
-            onBulkConfirm={mgr.handleBulkConfirm}
-            onBulkSkip={mgr.handleBulkSkip}
+            hasNonPosted={hasNonPostedSelected}
+            onBulkConfirm={() => mgr.handleBulkConfirm(visibleSelectedIds)}
+            onBulkSkip={() => mgr.handleBulkSkip(visibleSelectedIds)}
           />
         </div>
       </div>
@@ -1226,6 +1251,8 @@ export default function TransactionsPage() {
               } catch (err) {
                 setMutationError(err?.message || 'Failed to split transaction.');
               } finally {
+                // Also on failure: the old split may already be deleted.
+                invalidateSplitExpenses();
                 setSplitLoading(false);
               }
             }}

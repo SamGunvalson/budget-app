@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatCurrency, getTodayString } from '../../utils/helpers';
+import { isValidCustomSplit } from '../../utils/reportRules';
 
 /**
  * Infer the split method from stored share values.
@@ -69,7 +70,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
       // In custom mode: "my share" / "partner share" are from the current user's perspective
       const myShare = Math.round((parseFloat(customMyShare) || 0) * 100);
       const theirShare = Math.round((parseFloat(customPartnerShare) || 0) * 100);
-      if (myShare + theirShare !== totalCents) return;
+      if (!isValidCustomSplit(totalCents, myShare, theirShare)) return;
       if (paidBy === 'me') {
         payerShare = myShare;
         partnerShare = theirShare;
@@ -90,10 +91,12 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
     });
   }
 
+  const customMyCents = Math.round((parseFloat(customMyShare) || 0) * 100);
+  const customPartnerCents = Math.round((parseFloat(customPartnerShare) || 0) * 100);
   const isValid = description.trim() && totalCents > 0 && (
     splitMethod === 'equal' ||
     splitMethod === 'full' ||
-    (Math.round((parseFloat(customMyShare) || 0) * 100) + Math.round((parseFloat(customPartnerShare) || 0) * 100) === totalCents)
+    isValidCustomSplit(totalCents, customMyCents, customPartnerCents)
   );
 
   return (
@@ -269,10 +272,13 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
               />
             </div>
           </div>
-          {splitMethod === 'custom' && totalCents > 0 &&
-            (Math.round((parseFloat(customMyShare) || 0) * 100) + Math.round((parseFloat(customPartnerShare) || 0) * 100) !== totalCents) && (
+          {customMyCents + customPartnerCents !== totalCents ? (
             <p className="col-span-2 text-xs text-red-500 dark:text-red-400">
               Shares must add up to {formatCurrency(totalCents)}
+            </p>
+          ) : (customMyCents < 0 || customPartnerCents < 0) && (
+            <p className="col-span-2 text-xs text-red-500 dark:text-red-400">
+              Neither share can be more than {formatCurrency(totalCents)}
             </p>
           )}
         </div>

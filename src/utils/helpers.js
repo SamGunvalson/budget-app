@@ -1,4 +1,5 @@
 // Currency formatting utilities
+import { parseCsvText } from "./csvParser.js";
 
 // ── Safe-mode masking (module-level flag set by SafeModeProvider) ──
 
@@ -334,6 +335,7 @@ const FULL_MONTHS = [
 ];
 
 const SHORT_MONTHS_MAP = {
+  sept: 8,
   jan: 0,
   feb: 1,
   mar: 2,
@@ -352,11 +354,12 @@ const SHORT_MONTHS_MAP = {
  * Try to map a header string to a month index 0-11, or return -1.
  */
 function headerToMonthIndex(header) {
-  const h = header.trim().toLowerCase();
+  // Exact match only (full name or abbreviation, optional trailing "."), so
+  // headers such as "Marketing" or "Notes" are not mistaken for months.
+  const h = header.trim().toLowerCase().replace(/\.$/, "");
   const fullIdx = FULL_MONTHS.indexOf(h);
   if (fullIdx !== -1) return fullIdx;
-  const shortKey = h.slice(0, 3);
-  if (shortKey in SHORT_MONTHS_MAP) return SHORT_MONTHS_MAP[shortKey];
+  if (Object.hasOwn(SHORT_MONTHS_MAP, h)) return SHORT_MONTHS_MAP[h];
   return -1;
 }
 
@@ -377,11 +380,11 @@ export function parseBudgetCSV(csvText) {
     return { rows: [], error: "File is empty." };
   }
 
-  // Split into lines, trim, drop empties
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  // Tokenize with quoted-field support ("$1,234" stays one cell). Blank rows
+  // are dropped; empty cells are left unset, so default them to "".
+  const lines = parseCsvText(csvText).map((cells) =>
+    Array.from(cells, (cell) => (cell ?? "").trim()),
+  );
 
   if (lines.length < 2) {
     return {
@@ -391,7 +394,7 @@ export function parseBudgetCSV(csvText) {
   }
 
   // Parse header
-  const headers = lines[0].split(",").map((h) => h.trim());
+  const headers = lines[0];
   if (headers.length < 2) {
     return {
       rows: [],
@@ -420,7 +423,7 @@ export function parseBudgetCSV(csvText) {
   const errors = [];
 
   for (let r = 1; r < lines.length; r++) {
-    const cells = lines[r].split(",").map((c) => c.trim());
+    const cells = lines[r];
     const categoryName = cells[0];
     if (!categoryName) {
       errors.push(`Row ${r + 1}: missing category name.`);
