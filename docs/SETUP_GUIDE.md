@@ -513,6 +513,20 @@ Dependencies install automatically; run `npm run dev` at the repository root.
 The container includes ESLint, Prettier, Tailwind CSS IntelliSense, GitLens,
 and React snippet extensions.
 
+The container also runs its own Docker daemon (the `docker-in-docker` feature)
+and installs `server/auth` dependencies, so the Docker-backed checks in
+[validation](#validation) work inside it. The daemon's image cache is separate
+from the host's and is lost on container rebuild. To run the deployment smoke
+test as CI does:
+
+```bash
+docker build -t thewarguy/budget-app-db:selfhost-test ./sql_scripts
+docker build -t thewarguy/budget-app-auth:selfhost-test ./server/auth
+docker build -t thewarguy/budget-app:selfhost-test .
+node --test scripts/test-selfhost.test.js
+npm --prefix server/auth test
+```
+
 ### Windows troubleshooting
 
 If startup fails with `accessing specified distro mount service` and a missing

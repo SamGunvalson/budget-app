@@ -4,6 +4,12 @@
 
   "workspaceFolder": "/workspaces/budget-app",
 
+  // Docker-in-Docker (not the host socket): the smoke and auth tests reach
+  // published ports on 127.0.0.1, which must be this container's loopback.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+
   "forwardPorts": [5173],
   "portsAttributes": {
     "5173": {
@@ -27,7 +33,7 @@
     "CLAUDE_CONFIG_DIR": "/home/node/.claude"
   },
 
-  "postCreateCommand": "sudo chown node:node node_modules /home/node/.claude && npm ci",
+  "postCreateCommand": "sudo chown node:node node_modules /home/node/.claude && npm ci && npm --prefix server/auth ci",
 
   "customizations": {
     "vscode": {
