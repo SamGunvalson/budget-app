@@ -16,6 +16,11 @@ import useTransactionManager from '../hooks/useTransactionManager';
 import {
   createTransactionOffline as createTransaction,
   createAsymmetricTransferOffline,
+  createTransferOffline as createTransfer,
+  createLinkedTransferOffline as createLinkedTransfer,
+  createAdjustmentOffline as createAdjustment,
+  bulkUpdateTransactionsOffline as bulkUpdateTransactions,
+  bulkDeleteTransactionsOffline as bulkDeleteTransactions,
 } from '../services/offlineAware';
 import {
   useTransactions,
@@ -24,13 +29,6 @@ import {
   useAccounts,
   useUserPreference,
 } from '../hooks/queries';
-import {
-  createTransfer,
-  createLinkedTransfer,
-  createAdjustment,
-  bulkUpdateTransactions,
-  bulkDeleteTransactions,
-} from '../services/transactions';
 import BulkEditModal from '../components/transactions/BulkEditModal';
 import {
   createRecurringTemplate,

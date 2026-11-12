@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -34,6 +35,7 @@ async function loadRecurring({ queries = [], rpcs = [] } = {}) {
   };
   const dependencies = {
     "./supabase": { supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "../utils/ids": { newId: () => randomUUID() },
     "date-fns": { addDays, format, isAfter, startOfDay },
     "../utils/recurringCalculations": {
       getPendingOccurrences: () => [],

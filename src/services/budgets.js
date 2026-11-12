@@ -27,13 +27,15 @@ export async function getBudgetPlan(month, year) {
  * @param {{ month: number, year: number, total_income: number }} plan
  * @returns {Promise<Object>} created plan
  */
-export async function createBudgetPlan({ month, year, total_income }) {
+export async function createBudgetPlan({ month, year, total_income, id }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
   const { data, error } = await supabase
     .from("budget_plans")
     .insert({
+      // Optional client-generated id so a retry of the same create is idempotent.
+      ...(id ? { id } : {}),
       user_id: user.id,
       month,
       year,

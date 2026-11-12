@@ -9,7 +9,7 @@ import {
   CartesianGrid,
   ReferenceLine,
 } from 'recharts';
-import { toDollars, formatCurrency, formatAxisDollar } from '../../utils/helpers';
+import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 function NetWorthTooltip({ active, payload, label }) {
@@ -25,7 +25,7 @@ function NetWorthTooltip({ active, payload, label }) {
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-500" />
           <p className={`text-sm font-bold ${actualEntry.value < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {actualEntry.value < 0 ? '−' : ''}{formatCurrency(Math.abs(Math.round(actualEntry.value * 100)))}
+            {actualEntry.value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(actualEntry.value))}
           </p>
         </div>
       )}
@@ -33,7 +33,7 @@ function NetWorthTooltip({ active, payload, label }) {
         <div className="flex items-center gap-2 mt-0.5">
           <span className="h-2 w-2 rounded-full bg-violet-500" />
           <p className="text-sm font-bold text-violet-600 dark:text-violet-400">
-            {projectedEntry.value < 0 ? '−' : ''}{formatCurrency(Math.abs(Math.round(projectedEntry.value * 100)))}
+            {projectedEntry.value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(projectedEntry.value))}
             <span className="ml-1 text-[10px] font-medium text-violet-400 dark:text-violet-500">projected</span>
           </p>
         </div>
@@ -93,6 +93,8 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
   // Merge history and projected into a single series for the combo chart.
   // Historical points have `netWorth`; projected points have `projected`.
   // The last history point is echoed as the first projected point so lines connect.
+  // Safe mode: values are masked ONCE here (toDollars) so the drawn shape stays
+  // scrambled; the tooltip and axis use formatPreMasked* and never mask again.
   const chartData = useMemo(() => {
     const hist = filteredHistory.map((d) => ({
       yearMonth: d.yearMonth,
@@ -217,7 +219,7 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
               interval={tickInterval}
             />
             <YAxis
-              tickFormatter={formatAxisDollar}
+              tickFormatter={formatPreMaskedAxisDollar}
               tick={{ fill: '#78716c', fontSize: 11 }}
               axisLine={false}
               tickLine={false}

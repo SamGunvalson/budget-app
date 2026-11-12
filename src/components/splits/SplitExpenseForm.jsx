@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getTodayString } from '../../utils/helpers';
+import { formatCurrency, getTodayString } from '../../utils/helpers';
 
 /**
  * Infer the split method from stored share values.
@@ -272,7 +272,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
           {splitMethod === 'custom' && totalCents > 0 &&
             (Math.round((parseFloat(customMyShare) || 0) * 100) + Math.round((parseFloat(customPartnerShare) || 0) * 100) !== totalCents) && (
             <p className="col-span-2 text-xs text-red-500 dark:text-red-400">
-              Shares must add up to ${(totalCents / 100).toFixed(2)}
+              Shares must add up to {formatCurrency(totalCents)}
             </p>
           )}
         </div>
@@ -282,7 +282,7 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
       {totalCents > 0 && splitMethod === 'equal' && (
         <div className="rounded-xl border border-stone-100 bg-stone-50/50 px-4 py-3 dark:border-stone-700 dark:bg-stone-900/30">
           <p className="text-xs text-stone-500 dark:text-stone-400">
-            Each person pays <span className="font-medium text-stone-700 dark:text-stone-300">${(Math.floor(totalCents / 2) / 100).toFixed(2)}</span>
+            Each person pays <span className="font-medium text-stone-700 dark:text-stone-300">{formatCurrency(Math.floor(totalCents / 2))}</span>
           </p>
         </div>
       )}
@@ -290,9 +290,9 @@ export default function SplitExpenseForm({ currentUserId, partnerId, partnerEmai
         <div className="rounded-xl border border-stone-100 bg-stone-50/50 px-4 py-3 dark:border-stone-700 dark:bg-stone-900/30">
           <p className="text-xs text-stone-500 dark:text-stone-400">
             {paidBy === 'me' ? (
-              <>{partnerEmail} owes you the full <span className="font-medium text-stone-700 dark:text-stone-300">${(totalCents / 100).toFixed(2)}</span></>
+              <>{partnerEmail} owes you the full <span className="font-medium text-stone-700 dark:text-stone-300">{formatCurrency(totalCents)}</span></>
             ) : (
-              <>You owe {partnerEmail} the full <span className="font-medium text-stone-700 dark:text-stone-300">${(totalCents / 100).toFixed(2)}</span></>
+              <>You owe {partnerEmail} the full <span className="font-medium text-stone-700 dark:text-stone-300">{formatCurrency(totalCents)}</span></>
             )}
           </p>
         </div>

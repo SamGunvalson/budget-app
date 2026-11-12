@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { newId } from "../utils/ids";
 import { format, addDays, startOfDay, isAfter } from "date-fns";
 import {
   getPendingOccurrences,
@@ -486,7 +487,7 @@ export async function getTemplatesForAccount(accountId) {
  * @param {{ status?: string, recurring_template_id?: string, recurring_occurrence_date?: string }} [opts]
  */
 async function applyAsTransfer(user, template, dateStr, opts = {}) {
-  const transfer_group_id = crypto.randomUUID();
+  const transfer_group_id = newId();
 
   const baseTx = {
     user_id: user.id,
@@ -560,7 +561,7 @@ async function applyAsTransaction(user, template, dateStr, opts = {}) {
  * @param {{ status?: string, recurring_template_id?: string, recurring_occurrence_date?: string }} [opts]
  */
 async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
-  const transfer_group_id = crypto.randomUUID();
+  const transfer_group_id = newId();
 
   // Resolve "Account Transfer" category for companion leg
   const { data: transferCats, error: catErr } = await supabase

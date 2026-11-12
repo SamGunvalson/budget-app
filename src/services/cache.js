@@ -120,8 +120,10 @@ const inflight = new Map(); // key → Promise
  *   return an "empty" value instead (e.g. `[]` or `null`).
  * @param {() => Promise<T>} opts.fetchFresh
  *   Fetches the authoritative value from the origin (Supabase). May throw.
- * @param {(data: T) => Promise<void>} opts.writeCache
+ * @param {(data: T, meta: { fetchStartedAt: number }) => Promise<void>} opts.writeCache
  *   Persists fresh data back to Dexie. Errors here are logged but not thrown.
+ *   `meta.fetchStartedAt` is the local `Date.now()` from just before the
+ *   fetch was issued.
  * @param {string} [opts.table]
  *   Optional table name; when provided, `notifyTable(table)` is called after
  *   a successful revalidation.
@@ -173,10 +175,13 @@ export async function swrRead({
   // Cold cache → await the fresh fetch so the caller has data to render.
   if (!haveCached) {
     try {
-      const fresh = await dedupedFetch(key, fetchFresh);
+      const { data: fresh, fetchStartedAt } = await dedupedFetch(
+        key,
+        fetchFresh,
+      );
       // Write back to cache (best-effort) and notify.
       try {
-        await writeCache(fresh);
+        await writeCache(fresh, { fetchStartedAt });
       } catch (err) {
         console.warn(`[cache] writeCache for ${key} failed:`, err);
       }
@@ -195,9 +200,9 @@ export async function swrRead({
   // Warm cache → return immediately, revalidate in background.
   beginRevalidate();
   dedupedFetch(key, fetchFresh)
-    .then(async (fresh) => {
+    .then(async ({ data: fresh, fetchStartedAt }) => {
       try {
-        await writeCache(fresh);
+        await writeCache(fresh, { fetchStartedAt });
       } catch (err) {
         console.warn(`[cache] writeCache for ${key} failed:`, err);
       }
@@ -296,11 +301,17 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
+// Resolves to `{ data, fetchStartedAt }`. `fetchStartedAt` is the local
+// `Date.now()` just before the request was issued (the original request's,
+// when piggy-backing), so `writeCache` can tell which local rows the response
+// could not have known about.
 function dedupedFetch(key, fetchFresh) {
   const existing = inflight.get(key);
   if (existing) return existing;
+  const fetchStartedAt = Date.now();
   const promise = Promise.resolve()
     .then(fetchFresh)
+    .then((data) => ({ data, fetchStartedAt }))
     .finally(() => {
       inflight.delete(key);
     });

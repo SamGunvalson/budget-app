@@ -28,6 +28,7 @@ const migrationScripts = [
   'supabase_accounts_closed.sql',
   'supabase_asymmetric_transfer.sql',
   'supabase_custom_interval.sql',
+  'supabase_partnership_hardening_rls.sql',
   'supabase_partnership_seen.sql',
   'supabase_recurring_occurrence_date.sql',
   'supabase_recurring_projection_cleanup.sql',

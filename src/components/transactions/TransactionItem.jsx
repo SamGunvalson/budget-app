@@ -4,6 +4,7 @@ import AmountInput from '../common/AmountInput';
 import { centsToInput } from '../../utils/calculator';
 import { formatCurrency, formatDate, toCents, maskAccountName } from '../../utils/helpers';
 import { getAccountBadgeColor } from '../../services/accounts';
+import { isValidInlineEdit } from '../../utils/transactionFormRules';
 
 function TransactionStatusBadges({
   isProjected,
@@ -128,7 +129,14 @@ function EditableCell({ value, onChange, type = 'text', className = '', options,
 
   const commit = () => {
     setEditing(false);
-    if (draft !== value) onChange(draft);
+    if (draft === value) return;
+    // A cleared/zero amount or an empty date would fail the batch save and take
+    // every other pending edit with it — revert instead of queueing it.
+    if (!isValidInlineEdit(type, draft)) {
+      setDraft(value ?? '');
+      return;
+    }
+    onChange(draft);
   };
 
   const cancel = () => { setEditing(false); setDraft(value ?? ''); setPrevValue(value); };

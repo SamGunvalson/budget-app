@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { formatCurrency } from '../../utils/helpers';
 
 const FILTERS = [
   { value: 'all', label: 'All' },
@@ -91,9 +92,9 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
           <div className="space-y-2">
             {items.map((exp) => {
               const iPaid = exp.paid_by_user_id === currentUserId;
-              const dollars = (exp.total_amount / 100).toFixed(2);
+              const totalLabel = formatCurrency(exp.total_amount);
               // partner_share is always the non-payer's obligation
-              const obligationDollars = (exp.partner_share / 100).toFixed(2);
+              const obligationLabel = formatCurrency(exp.partner_share);
 
               return (
                 <div
@@ -131,14 +132,14 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
                               <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15m0 0l6.75 6.75M4.5 12l6.75-6.75" />
                               </svg>
-                              They owe you ${obligationDollars}
+                              They owe you {obligationLabel}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-0.5 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 dark:bg-red-900/20 dark:text-red-400">
                               <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12h15m0 0l-6.75-6.75M19.5 12l-6.75 6.75" />
                               </svg>
-                              You owe ${obligationDollars}
+                              You owe {obligationLabel}
                             </span>
                           )
                         )}
@@ -152,7 +153,7 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : 'text-stone-900 dark:text-stone-100'
                       }`}>
-                        ${dollars}
+                        {totalLabel}
                       </p>
                       <button
                         onClick={() => onEdit(exp)}

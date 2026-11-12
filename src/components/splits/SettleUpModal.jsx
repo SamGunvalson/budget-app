@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { getPartnerId } from '../../services/partnerships';
+import { formatCurrency } from '../../utils/helpers';
 
 export default function SettleUpModal({ balance, currentUserId, partnership, partnerEmail, onSubmit, onCancel, loading }) {
   const absBalance = Math.abs(balance);
+  // Editable prefill: must stay the real amount (it is submitted), never masked.
   const [amountStr, setAmountStr] = useState((absBalance / 100).toFixed(2));
 
   // Positive balance → partner owes me → partner pays
@@ -32,9 +34,9 @@ export default function SettleUpModal({ balance, currentUserId, partnership, par
       <div className="rounded-xl border border-stone-100 bg-stone-50/50 px-4 py-3 dark:border-stone-700 dark:bg-stone-900/30">
         <p className="text-sm text-stone-500 dark:text-stone-400">
           {partnerOwes ? (
-            <><span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span> owes you <span className="font-semibold text-teal-600 dark:text-teal-400">${(absBalance / 100).toFixed(2)}</span></>
+            <><span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span> owes you <span className="font-semibold text-teal-600 dark:text-teal-400">{formatCurrency(absBalance)}</span></>
           ) : (
-            <>You owe <span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span> <span className="font-semibold text-red-500 dark:text-red-400">${(absBalance / 100).toFixed(2)}</span></>
+            <>You owe <span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span> <span className="font-semibold text-red-500 dark:text-red-400">{formatCurrency(absBalance)}</span></>
           )}
         </p>
       </div>

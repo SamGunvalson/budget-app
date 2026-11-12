@@ -15,7 +15,7 @@ Standalone Fastify service issuing HS256 JWTs (compatible with PostgREST using t
 | `PASSWORD_MIN_LENGTH` | `8` | max is 72 bytes |
 | `BCRYPT_COST` | `12` | |
 | `PORT` / `HOST` | `3001` / `0.0.0.0` | |
-| `TRUST_PROXY` | `true` | set `false` if not behind a proxy |
+| `TRUST_PROXY` | `loopback,linklocal,uniquelocal` | which peers may set `X-Forwarded-For`: comma-separated IPs/CIDRs/range names (e.g. the Nginx subnet), `false` if not behind a proxy, or `true` to trust any peer (only safe when the service is unreachable except through a proxy that overwrites the header). A bare hop count is accepted but Fastify then ignores `X-Forwarded-For`, so all clients share one rate-limit bucket |
 | `RATE_LIMIT_MAX` | `100` | per IP per window, global |
 | `AUTH_RATE_LIMIT_MAX` | `10` | per IP per window on `/token`, `/signup`, `/user/password` |
 | `RATE_LIMIT_WINDOW_MS` | `60000` | |

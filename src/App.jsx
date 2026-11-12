@@ -3,6 +3,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import SwipeableWrapper from './components/common/SwipeableWrapper';
 import { AuthProvider } from './contexts/AuthContext';
+import { SafeModeProvider } from './contexts/SafeModeContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import useSafeMode from './hooks/useSafeMode';
 import useRoutePreload from './hooks/useRoutePreload';
 import { getSupabaseBootstrapState } from './services/supabase';
 import {
@@ -34,6 +37,16 @@ function LoadingSpinner() {
 }
 
 /**
+ * Holds a protected page back (showing its skeleton) until the signed-in
+ * user's safe-mode preference has loaded, so amounts are never rendered
+ * unmasked for a user who has safe mode on.
+ */
+function SafeModeGate({ fallback, children }) {
+  const { isReady } = useSafeMode();
+  return isReady ? children : fallback;
+}
+
+/**
  * Phase 6: Per-page Suspense boundaries with skeleton fallbacks.
  * Each protected route gets its own <Suspense> with a layout-matched
  * skeleton so users see a meaningful placeholder instead of a generic spinner.
@@ -41,9 +54,11 @@ function LoadingSpinner() {
 function ProtectedPage({ fallback, children, serverReady }) {
   return (
     <ProtectedRoute serverReady={serverReady}>
-      <Suspense fallback={fallback}>
-        <SwipeableWrapper>{children}</SwipeableWrapper>
-      </Suspense>
+      <SafeModeGate fallback={fallback}>
+        <Suspense fallback={fallback}>
+          <SwipeableWrapper>{children}</SwipeableWrapper>
+        </Suspense>
+      </SafeModeGate>
     </ProtectedRoute>
   );
 }
@@ -143,16 +158,29 @@ function AppRoutes({ serverState, onServerConfigured }) {
  * Phase 6: AuthProvider wraps all routes. It hoists auth state into a shared
  * context and pre-warms caches on first auth (replacing the eager pullAll
  * that previously ran in the App useEffect on every mount).
+ *
+ * SafeModeProvider and ThemeProvider sit below AuthProvider because their
+ * preferences are per user and are (re)loaded when the signed-in user changes.
+ *
+ * Every successful server setup builds a new backend client (and possibly a
+ * different auth adapter), so AuthProvider is remounted via `key` to re-check
+ * the session and re-bind its auth listener to the current client.
  */
 function App() {
   const [serverState, setServerState] = useState(() => getSupabaseBootstrapState());
+  const [clientEpoch, setClientEpoch] = useState(0);
   const handleServerConfigured = useCallback(() => {
     setServerState(getSupabaseBootstrapState());
+    setClientEpoch((epoch) => epoch + 1);
   }, []);
 
   return (
-    <AuthProvider enabled={serverState.status === 'ready'}>
-      <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+    <AuthProvider key={clientEpoch} enabled={serverState.status === 'ready'}>
+      <SafeModeProvider>
+        <ThemeProvider>
+          <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+        </ThemeProvider>
+      </SafeModeProvider>
     </AuthProvider>
   );
 }

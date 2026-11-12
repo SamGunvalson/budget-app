@@ -119,7 +119,15 @@ export async function acceptInvite(partnershipId) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    // Raised by the partnerships_guard trigger / one-active-partnership indexes.
+    if (error.code === "23505") {
+      throw new Error(
+        "You or the person who invited you already has an active partnership.",
+      );
+    }
+    throw error;
+  }
   return data;
 }
 

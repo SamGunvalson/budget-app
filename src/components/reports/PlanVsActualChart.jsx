@@ -1,4 +1,4 @@
-import { formatCurrency, toDollars } from '../../utils/helpers';
+import { formatPreMaskedDollars, toDollars } from '../../utils/helpers';
 
 /**
  * A single metric row with a diverging bar chart anchored at the shared zero line.
@@ -14,8 +14,8 @@ function MetricRow({ label, planned, actual, actualColor, zeroPct, totalRange })
   const actBarWidth = (Math.abs(actual) / safeRange) * 100;
   const actBarLeft = actual >= 0 ? zeroPct : zeroPct - actBarWidth;
 
-  const plannedCents = Math.round(Math.abs(planned) * 100);
-  const actualCents = Math.round(Math.abs(actual) * 100);
+  // `planned` / `actual` were already masked once by toDollars() in the parent
+  // (so bar geometry stays scrambled in safe mode) — never mask them again.
   const planSign = planned < 0 ? '−' : '';
   const actSign = actual < 0 ? '−' : '';
 
@@ -26,10 +26,10 @@ function MetricRow({ label, planned, actual, actualColor, zeroPct, totalRange })
         <span className="text-sm font-medium text-stone-700 dark:text-stone-300">{label}</span>
         <div className="flex shrink-0 items-baseline gap-3 text-xs">
           <span className="text-stone-400 dark:text-stone-500">
-            Plan&nbsp;{planSign}{formatCurrency(plannedCents, 'USD', { hideCents: true })}
+            Plan&nbsp;{planSign}{formatPreMaskedDollars(Math.abs(planned), 'USD', { hideCents: true })}
           </span>
           <span className="font-semibold" style={{ color: actualColor }}>
-            Actual&nbsp;{actSign}{formatCurrency(actualCents, 'USD', { hideCents: true })}
+            Actual&nbsp;{actSign}{formatPreMaskedDollars(Math.abs(actual), 'USD', { hideCents: true })}
           </span>
         </div>
       </div>

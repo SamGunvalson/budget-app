@@ -251,11 +251,28 @@ Split configuration applies to non-transfer, non-group templates.
 | `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
 | `user_a_seen_at`, `user_b_seen_at` | TIMESTAMPTZ | Nullable notification watermarks |
 
-Unique active unordered user pair; unique pending inviter/email pair.
-Indexes cover both members and pending invited email.
+Unique active unordered user pair; unique pending inviter/email pair; at most
+one active partnership per `user_a_id` and per `user_b_id` (partial unique
+indexes). Indexes cover both members and pending invited email.
 SELECT/UPDATE/DELETE permit members or pending invitees matching the JWT email;
-INSERT requires the caller to be the inviter. UPDATE applies the same
-membership/invitation condition in `WITH CHECK`.
+INSERT requires the caller to be the inviter **and** the row to be a `pending`
+invite with `user_b_id` NULL. UPDATE applies the same membership/invitation
+condition in `WITH CHECK`.
+
+The `trg_partnerships_guard` trigger (`partnerships_guard()`, fixed-search-path
+SECURITY DEFINER, BEFORE INSERT OR UPDATE) enforces what RLS cannot:
+
+- `id`, `user_a_id`, `invited_email`, and `created_at` are immutable;
+- status may only go `pending` → `active` (by the invited user, whose JWT email
+  matches `invited_email` and who becomes `user_b_id`) or `active` → `dissolved`;
+  dissolved partnerships cannot be reactivated;
+- `user_b_id` changes only as part of an accept;
+- a pending invitee can accept but not otherwise update the row;
+- a user may be in at most one active partnership in either role (raises
+  `23505`).
+
+Writes without an end-user identity (database owner, service role) skip the
+transition rules but not the one-active-partnership rule.
 
 `get_partner_email(p_partnership_id UUID)` returns the inviter email only to
 `user_b` of that **active** partnership, otherwise NULL. It is a fixed-search-path
@@ -282,8 +299,13 @@ not a separate partner-email migration.
 Shares must sum to total amount. At most one live row per non-null transaction ID.
 Live-row indexes cover partnership/date, payer, and transaction.
 RLS scopes operations through partnership membership; inserts require an active
-partnership. SELECT/UPDATE `USING` excludes deleted rows; UPDATE `WITH CHECK`
-intentionally does not, allowing soft deletes.
+partnership. INSERT and UPDATE `WITH CHECK` also require `paid_by_user_id` to be
+a member of the partnership, and INSERT requires a non-null `transaction_id` to
+reference one of the caller's own transactions. The `trg_split_expenses_guard`
+trigger (`split_expenses_guard()`, BEFORE UPDATE) freezes `partnership_id` and
+`transaction_id` for end users (clearing `transaction_id` stays allowed).
+SELECT/UPDATE `USING` excludes
+deleted rows; UPDATE `WITH CHECK` intentionally does not, allowing soft deletes.
 
 Positive balance means the partner owes the current user. For ordinary expenses,
 add `partner_share` when the user paid and subtract it when the partner paid.
@@ -403,6 +425,7 @@ roles/auth first and grants last; historical repairs are excluded.
 | [migrations/supabase_partnership_seen.sql](../sql_scripts/migrations/supabase_partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
 | [migrations/supabase_split_dedup.sql](../sql_scripts/migrations/supabase_split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
 | [migrations/supabase_split_fix_rls.sql](../sql_scripts/migrations/supabase_split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
+| [migrations/supabase_partnership_hardening_rls.sql](../sql_scripts/migrations/supabase_partnership_hardening_rls.sql) | Pending-only partnership inserts, `partnerships_guard` trigger, one-active-partnership indexes, split payer/transaction checks; folded into split base and complete RLS |
 
 The [local SQL README](../sql_scripts/local/README.md) documents local roles,
 auth helpers, default grants, initialization, and the legacy local-fix entrypoint
@@ -418,6 +441,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.2
+**Document version**: 3.3
 
-**Last updated**: 2026-11-03
+**Last updated**: 2026-11-11

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toCents, toDollars, getTodayString } from '../../utils/helpers';
+import { toCents, toDollars, getTodayString, maskAccountName } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAccountClosed } from '../../services/accounts';
 
 const ACCOUNT_TYPE_GROUPS = [
@@ -60,7 +60,9 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
       if (acct) {
         setName(acct.name || '');
         setType(acct.type || 'checking');
-        setStartingBalance(String(toDollars(acct.starting_balance || 0)));
+        // raw: this value is edited and saved back, so it must never be the
+        // safe-mode scrambled number.
+        setStartingBalance(String(toDollars(acct.starting_balance || 0, { raw: true })));
       } else {
         setName('');
         setType('checking');
@@ -145,7 +147,7 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
           <option value="">── New Account ──</option>
           {accounts.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.name}{isAccountClosed(a) ? ' (Closed)' : ''}
+              {maskAccountName(a.name)}{isAccountClosed(a) ? ' (Closed)' : ''}
             </option>
           ))}
         </select>

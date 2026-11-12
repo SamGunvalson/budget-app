@@ -3,18 +3,16 @@ import {
   updateTransactionOffline as updateTransaction,
   deleteTransactionOffline as deleteTransaction,
   updateAsymmetricTransferOffline as updateAsymmetricTransfer,
+  updateTransferOffline as updateTransfer,
+  updateLinkedTransferOffline as updateLinkedTransfer,
+  updateAdjustmentOffline as updateAdjustment,
+  bulkUpdateTransactionsOffline as bulkUpdateTransactions,
+  bulkDeleteTransactionsOffline as bulkDeleteTransactions,
+  confirmTransactionOffline as confirmTransaction,
+  skipTransactionOffline as skipTransaction,
+  bulkConfirmTransactionsOffline as bulkConfirmTransactions,
+  bulkSkipTransactionsOffline as bulkSkipTransactions,
 } from "../services/offlineAware";
-import {
-  updateTransfer,
-  updateLinkedTransfer,
-  updateAdjustment,
-  bulkUpdateTransactions,
-  bulkDeleteTransactions,
-  confirmTransaction,
-  skipTransaction,
-  bulkConfirmTransactions,
-  bulkSkipTransactions,
-} from "../services/transactions";
 
 /**
  * Reusable hook that encapsulates transaction list management:

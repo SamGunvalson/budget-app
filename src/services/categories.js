@@ -39,13 +39,15 @@ export async function bulkUpdateSortOrder(items) {
  * @param {{ name: string, type: string, color: string }} category
  * @returns {Promise<Object>} Created category
  */
-export async function createCategory({ name, type, color }) {
+export async function createCategory({ name, type, color, id }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
   const { data, error } = await supabase
     .from("categories")
     .insert({
+      // Optional client-generated id so a retry of the same create is idempotent.
+      ...(id ? { id } : {}),
       user_id: user.id,
       name: name.trim(),
       type,

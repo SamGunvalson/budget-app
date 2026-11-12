@@ -10,7 +10,7 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import { toDollars, formatCurrency, formatAxisDollar, maskAccountName } from '../../utils/helpers';
+import { toCents, toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar, maskAccountName } from '../../utils/helpers';
 import { useAccountBalanceHistory } from '../../hooks/queries';
 import { isLiabilityAccount } from '../../services/accounts';
 
@@ -72,7 +72,7 @@ function CashflowTooltip({ active, payload, label, accountMap }) {
             {projected ? ' (proj)' : ''}:
           </span>
           <span className={`text-sm font-bold ${value < 0 ? 'text-red-600 dark:text-red-400' : 'text-stone-800 dark:text-stone-200'}`}>
-            {value < 0 ? '−' : ''}{formatCurrency(Math.abs(Math.round(value * 100)))}
+            {value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(value))}
           </span>
         </div>
       ))}
@@ -151,40 +151,43 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
       const row = { date: pt.date };
       const isFuture = pt.date > todayStr;
       const isToday = pt.date === todayStr;
-      let total = 0;
-      let totalProjOffset = 0;
+      // All maths is done in real integer cents; each plotted value is then
+      // masked exactly once by toDollars() (safe mode). The tooltip and axis
+      // use formatPreMasked* so they never mask a second time.
+      let totalCents = 0;
+      let totalProjOffsetCents = 0;
       for (const id of selectedAccountIds) {
-        const raw = toDollars(pt.balances?.[id] ?? 0);
-        const val = liabilityIds.has(id) ? -raw : raw;
+        const balanceCents = Number(pt.balances?.[id] ?? 0);
+        const valCents = liabilityIds.has(id) ? -balanceCents : balanceCents;
 
         // Accumulate playground offsets for this account at this chart date.
         // Offsets work in display-space (after liability negation) so the
         // formula is uniform: expense/transfer-from = −amount, income/transfer-to = +amount.
-        let projOffset = 0;
+        let projOffsetCents = 0;
         if ((isFuture || isToday) && playgroundItems.length) {
           for (const item of playgroundItems) {
             if (!item.date || !item.amount || item.date > pt.date) continue;
-            const amtDollars = parseFloat(item.amount) || 0;
-            if (amtDollars === 0) continue;
-            if (item.type === 'expense' && item.accountId === id) projOffset -= amtDollars;
-            else if (item.type === 'income' && item.accountId === id) projOffset += amtDollars;
+            const amtCents = toCents(parseFloat(item.amount) || 0);
+            if (amtCents === 0) continue;
+            if (item.type === 'expense' && item.accountId === id) projOffsetCents -= amtCents;
+            else if (item.type === 'income' && item.accountId === id) projOffsetCents += amtCents;
             else if (item.type === 'transfer') {
-              if (item.accountId === id) projOffset -= amtDollars;
-              if (item.toAccountId === id) projOffset += amtDollars;
+              if (item.accountId === id) projOffsetCents -= amtCents;
+              if (item.toAccountId === id) projOffsetCents += amtCents;
             }
           }
         }
 
         // Actual series: past + today; Projected series: today + future
         // Today appears in both so the lines connect.
-        row[id] = isFuture ? null : val;
-        row[`${id}_proj`] = (isFuture || isToday) ? val + projOffset : null;
-        total += val;
-        totalProjOffset += projOffset;
+        row[id] = isFuture ? null : toDollars(valCents);
+        row[`${id}_proj`] = (isFuture || isToday) ? toDollars(valCents + projOffsetCents) : null;
+        totalCents += valCents;
+        totalProjOffsetCents += projOffsetCents;
       }
       if (selectedAccountIds.length > 1) {
-        row.total = isFuture ? null : total;
-        row.total_proj = (isFuture || isToday) ? total + totalProjOffset : null;
+        row.total = isFuture ? null : toDollars(totalCents);
+        row.total_proj = (isFuture || isToday) ? toDollars(totalCents + totalProjOffsetCents) : null;
       }
       return row;
     });
@@ -300,7 +303,7 @@ export default function CashflowChart({ accounts = [], selectedAccountIds = [], 
               interval={tickInterval}
             />
             <YAxis
-              tickFormatter={formatAxisDollar}
+              tickFormatter={formatPreMaskedAxisDollar}
               tick={{ fill: '#78716c', fontSize: 11 }}
               axisLine={false}
               tickLine={false}

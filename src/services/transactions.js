@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { newId } from "../utils/ids";
 
 // Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
 // trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
@@ -55,6 +56,13 @@ export async function getTransactions({ month, year, status } = {}) {
   return allData;
 }
 
+// Optional client-generated ids for the two rows of a transfer, so a retry of
+// the same create is idempotent. A bulk insert needs every row to carry the
+// same keys, so ids are used only when both are supplied.
+function clientLegIds(firstId, secondId) {
+  return firstId && secondId ? [{ id: firstId }, { id: secondId }] : [{}, {}];
+}
+
 /**
  * Create a new transaction.
  * @param {{ account_id: string, category_id: string, amount: number, description: string, payee: string, transaction_date: string, is_income: boolean, status?: string, recurring_template_id?: string }} transaction
@@ -70,6 +78,7 @@ export async function createTransaction({
   is_income,
   status,
   recurring_template_id,
+  id,
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
@@ -86,6 +95,8 @@ export async function createTransaction({
   };
   if (status) row.status = status;
   if (recurring_template_id) row.recurring_template_id = recurring_template_id;
+  // Optional client-generated id so a retry of the same create is idempotent.
+  if (id) row.id = id;
 
   const { data, error } = await supabase
     .from("transactions")
@@ -115,6 +126,7 @@ export async function createAdjustment({
   transaction_date,
   is_income,
   status,
+  id,
 }) {
   const user = await getCurrentUser();
 
@@ -130,6 +142,7 @@ export async function createAdjustment({
     // Intentionally no transfer_group_id — single leg by design
   };
   if (status) row.status = status;
+  if (id) row.id = id;
 
   const { data, error } = await supabase
     .from("transactions")
@@ -168,9 +181,12 @@ export async function createTransfer({
   payee,
   transaction_date,
   category_id,
+  transfer_group_id = newId(),
+  outgoing_id,
+  incoming_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(outgoing_id, incoming_id);
 
   const baseTx = {
     user_id: user.id,
@@ -185,8 +201,8 @@ export async function createTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...baseTx, account_id: from_account_id, is_income: false },
-      { ...baseTx, account_id: to_account_id, is_income: true },
+      { ...baseTx, ...legIds[0], account_id: from_account_id, is_income: false },
+      { ...baseTx, ...legIds[1], account_id: to_account_id, is_income: true },
     ])
     .select("*, categories(id, name, color, type), accounts(id, name, type)");
   if (error) throw error;
@@ -218,9 +234,12 @@ export async function createLinkedTransfer({
   transaction_date,
   is_income,
   companion_amount,
+  transfer_group_id = newId(),
+  id,
+  companion_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(id, companion_id);
 
   // Resolve the "Account Transfer" category for the companion leg
   const { data: transferCats, error: catErr } = await supabase
@@ -255,9 +274,10 @@ export async function createLinkedTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...sharedFields, account_id, category_id, is_income, amount },
+      { ...sharedFields, ...legIds[0], account_id, category_id, is_income, amount },
       {
         ...sharedFields,
+        ...legIds[1],
         amount: companionAmt,
         account_id: linked_account_id,
         category_id: companionCategoryId,
@@ -491,9 +511,12 @@ export async function createAsymmetricTransfer({
   transaction_date,
   category_id,
   status,
+  transfer_group_id = newId(),
+  outgoing_id,
+  incoming_id,
 }) {
   const user = await getCurrentUser();
-  const transfer_group_id = crypto.randomUUID();
+  const legIds = clientLegIds(outgoing_id, incoming_id);
 
   const base = {
     user_id: user.id,
@@ -508,8 +531,8 @@ export async function createAsymmetricTransfer({
   const { data, error } = await supabase
     .from("transactions")
     .insert([
-      { ...base, account_id: from_account_id, amount: from_amount, is_income: false },
-      { ...base, account_id: to_account_id, amount: to_amount, is_income: true },
+      { ...base, ...legIds[0], account_id: from_account_id, amount: from_amount, is_income: false },
+      { ...base, ...legIds[1], account_id: to_account_id, amount: to_amount, is_income: true },
     ])
     .select("*, categories(id, name, color, type), accounts(id, name, type)");
   if (error) throw error;

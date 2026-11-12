@@ -5,6 +5,9 @@ import {
   CATEGORY_TYPE_LABELS,
   CATEGORY_TYPE_ORDER,
   isSettledTransaction,
+  resolveAmountOverride,
+  setSafeModeEnabled,
+  toDollars,
   toDateString,
 } from '../src/utils/helpers.js';
 
@@ -57,3 +60,28 @@ for (const timezone of ['UTC', 'America/Los_Angeles', 'Pacific/Auckland']) {
     assert.equal(result.status, 0, result.stderr);
   });
 }
+
+test('manual payment override: blank means no override, zero and junk are rejected', () => {
+  assert.deepEqual(resolveAmountOverride('', 5000), { amountOverride: null, error: null });
+  assert.deepEqual(resolveAmountOverride('   ', 5000), { amountOverride: null, error: null });
+  assert.deepEqual(resolveAmountOverride('50', 5000), { amountOverride: null, error: null });
+  assert.deepEqual(resolveAmountOverride('50.00', 5000), { amountOverride: null, error: null });
+  assert.deepEqual(resolveAmountOverride('42.10', 5000), { amountOverride: 4210, error: null });
+  assert.deepEqual(resolveAmountOverride('', 5000, true), { amountOverride: null, error: null });
+  assert.deepEqual(resolveAmountOverride('12', 5000, true), { amountOverride: null, error: null });
+  for (const bad of ['0', '0.00', '-5', 'abc', '0.001']) {
+    const result = resolveAmountOverride(bad, 5000);
+    assert.equal(result.amountOverride, null, bad);
+    assert.ok(result.error, bad);
+  }
+});
+
+test('raw toDollars is unaffected by safe mode so editable prefills round-trip', () => {
+  setSafeModeEnabled(true);
+  try {
+    assert.equal(toDollars(123456, { raw: true }), 1234.56);
+    assert.equal(Math.round(toDollars(123456, { raw: true }) * 100), 123456);
+  } finally {
+    setSafeModeEnabled(false);
+  }
+});

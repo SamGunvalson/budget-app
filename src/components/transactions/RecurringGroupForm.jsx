@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { newId } from '../../utils/ids';
 import AmountInput from '../common/AmountInput';
 import { categoryLabel, resolveCategoryId, selectableCategories } from '../../utils/categoryArchive';
 import { toCents, toDollars, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, formatCurrency, maskAccountName, getTodayString } from '../../utils/helpers';
@@ -11,7 +12,7 @@ import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalc
  */
 function blankChild(defaults = {}) {
   return {
-    _key: crypto.randomUUID(),
+    _key: newId(),
     id: null,
     txType: 'expense',
     description: '',
@@ -60,7 +61,7 @@ function getInitialFormValues(initialValues, isEditing) {
     autoConfirm: initialValues.auto_confirm !== false,
     children: initialValues.children?.length
       ? initialValues.children.map((child) => ({
-          _key: crypto.randomUUID(),
+          _key: newId(),
           id: child.id || null,
           txType: child.is_transfer ? 'transfer' : child.is_income ? 'income' : 'expense',
           description: child.description || '',

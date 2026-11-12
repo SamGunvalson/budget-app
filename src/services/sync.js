@@ -26,8 +26,10 @@
 import { supabase, getCurrentUser } from "./supabase";
 import {
   markSynced,
+  adoptServerRow,
   cacheTable,
   cacheTableIncremental,
+  dropUnchangedRows,
   getTableLastSynced,
   getTableRowCount,
 } from "./offlineDb";
@@ -80,6 +82,34 @@ export function requestSync({ skipPull = false } = {}) {
     _syncPromise = null;
   });
   return _syncPromise;
+}
+
+// ── Scheduled push ──
+//
+// A write that is queued while the app is online (its row was still pending,
+// or the backend call failed mid-flight) must not wait for the next `online`
+// or tab-visibility event. `schedulePush` coalesces a burst of such writes
+// into one push-only sync shortly afterwards.
+const PUSH_DEBOUNCE_MS = 1500;
+// After a push that failed, wait this long before a scheduled retry so a
+// row the server keeps rejecting (or an unreachable server) cannot turn
+// every local write into another round of failing requests.
+const PUSH_RETRY_MS = 30_000;
+let _pushTimer = null;
+let _lastPushErrorAt = null;
+
+export function schedulePush() {
+  if (_pushTimer) return;
+  const sinceError =
+    _lastPushErrorAt === null ? Infinity : Date.now() - _lastPushErrorAt;
+  const delay = Math.max(PUSH_DEBOUNCE_MS, PUSH_RETRY_MS - sinceError);
+  _pushTimer = setTimeout(async () => {
+    _pushTimer = null;
+    // A sync already in flight took its snapshot before these rows were
+    // queued (and may be busy pulling); let it finish, then push again.
+    if (_syncPromise) await _syncPromise.catch(() => {});
+    if (navigator.onLine) requestSync({ skipPull: true });
+  }, delay);
 }
 
 /**
@@ -196,6 +226,57 @@ export async function pullAll({ full = false } = {}) {
   }
 }
 
+// ── Watermarks ──
+//
+// The watermark is the `updated_at` value up to which a table has been
+// pulled; the next incremental pull asks for rows newer than it. It must
+// never run ahead of rows the pull has not seen, so:
+//
+//  * it is taken from before the fetch (rows committed while a long fetch is
+//    paging are picked up next time), never from the clock at the end;
+//  * it is the smaller of that local time and the newest `updated_at` the
+//    fetch returned, so a client clock that runs ahead cannot push it past
+//    the data. This one rule serves every table: where the server stamps
+//    `updated_at` by trigger (categories, budget_items, recurring_templates)
+//    the newest value seen is server time; on the other tables it is some
+//    client's clock, which is why it only ever lowers the watermark;
+//  * a margin is subtracted, so rows that commit slightly late or carry a
+//    slightly older timestamp are re-read instead of skipped. Re-read rows
+//    that are already mirrored are dropped by `dropUnchangedRows`.
+//
+// A writer whose clock lags by more than the margin on a table without a
+// server-side `updated_at` trigger can still be missed; only server
+// timestamps on those tables close that gap.
+const WATERMARK_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * @param {number} fetchStartedAt — local `Date.now()` from before the fetch
+ * @param {Array<{updated_at?: string}>} rows — the rows the fetch returned
+ * @returns {string} ISO timestamp to store as the table's watermark
+ */
+export function computeWatermark(fetchStartedAt, rows) {
+  let newest = null;
+  for (const row of rows) {
+    const at = row.updated_at ? Date.parse(row.updated_at) : NaN;
+    if (!Number.isNaN(at) && (newest === null || at > newest)) newest = at;
+  }
+  const upTo = newest === null ? fetchStartedAt : Math.min(fetchStartedAt, newest);
+  return new Date(upTo - WATERMARK_MARGIN_MS).toISOString();
+}
+
+/**
+ * The `updated_at` to pull from. A stored watermark that lies in this
+ * client's future (written while its clock ran ahead, or by an older
+ * version) is pulled back so it cannot hide rows indefinitely.
+ */
+export function pullSince(lastSynced, now) {
+  const stored = Date.parse(lastSynced);
+  const ceiling = now - WATERMARK_MARGIN_MS;
+  return Number.isNaN(stored) || stored > ceiling
+    ? new Date(ceiling).toISOString()
+    : lastSynced;
+}
+
 /**
  * Pull a single table incrementally. Falls back to a full pull when the
  * local cache is empty (cold) or `full` is set.
@@ -205,6 +286,7 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
   const lastSynced = full ? null : await getTableLastSynced(name);
   const localCount = await getTableRowCount(name);
   const isCold = localCount === 0;
+  const fetchStartedAt = Date.now();
 
   // Cold cache or explicit full → do a clearing pull and write watermark.
   if (full || isCold || !lastSynced) {
@@ -212,7 +294,9 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
       activeFilter,
       includeDeleted: false,
     });
-    await cacheTable(name, rows);
+    await cacheTable(name, rows, {
+      lastSynced: computeWatermark(fetchStartedAt, rows),
+    });
     notifyTable(name);
     return;
   }
@@ -222,7 +306,7 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
   const changed = await fetchAll(name, select, {
     activeFilter: null,
     includeDeleted: true,
-    updatedSince: lastSynced,
+    updatedSince: pullSince(lastSynced, fetchStartedAt),
   });
 
   if (!changed.length) {
@@ -242,21 +326,19 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
     else upserts.push(row);
   }
 
-  // Find the newest updated_at across the changed rows so we can advance
-  // the watermark precisely. Falls back to ISO-now when somehow no row has
-  // an updated_at (shouldn't happen — every table has the column).
-  let latest = null;
-  for (const r of changed) {
-    if (r.updated_at && (!latest || r.updated_at > latest)) {
-      latest = r.updated_at;
-    }
-  }
-
-  await cacheTableIncremental(name, upserts, {
+  // The margin makes each pull re-read the newest rows; only what actually
+  // differs from the mirror is written and announced.
+  const { rows: newRows, removedIds: newRemovedIds } = await dropUnchangedRows(
+    name,
+    upserts,
     removedIds,
-    latestUpdatedAt: latest,
+  );
+
+  await cacheTableIncremental(name, newRows, {
+    removedIds: newRemovedIds,
+    lastSynced: computeWatermark(fetchStartedAt, changed),
   });
-  notifyTable(name);
+  if (newRows.length || newRemovedIds.length) notifyTable(name);
 }
 
 // ── Internals ──
@@ -292,20 +374,63 @@ async function _doSync({ skipPull = false } = {}) {
 
     console.log(`[sync] Pushing ${total} offline changes…`);
 
-    for (const [tableName, rows] of allOps) {
-      for (const row of rows) {
-        try {
-          await pushRow(tableName, row);
-          await markSynced(tableName, row.id);
-        } catch (err) {
-          console.error(`[sync] Failed to sync ${tableName}/${row.id}:`, err);
-          _lastError = err.message || String(err);
-          // Continue with other rows — don't let one failure block everything
+    // A row changed again while its push was in flight keeps its offline
+    // flags (see markSynced). Push those rows again so the newer change is
+    // not left waiting for the next sync trigger; bounded so a row that is
+    // being edited continuously cannot keep the sync running.
+    // Local budget plan id → the server plan it turned out to be, for items
+    // in this run's snapshot that still carry the local id.
+    const planIds = new Map();
+    let ops = allOps;
+    let pushed = 0;
+    let failed = 0;
+    let leftChanged = false;
+    for (let pass = 0; pass < 3 && ops.length; pass++) {
+      const changedDuringPush = new Set();
+      for (const [tableName, rows] of ops) {
+        for (const row of rows) {
+          try {
+            const serverRow = await pushRow(tableName, row, planIds);
+            let cleared;
+            if (serverRow && serverRow.id !== row.id) {
+              // The server already held this record under another id.
+              if (tableName === "budget_plans") planIds.set(row.id, serverRow.id);
+              cleared = await adoptServerRow(tableName, row, serverRow);
+            } else {
+              cleared = await markSynced(tableName, row.id, row._offlineAt);
+            }
+            pushed++;
+            if (!cleared) changedDuringPush.add(`${tableName}/${row.id}`);
+          } catch (err) {
+            console.error(`[sync] Failed to sync ${tableName}/${row.id}:`, err);
+            _lastError = err.message || String(err);
+            _lastPushErrorAt = Date.now();
+            failed++;
+            // Continue with other rows — don't let one failure block everything
+          }
+          _syncProgress.done++;
+          notify();
         }
-        _syncProgress.done++;
-        notify();
       }
+
+      leftChanged = changedDuringPush.size > 0;
+      if (!leftChanged) break;
+      ops = Object.entries(await drainAll())
+        .map(([tableName, rows]) => [
+          tableName,
+          rows.filter((row) => changedDuringPush.has(`${tableName}/${row.id}`)),
+        ])
+        .filter(([, rows]) => rows.length);
+      for (const [, rows] of ops) _syncProgress.total += rows.length;
     }
+
+    // Rows are still queued. Push again later while runs keep making
+    // progress: a row that failed may succeed once the rows it depended on
+    // are through, or once a transient error has passed. `schedulePush`
+    // applies the back-off after a failure. A run in which nothing got
+    // through stops here and waits for the next trigger (reconnect, tab
+    // focus, another write) instead of retrying on a timer.
+    if (leftChanged || (failed > 0 && pushed > 0)) schedulePush();
 
     // After pushing, pull fresh data to reconcile server-side changes.
     // Phase 7: skip the pull on metered connections when the caller asked.
@@ -315,16 +440,40 @@ async function _doSync({ skipPull = false } = {}) {
   } catch (err) {
     console.error("[sync] Sync failed:", err);
     _lastError = err.message || String(err);
+    _lastPushErrorAt = Date.now();
   } finally {
     _syncing = false;
     notify();
   }
 }
 
+// Tables whose rows carry a NOT NULL `user_id` column. `budget_items` is
+// scoped through its parent `budget_plans` row and has no such column.
+const USER_SCOPED_TABLES = new Set([
+  "transactions",
+  "categories",
+  "accounts",
+  "budget_plans",
+  "user_preferences",
+  "recurring_templates",
+]);
+
 /**
- * Push a single offline record to Supabase.
+ * Build the payload sent to the backend for one pending offline row.
+ *
+ * Offline-created rows are stored with `user_id: null` because the offline
+ * wrappers have no user at hand. `user_id` is NOT NULL on the server, so a
+ * create must carry the current user's id, and an update must never send a
+ * null `user_id` (that would try to null the column).
+ *
+ * Pure so it can be unit-tested without a backend.
+ *
+ * @param {string} tableName
+ * @param {Object} row — the Dexie row, including offline metadata
+ * @param {string|null} userId — the signed-in user's id
+ * @returns {Object} the cleaned row
  */
-async function pushRow(tableName, row) {
+export function buildPushPayload(tableName, row, userId) {
   // Strip offline metadata before sending to Supabase
   const clean = { ...row };
   delete clean._offline;
@@ -339,12 +488,89 @@ async function pushRow(tableName, row) {
     delete clean.is_archived;
   }
 
+  if (USER_SCOPED_TABLES.has(tableName)) {
+    if (row._action === "create" && clean.user_id == null) {
+      if (!userId) {
+        throw new Error(
+          `Cannot sync ${tableName}/${row.id}: no signed-in user`,
+        );
+      }
+      clean.user_id = userId;
+    } else if (row._action === "update" && clean.user_id == null) {
+      delete clean.user_id;
+    }
+  }
+
+  return clean;
+}
+
+// Server-side natural keys (see NATURAL_KEYS in offlineDb.js): the conflict
+// target for pushing a row whose record may already exist under another id.
+const NATURAL_KEY_CONFLICT = {
+  user_preferences: "user_id,preference_key",
+  budget_plans: "user_id,month,year",
+  budget_items: "budget_plan_id,category_id",
+};
+
+// Upsert on the natural key. The payload carries neither `id` nor
+// `created_at`, so an existing server row keeps its primary key and creation
+// time. Returns the server row.
+async function upsertOnNaturalKey(tableName, clean) {
+  const payload = { ...clean };
+  delete payload.id;
+  delete payload.created_at;
+  const { data, error } = await supabase
+    .from(tableName)
+    .upsert(payload, { onConflict: NATURAL_KEY_CONFLICT[tableName] })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Push a single offline record to Supabase.
+ *
+ * @returns {Promise<Object|undefined>} the server row, when the push went
+ *   through a natural key and the server's id may differ from the local one
+ */
+async function pushRow(tableName, row, planIds = new Map()) {
   const action = row._action;
+  // A locally cached preference row may have a placeholder id and no
+  // user_id, so preferences are always matched on their natural key.
+  const byNaturalKey =
+    tableName === "user_preferences" &&
+    (action === "create" || action === "update");
+  const needsUser =
+    row.user_id == null &&
+    USER_SCOPED_TABLES.has(tableName) &&
+    (action === "create" || byNaturalKey);
+  const user = needsUser ? await getCurrentUser() : null;
+  const clean = buildPushPayload(tableName, row, user?.id ?? null);
+
+  if (tableName === "budget_items" && planIds.has(clean.budget_plan_id)) {
+    clean.budget_plan_id = planIds.get(clean.budget_plan_id);
+  }
+
+  if (byNaturalKey) {
+    if (clean.user_id == null) {
+      if (!user?.id) {
+        throw new Error(`Cannot sync ${tableName}/${row.id}: no signed-in user`);
+      }
+      clean.user_id = user.id;
+    }
+    return upsertOnNaturalKey(tableName, clean);
+  }
 
   if (action === "create") {
     const { error } = await supabase
       .from(tableName)
       .upsert(clean, { onConflict: "id" });
+    // 23505 here is a unique violation on something other than `id`: the
+    // server already holds this record under a different id.
+    if (error?.code === "23505" && NATURAL_KEY_CONFLICT[tableName]) {
+      return upsertOnNaturalKey(tableName, clean);
+    }
     if (error) throw error;
   } else if (action === "update") {
     const { id, ...updates } = clean;

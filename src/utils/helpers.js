@@ -79,6 +79,16 @@ export function formatAxisDollarSigned(v) {
   return `${val < 0 ? "-" : ""}$${Math.abs(val).toLocaleString()}`;
 }
 
+/**
+ * Axis formatter for chart values that were ALREADY masked when the chart
+ * data was built (i.e. produced by `toDollars(cents)` without `{ raw: true }`).
+ * Never masks again, so tick labels agree with the drawn geometry. Do not
+ * pass real (raw) dollars to this — use `formatAxisDollar` for those.
+ */
+export function formatPreMaskedAxisDollar(v) {
+  return `$${v.toLocaleString()}`;
+}
+
 // ── Category type constants (shared across components) ──
 
 export const CATEGORY_TYPE_ORDER = [
@@ -169,6 +179,26 @@ export const toCents = (dollars) => {
 };
 
 /**
+ * Resolve the optional "amount override" field of a manual recurring payment.
+ * An empty field means "no override" (null); zero, negative and non-numeric
+ * input is rejected rather than being recorded as a $0 payment.
+ * @param {string|number|null} input - Raw dollars as typed by the user
+ * @param {number} defaultCents - The template's default amount (absolute cents)
+ * @param {boolean} [isGroupParent=false] - Group parents never take an override
+ * @returns {{ amountOverride: number|null, error: string|null }}
+ */
+export const resolveAmountOverride = (input, defaultCents, isGroupParent = false) => {
+  if (isGroupParent) return { amountOverride: null, error: null };
+  const text = input == null ? '' : String(input).trim();
+  if (text === '') return { amountOverride: null, error: null };
+  const cents = toCents(text);
+  if (!Number.isFinite(cents) || cents <= 0) {
+    return { amountOverride: null, error: 'Enter an amount greater than zero, or leave it blank to use the default.' };
+  }
+  return { amountOverride: cents === defaultCents ? null : cents, error: null };
+};
+
+/**
  * Convert cents to dollars
  * @param {number} cents - Amount in cents
  * @param {object} [opts]
@@ -203,6 +233,29 @@ export const formatCurrency = (
     options.maximumFractionDigits = 0;
   }
   return new Intl.NumberFormat("en-US", options).format(dollars);
+};
+
+/**
+ * Format a dollar value that was ALREADY masked when it was computed (chart
+ * data built with `toDollars(cents)` without `{ raw: true }`). Never masks
+ * again, so chart labels/tooltips show the same number the geometry draws:
+ * `formatPreMaskedDollars(toDollars(c)) === formatCurrency(c)`.
+ * Do not pass real (raw) values to this — use `formatCurrency(cents)`.
+ * @param {number} maskedDollars - Dollars as returned by `toDollars(cents)`
+ * @param {string} currency - ISO currency code (default: 'USD')
+ * @returns {string} Formatted currency string
+ */
+export const formatPreMaskedDollars = (
+  maskedDollars,
+  currency = "USD",
+  { hideCents = false } = {},
+) => {
+  const options = { style: "currency", currency };
+  if (hideCents) {
+    options.minimumFractionDigits = 0;
+    options.maximumFractionDigits = 0;
+  }
+  return new Intl.NumberFormat("en-US", options).format(Number(maskedDollars));
 };
 
 /**

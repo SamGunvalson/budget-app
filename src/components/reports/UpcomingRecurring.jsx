@@ -3,7 +3,7 @@ import { addMonths, startOfDay, format } from 'date-fns';
 import { getRecurringTemplates, deleteRecurringTemplate, recordManualPayment } from '../../services/recurring';
 import RecurringCalendarView from './RecurringCalendarView';
 import { getOccurrencesInRange, formatSchedule, getNextOccurrence } from '../../utils/recurringCalculations';
-import { formatCurrency, formatDate, toDollars, toCents, maskAccountName } from '../../utils/helpers';
+import { formatCurrency, formatDate, toDollars, resolveAmountOverride, maskAccountName } from '../../utils/helpers';
 
 /**
  * UpcomingRecurring — report widget that shows:
@@ -111,7 +111,8 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
             dateStr: format(d, 'yyyy-MM-dd'),
             category: t.categories?.name || 'Uncategorized',
             categoryColor: t.categories?.color || '#A8A29E',
-            account: maskAccountName(t.accounts?.name || '—'),
+            // Raw name — masked at render so it tracks the safe-mode flag.
+            account: t.accounts?.name || '—',
           });
         } else {
           items.push({
@@ -125,8 +126,9 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
             dateStr: format(d, 'yyyy-MM-dd'),
             category: t.categories?.name || 'Uncategorized',
             categoryColor: t.categories?.color || '#A8A29E',
-            account: maskAccountName(t.accounts?.name || '—'),
-            toAccount: t.to_account?.name ? maskAccountName(t.to_account.name) : null,
+            // Raw names — masked at render so they track the safe-mode flag.
+            account: t.accounts?.name || '—',
+            toAccount: t.to_account?.name || null,
           });
         }
       }
@@ -140,7 +142,8 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
   const handleStartRecord = (template) => {
     setRecordingId(template.id);
     setRecordDate(format(new Date(), 'yyyy-MM-dd'));
-    setRecordAmount(String(toDollars(Math.abs(template.amount))));
+    // raw: the prefill is submitted back, so it must not be safe-mode scrambled.
+    setRecordAmount(String(toDollars(Math.abs(template.amount), { raw: true })));
   };
 
   const handleCancelRecord = () => {
@@ -151,13 +154,19 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
 
   const handleSubmitRecord = async (template) => {
     if (!recordDate) return;
-    setIsRecording(true);
     setError('');
+    const defaultCents = Math.abs(template.amount);
+    const { amountOverride, error: amountError } = resolveAmountOverride(
+      recordAmount,
+      defaultCents,
+      template.is_group_parent,
+    );
+    if (amountError) {
+      setError(amountError);
+      return;
+    }
+    setIsRecording(true);
     try {
-      const defaultCents = Math.abs(template.amount);
-      const inputCents = toCents(Math.abs(Number(recordAmount)));
-      const amountOverride =
-        !template.is_group_parent && inputCents !== defaultCents ? inputCents : null;
       const txs = await recordManualPayment(template, recordDate, amountOverride);
       setRecordingId(null);
       setRecordDate('');
@@ -662,7 +671,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
                     )}
                     {item.toAccount && (
                       <span className="text-xs text-blue-600 dark:text-blue-400">
-                        {item.account} → {item.toAccount}
+                        {maskAccountName(item.account)} → {maskAccountName(item.toAccount)}
                       </span>
                     )}
                   </div>

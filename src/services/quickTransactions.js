@@ -4,6 +4,7 @@ import {
   getCategoriesOffline,
 } from "./offlineAware";
 import { isAvailableCategory } from "../utils/categoryArchive";
+import { newId } from "../utils/ids";
 
 export const QUICK_TRANSACTION_TEMPLATES_KEY = "quick_transaction_templates";
 
@@ -20,7 +21,7 @@ export function normalizeQuickTransactionTemplates(value) {
         row.description,
     )
     .map((row, idx) => ({
-      id: row.id || crypto.randomUUID(),
+      id: row.id || newId(),
       label: row.label?.trim() || row.description?.trim() || "Quick Transaction",
       description: row.description?.trim() || "",
       payee: row.payee?.trim() || "",

@@ -137,7 +137,11 @@ CREATE POLICY "Members can view their partnerships"
 DROP POLICY IF EXISTS "Users can create partnership invites" ON partnerships;
 CREATE POLICY "Users can create partnership invites"
   ON partnerships FOR INSERT
-  WITH CHECK (auth.uid() = user_a_id);
+  WITH CHECK (
+    auth.uid() = user_a_id
+    AND status = 'pending'
+    AND user_b_id IS NULL
+  );
 
 DROP POLICY IF EXISTS "Members can update their partnerships" ON partnerships;
 CREATE POLICY "Members can update their partnerships"
@@ -184,17 +188,26 @@ DROP POLICY IF EXISTS "Members can insert split expenses" ON split_expenses;
 CREATE POLICY "Members can insert split expenses"
   ON split_expenses FOR INSERT
   WITH CHECK (
-    partnership_id IN (
-      SELECT id FROM partnerships
-      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
-        AND status = 'active'
+    EXISTS (
+      SELECT 1 FROM partnerships p
+      WHERE p.id = split_expenses.partnership_id
+        AND p.status = 'active'
+        AND auth.uid() IN (p.user_a_id, p.user_b_id)
+        AND split_expenses.paid_by_user_id IN (p.user_a_id, p.user_b_id)
+    )
+    AND (
+      split_expenses.transaction_id IS NULL
+      OR EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.id = split_expenses.transaction_id AND t.user_id = auth.uid()
+      )
     )
   );
 
 -- DROP + CREATE (not IF NOT EXISTS) so that re-running this script also fixes
 -- an incorrect policy that already exists on the database.
 -- Key invariant: USING requires deleted_at IS NULL (can only update live rows);
--- WITH CHECK only verifies partnership membership — it must NOT require
+-- WITH CHECK only verifies partnership membership (caller and payer) — it must NOT require
 -- deleted_at IS NULL, because soft-delete writes intentionally set that column.
 DROP POLICY IF EXISTS "Members can update split expenses" ON split_expenses;
 
@@ -208,9 +221,11 @@ CREATE POLICY "Members can update split expenses"
     )
   )
   WITH CHECK (
-    partnership_id IN (
-      SELECT id FROM partnerships
-      WHERE (user_a_id = auth.uid() OR user_b_id = auth.uid())
+    EXISTS (
+      SELECT 1 FROM partnerships p
+      WHERE p.id = split_expenses.partnership_id
+        AND auth.uid() IN (p.user_a_id, p.user_b_id)
+        AND split_expenses.paid_by_user_id IN (p.user_a_id, p.user_b_id)
     )
   );
 

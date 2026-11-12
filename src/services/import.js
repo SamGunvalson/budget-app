@@ -1,4 +1,5 @@
 import { supabase, getCurrentUser } from "./supabase";
+import { newId } from "../utils/ids";
 import { normalizeDate, normalizeAmount } from "../utils/csvParser";
 
 /**
@@ -63,6 +64,12 @@ export function validateAndTransform(
           field: "amount",
           message: "Empty amount",
         });
+      } else if (!Number.isInteger(cents) || cents < 0) {
+        rowErrors.push({
+          rowIndex: idx,
+          field: "amount",
+          message: "Not a valid amount",
+        });
       } else if (cents === 0) {
         rowErrors.push({
           rowIndex: idx,
@@ -93,19 +100,20 @@ export function validateAndTransform(
 
     // ── Account ──
     const csvAccount = String(row.csvAccount || "").trim();
+    // If no CSV account value is present, accountAssignments may have a
+    // special __default key for a pre-selected default account.
     const accountId = csvAccount
       ? accountAssignments[csvAccount] || null
-      : null;
-    if (!accountId && csvAccount) {
+      : accountAssignments["__default"] || null;
+    if (!accountId) {
+      // transactions.account_id is required; a null would fail the whole batch.
       rowErrors.push({
         rowIndex: idx,
         field: "account",
-        message: `No account matched for "${csvAccount}"`,
+        message: csvAccount
+          ? `No account matched for "${csvAccount}"`
+          : "No account assigned",
       });
-    } else if (!accountId && !csvAccount) {
-      // If no CSV account column was mapped, accountAssignments may have a
-      // special __default key for a pre-selected default account.
-      // This check is handled below after rowErrors.
     }
 
     // ── Category ──
@@ -124,6 +132,15 @@ export function validateAndTransform(
       categoryId = autoMatchCategory(description, categories, {
         payee,
         csvCategory: String(row.csvCategory || "").trim(),
+      });
+    }
+
+    if (!categoryId) {
+      // transactions.category_id is required; a null would fail the whole batch.
+      rowErrors.push({
+        rowIndex: idx,
+        field: "category",
+        message: "No category assigned",
       });
     }
 
@@ -155,8 +172,8 @@ export function validateAndTransform(
       description,
       payee,
       transaction_date: date,
-      category_id: categoryId || null,
-      account_id: accountId || accountAssignments["__default"] || null,
+      category_id: categoryId,
+      account_id: accountId,
       is_income: isIncome,
       _rowIndex: idx,
     });
@@ -384,6 +401,8 @@ export function detectTransferPairs(validRows, categories) {
  * @param {object[]} transactions - Transactions to check
  * @param {{ month?: number, year?: number }} dateRange - Optional range filter
  * @returns {Promise<object[]>} Array of { rowIndex, existingTransaction } for possible dupes
+ * @throws {Error} if existing transactions cannot be read — callers must not
+ *   treat a failed check as "no duplicates".
  */
 export async function checkDuplicates(transactions) {
   if (!transactions.length) return [];
@@ -409,7 +428,11 @@ export async function checkDuplicates(transactions) {
       .lte("transaction_date", maxDate)
       .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
-    if (error) return [];
+    if (error) {
+      throw new Error(
+        `Could not check for duplicates: ${error.message || "query failed"}`,
+      );
+    }
     existing = existing.concat(data);
     if (data.length < PAGE_SIZE) {
       hasMore = false;
@@ -438,6 +461,46 @@ export async function checkDuplicates(transactions) {
 }
 
 /**
+ * Group possible duplicates for review so a transfer pair is decided as one
+ * unit: if either leg is a duplicate, both legs are in the same group and are
+ * skipped or included together (skipping one leg would orphan the other).
+ *
+ * @param {object[]} valid - Validated transactions (with _rowIndex)
+ * @param {object[]} duplicates - checkDuplicates() result
+ * @param {Map<number, number>} [transferPairs] - _rowIndex → paired _rowIndex
+ * @returns {{ key: number, rows: object[] }[]} key is the lowest _rowIndex in the group
+ */
+export function groupDuplicatesForReview(
+  valid,
+  duplicates,
+  transferPairs = new Map(),
+) {
+  const byRowIndex = new Map(valid.map((tx) => [tx._rowIndex, tx]));
+  const partnerOf = new Map();
+  for (const [a, b] of transferPairs.entries()) {
+    partnerOf.set(a, b);
+    partnerOf.set(b, a);
+  }
+  const groups = [];
+  const seen = new Set();
+  for (const { rowIndex } of duplicates) {
+    if (seen.has(rowIndex) || !byRowIndex.has(rowIndex)) continue;
+    const rowIndexes = [rowIndex];
+    const pairedIdx = partnerOf.get(rowIndex);
+    if (pairedIdx !== undefined && byRowIndex.has(pairedIdx)) {
+      rowIndexes.push(pairedIdx);
+    }
+    rowIndexes.sort((a, b) => a - b);
+    rowIndexes.forEach((idx) => seen.add(idx));
+    groups.push({
+      key: rowIndexes[0],
+      rows: rowIndexes.map((idx) => byRowIndex.get(idx)),
+    });
+  }
+  return groups;
+}
+
+/**
  * Bulk insert validated transactions into Supabase.
  * Supports transfer pairing: if transferPairs Map is provided, paired rows
  * share a transfer_group_id.
@@ -459,12 +522,16 @@ export async function bulkInsertTransactions(
   // Pre-generate transfer_group_ids for paired rows
   const groupIdMap = new Map(); // _rowIndex → transfer_group_id
   const processedPairs = new Set();
+  const presentRows = new Set(transactions.map((tx) => tx._rowIndex));
   for (const [rowIdx, pairedIdx] of transferPairs.entries()) {
+    // A leg that failed validation or was skipped must not leave the other
+    // leg carrying a group id on its own.
+    if (!presentRows.has(rowIdx) || !presentRows.has(pairedIdx)) continue;
     const pairKey =
       Math.min(rowIdx, pairedIdx) + ":" + Math.max(rowIdx, pairedIdx);
     if (processedPairs.has(pairKey)) continue;
     processedPairs.add(pairKey);
-    const groupId = crypto.randomUUID();
+    const groupId = newId();
     groupIdMap.set(rowIdx, groupId);
     groupIdMap.set(pairedIdx, groupId);
   }
@@ -488,8 +555,9 @@ export async function bulkInsertTransactions(
   let failed = 0;
   const errors = [];
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
+  const batches = buildInsertBatches(rows, BATCH_SIZE);
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
     const { data, error } = await supabase
       .from("transactions")
       .insert(batch)
@@ -497,13 +565,50 @@ export async function bulkInsertTransactions(
 
     if (error) {
       failed += batch.length;
-      errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`);
+      errors.push(`Batch ${i + 1}: ${error.message}`);
     } else {
       inserted += data.length;
     }
   }
 
   return { inserted, failed, errors };
+}
+
+/**
+ * Split prepared rows into insert batches of at most batchSize, keeping rows
+ * that share a transfer_group_id in the same batch so a failed batch cannot
+ * leave one leg of a transfer inserted without the other.
+ *
+ * @param {object[]} rows - Insert-ready rows (transfer_group_id set or null)
+ * @param {number} batchSize
+ * @returns {object[][]}
+ */
+export function buildInsertBatches(rows, batchSize) {
+  // Group rows into units: a transfer group stays together, anything else is alone.
+  const units = [];
+  const unitByGroup = new Map();
+  for (const row of rows) {
+    const groupId = row.transfer_group_id;
+    if (groupId && unitByGroup.has(groupId)) {
+      unitByGroup.get(groupId).push(row);
+    } else {
+      const unit = [row];
+      if (groupId) unitByGroup.set(groupId, unit);
+      units.push(unit);
+    }
+  }
+
+  const batches = [];
+  let current = [];
+  for (const unit of units) {
+    if (current.length > 0 && current.length + unit.length > batchSize) {
+      batches.push(current);
+      current = [];
+    }
+    current.push(...unit);
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
 }
 
 /**
@@ -518,12 +623,16 @@ export function generateImportReport({
   errors,
   validRows = [],
   invalidRows = [],
+  skippedDuplicates = 0,
 }) {
   const lines = [
     "Import Report",
     `Date: ${new Date().toLocaleDateString()}`,
     `Successfully imported: ${inserted}`,
     `Failed: ${failed}`,
+    ...(skippedDuplicates > 0
+      ? [`Skipped as possible duplicates: ${skippedDuplicates}`]
+      : []),
     "",
   ];
 
@@ -537,7 +646,8 @@ export function generateImportReport({
     lines.push("--- Invalid Rows ---");
     lines.push("Row,Field,Error");
     invalidRows.forEach((e) => {
-      lines.push(`${e.rowIndex + 2},"${e.field}","${e.message}"`);
+      const rowLabel = e.rowIndex >= 0 ? e.rowIndex + 2 : "File";
+      lines.push(`${rowLabel},"${e.field}","${e.message}"`);
     });
     lines.push("");
   }

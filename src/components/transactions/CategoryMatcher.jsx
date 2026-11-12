@@ -10,13 +10,16 @@ import { normalizeDate, normalizeAmount } from '../../utils/csvParser';
  * Props:
  *  - mappedRows: object[] — { date, amount, description } raw values
  *  - categories: object[] — user's categories from DB
- *  - onConfirm(assignments, excludedRows, transferPairs): called when user confirms
+ *  - onConfirm(assignments, excludedRows, transferPairs, state): called when user confirms;
+ *    state is { manualOverrides, excludedRows, manualUnpairs } for initialState
  *  - onBack(): go to previous step
+ *  - initialState: optional state from a previous confirm of the same rows, so
+ *    returning to this step keeps the user's work
  */
-export default function CategoryMatcher({ mappedRows, categories, onConfirm, onBack }) {
+export default function CategoryMatcher({ mappedRows, categories, onConfirm, onBack, initialState = null }) {
   // manualOverrides: user-selected categories that override auto-match
-  const [manualOverrides, setManualOverrides] = useState({});
-  const [excludedRows, setExcludedRows] = useState(new Set());
+  const [manualOverrides, setManualOverrides] = useState(() => initialState?.manualOverrides ?? {});
+  const [excludedRows, setExcludedRows] = useState(() => initialState?.excludedRows ?? new Set());
   const [filter, setFilter] = useState('all'); // 'all' | 'matched' | 'unmatched' | 'excluded'
 
   // Auto-match categories from CSV category name or description keywords
@@ -51,7 +54,7 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
   }, [autoAssignments, manualOverrides]);
 
   // Detect transfer pairs after assignments are resolved
-  const [manualUnpairs, setManualUnpairs] = useState(new Set());
+  const [manualUnpairs, setManualUnpairs] = useState(() => initialState?.manualUnpairs ?? new Set());
 
   const transferPairs = useMemo(() => {
     // Build pseudo-validated rows with resolved category_id for pair detection
@@ -395,6 +398,12 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
         </p>
       )}
 
+      {unmatchedCount > 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-400">
+          {unmatchedCount} row{unmatchedCount !== 1 ? 's' : ''} still need{unmatchedCount === 1 ? 's' : ''} a category. Assign one or remove {unmatchedCount === 1 ? 'it' : 'them'} to continue.
+        </p>
+      )}
+
       {/* Actions */}
       <div className="flex gap-3 pt-2">
         <button
@@ -406,8 +415,8 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
         </button>
         <button
           type="button"
-          onClick={() => onConfirm(assignments, excludedRows, transferPairs)}
-          disabled={activeRows.length === 0}
+          onClick={() => onConfirm(assignments, excludedRows, transferPairs, { manualOverrides, excludedRows, manualUnpairs })}
+          disabled={activeRows.length === 0 || unmatchedCount > 0}
           className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
         >
           Import {activeRows.length} Transaction{activeRows.length !== 1 ? 's' : ''}

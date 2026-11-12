@@ -38,7 +38,6 @@ services:
       DATABASE_URL: postgres://auth_admin:${AUTH_ADMIN_PASSWORD}@db:5432/postgres
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (>= 32 chars)}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
-      TRUST_PROXY: "true"
     depends_on:
       db:
         condition: service_healthy

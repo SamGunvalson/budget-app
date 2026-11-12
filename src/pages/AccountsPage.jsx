@@ -28,7 +28,7 @@ import {
   useUpcomingTransactions,
 } from '../hooks/queries';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
-import { toCents } from '../utils/helpers';
+import { toCents, toDateString, maskAccountName } from '../utils/helpers';
 
 // ================================================
 // AccountsPage
@@ -49,9 +49,10 @@ export default function AccountsPage() {
   // debounced value that drives the queries so typing into the date picker
   // doesn't refetch on every keystroke.
   const defaultProjectedDate = useMemo(() => {
+    // Local calendar parts (not UTC) so the default is not a day off near midnight.
     const d = new Date();
-    d.setUTCDate(d.getUTCDate() + 30);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    d.setDate(d.getDate() + 30);
+    return toDateString(d);
   }, []);
   const [projectedToDate, setProjectedToDate] = useState(defaultProjectedDate);
   const [debouncedProjectedToDate, setDebouncedProjectedToDate] = useState(defaultProjectedDate);
@@ -321,7 +322,7 @@ export default function AccountsPage() {
                 <div>
                   <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
                     {negativeAssets.length === 1
-                      ? `"${negativeAssets[0].name}" has a negative balance`
+                      ? `"${maskAccountName(negativeAssets[0].name)}" has a negative balance`
                       : `${negativeAssets.length} asset accounts have negative balances`}
                   </p>
                   <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
@@ -374,7 +375,7 @@ export default function AccountsPage() {
                           : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-teal-300 hover:text-teal-700 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
                       }`}
                     >
-                      {acct.name}
+                      {maskAccountName(acct.name)}
                     </button>
                   );
                 })}

@@ -86,6 +86,10 @@ and Nginx. Preserve these deployment invariants:
   database only as SHA-256 hashes, and reuse of a revoked token revokes its token
   family. Passwords are bcrypt-hashed.
 - The auth service applies per-IP rate limits and per-email failed-login lockout.
+  Nginx overwrites (never appends to) `X-Forwarded-For` for the auth upstream,
+  and the auth service honors that header only from private-range peers
+  (`TRUST_PROXY`). Do not publish the auth port or set `TRUST_PROXY=true` on a
+  directly reachable service.
   Keep these protections enabled; do not expose the service directly.
 - The `anon` role has no public table, sequence, or function grants (it has only
   schema/helper access). `authenticated` access is constrained by RLS.
