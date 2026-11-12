@@ -333,8 +333,6 @@ BEGIN
         is_group_parent = false,
         is_active       = true
       WHERE id = v_child_id AND user_id = v_user_id;
-
-      v_kept_ids := array_append(v_kept_ids, v_child_id);
     ELSE
       INSERT INTO recurring_templates (
         user_id, account_id, category_id, description, payee, amount, is_income,
@@ -370,8 +368,13 @@ BEGIN
         NULLIF(v_child->>'split_method',''),
         NULLIF(v_child->>'split_payer',''),
         NULLIF(v_child->>'split_partner_share_pct','')::int
-      );
+      )
+      RETURNING id INTO v_child_id;
     END IF;
+
+    -- Track every child that survives this call, inserted ones included, so
+    -- the cleanup below does not deactivate a row it just created.
+    v_kept_ids := array_append(v_kept_ids, v_child_id);
 
     v_idx := v_idx + 1;
   END LOOP;
