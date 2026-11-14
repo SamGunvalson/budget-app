@@ -1,5 +1,5 @@
 import { useState, Fragment, useMemo } from 'react';
-import { categoriesForBudget, categoryLabel, isAvailableCategory } from '../../utils/categoryArchive';
+import { budgetCategoryIds, categoriesForBudget, categoryLabel, isAvailableCategory } from '../../utils/categoryArchive';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
@@ -648,11 +648,11 @@ export default function AnnualBudgetTable() {
         if (val && val !== 0) ids.add(id);
       });
     });
-    categories.filter((c) => c.is_archived).forEach((category) => {
-      if (Object.values(annualBudgetQuery.data ?? {}).some((data) =>
-        Object.hasOwn(data.allocations ?? {}, category.id),
-      )) ids.add(category.id);
-    });
+    // Archived categories stay visible only where a saved month has a non-zero
+    // amount ($0 items are written for every category on save).
+    const savedIds = budgetCategoryIds(annualBudgetQuery.data ?? {});
+    categories.filter((c) => c.is_archived && savedIds.has(c.id))
+      .forEach((category) => ids.add(category.id));
     return ids;
   }, [monthData, categories, annualBudgetQuery.data]);
 

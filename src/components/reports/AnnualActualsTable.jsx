@@ -10,6 +10,7 @@ import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
 import useAvailableYears from '../../hooks/useAvailableYears';
+import { budgetCategoryIds } from '../../utils/categoryArchive';
 import {
   useAnnualBudgetData,
   useCategories,
@@ -193,7 +194,7 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
   // ── Group categories by type (exclude transfers) ──
   const activityIds = new Set([
     ...transactions.map((tx) => tx.category_id),
-    ...Object.values(budgetData).flatMap((data) => Object.keys(data.allocations ?? {})),
+    ...budgetCategoryIds(budgetData),
   ]);
   const budgetableCategories = categories.filter((c) =>
     c.type !== 'transfer' && (!c.is_archived || activityIds.has(c.id)),
