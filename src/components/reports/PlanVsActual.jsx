@@ -119,8 +119,7 @@ export default function PlanVsActual({
       const activityIds = new Set(rawTransactions.map((tx) => tx.category_id));
       const archivedIds = new Set(allCategories.filter((c) => c.is_archived).map((c) => c.id));
       return (data.categories || [])
-        .filter((c) => c.planned > 0 || c.actual !== 0 ||
-          activityIds.has(c.categoryId) || archivedIds.has(c.categoryId))
+        .filter((c) => c.planned > 0 || c.actual !== 0 || activityIds.has(c.categoryId))
         .map((c) => archivedIds.has(c.categoryId)
           ? { ...c, categoryName: `${c.categoryName} (Archived)` } : c);
     },
