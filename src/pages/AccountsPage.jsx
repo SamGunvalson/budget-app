@@ -8,6 +8,8 @@ const CashflowChart = lazy(() => import('../components/accounts/CashflowChart'))
 import AvailableToSpend from '../components/accounts/AvailableToSpend';
 import UpcomingTransactions from '../components/accounts/UpcomingTransactions';
 import TestTransactions from '../components/accounts/TestTransactions';
+import CashflowSummary from '../components/accounts/CashflowSummary';
+import CashflowAccountSetup from '../components/accounts/CashflowAccountSetup';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
 import useSessionState from '../hooks/useSessionState';
@@ -20,15 +22,41 @@ import {
   pauseRecurringTemplateOffline as pauseTemplate,
   resumeRecurringTemplateOffline as resumeTemplate,
   getTemplatesForAccountOffline as getTemplatesForAccount,
+  setUserPreferenceOffline,
 } from '../services/offlineAware';
 import {
   useAccountBalances,
   useNetWorthHistory,
   useMaxProjectedDate,
-  useUpcomingTransactions,
+  useUserPreference,
 } from '../hooks/queries';
+import useCashflowScenario, { toEngineItems } from '../hooks/useCashflowScenario';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
-import { toCents, toDateString, maskAccountName } from '../utils/helpers';
+import { itemLegs, itemSettlementInfo, settlementPayer } from '../utils/cashflowScenario';
+import { toDateString, maskAccountName } from '../utils/helpers';
+
+const CASHFLOW_SETTINGS_KEY = 'cashflow_settings';
+const EMPTY_SETTINGS = { roles: {}, cushion: 0 };
+
+function SectionToggle({ open, onToggle, title, badge, icon }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={`flex w-full items-center justify-between border border-stone-200/60 bg-stone-50/60 px-4 py-3 text-left transition-colors hover:bg-stone-100/60 dark:border-stone-700/60 dark:bg-stone-800/40 dark:hover:bg-stone-700/40 ${open ? 'rounded-t-xl' : 'rounded-xl'}`}
+    >
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">{title}</span>
+        {badge}
+      </div>
+      <svg className={`h-4 w-4 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+      </svg>
+    </button>
+  );
+}
 
 // ================================================
 // AccountsPage
@@ -61,33 +89,135 @@ export default function AccountsPage() {
   // Cashflow state
   const [cashflowAccountIds, setCashflowAccountIds] = useSessionState('cashflowAccountIds', []);
 
-  // Playground state (lifted so chart + available-to-spend can consume it)
-  const [playgroundItems, setPlaygroundItems] = useState([]);
-  const [showPlayground, setShowPlayground] = useState(false);
+  // Playground state lives here (and in sessionStorage) so items survive
+  // collapsing the panel, switching tabs, and in-app navigation.
+  const [playgroundItems, setPlaygroundItems] = useSessionState('cashflowPlaygroundItems', []);
+  const [showPlayground, setShowPlayground] = useSessionState('cashflowShowPlayground', false);
+  const [showSetup, setShowSetup] = useSessionState('cashflowShowSetup', false);
+  const [cashflowRange, setCashflowRange] = useSessionState('cashflowRange', '3m');
+
+  // Account roles + safety cushion (global, saved as a user preference).
+  const settingsQuery = useUserPreference(CASHFLOW_SETTINGS_KEY);
+  const [pendingSettings, setPendingSettings] = useState(null);
+  const cashflowSettings = pendingSettings ?? { ...EMPTY_SETTINGS, ...(settingsQuery.data || {}) };
 
   // ── react-query data ─────────────────────────────────────────────────────
   const balancesQuery = useAccountBalances({ projectedToDate: debouncedProjectedToDate });
   const nwQuery = useNetWorthHistory({ projectedToDate: debouncedProjectedToDate });
   const maxDateQuery = useMaxProjectedDate();
-  const upcomingQuery = useUpcomingTransactions(
-    { accountIds: cashflowAccountIds, endDate: debouncedProjectedToDate },
-    { enabled: activeSection === 'cashflow' && cashflowAccountIds.length > 0 },
-  );
 
-  const accounts = balancesQuery.data ?? [];
+  const accounts = useMemo(() => balancesQuery.data ?? [], [balancesQuery.data]);
   const isLoading = balancesQuery.isLoading;
   const chartData = nwQuery.data?.history ?? nwQuery.data ?? [];
   const projectedChartData = nwQuery.data?.projectedFuture ?? [];
   const chartLoading = nwQuery.isLoading;
   const maxProjectedDate = maxDateQuery.data ?? null;
-  // Stabilise the upcomingTx array reference so the mergedUpcomingTx useMemo
-  // below doesn't recompute on every render of this page.
-  const upcomingTx = useMemo(() => upcomingQuery.data ?? [], [upcomingQuery.data]);
-  const upcomingLoading = upcomingQuery.isLoading;
+
+  const cashflow = useCashflowScenario({
+    accounts,
+    chartAccountIds: cashflowAccountIds,
+    items: playgroundItems,
+    settings: cashflowSettings,
+    range: cashflowRange,
+    projectedToDate: debouncedProjectedToDate,
+    enabled: activeSection === 'cashflow',
+  });
+  const scenarioResult = cashflow.result;
+  const openAccounts = useMemo(() => accounts.filter((a) => !a.closed_at), [accounts]);
+  const accountById = useMemo(() => Object.fromEntries(accounts.map((a) => [a.id, a])), [accounts]);
+  const hasEnabledItems = playgroundItems.some((i) => i.enabled !== false && parseFloat(i.amount) > 0);
+
+  const unsetCards = useMemo(
+    () => openAccounts.filter((a) => cashflow.roles[a.id] === 'card' && !settlementPayer(a, accountById)),
+    [openAccounts, cashflow.roles, accountById],
+  );
+
+  const settlementInfo = useMemo(() => {
+    const info = {};
+    const settlements = scenarioResult?.scenario.settlements ?? [];
+    for (const item of toEngineItems(playgroundItems)) {
+      const result = itemSettlementInfo(item, accountById, settlements);
+      if (result) info[item.id] = result;
+    }
+    return info;
+  }, [playgroundItems, accountById, scenarioResult]);
+
+  // Upcoming list: real rows for the chart accounts, with placeholder card
+  // payments annotated, plus forecast-only rows for test items and generated
+  // statement payments.
+  const upcomingRows = useMemo(() => {
+    const todayStr = cashflow.todayStr;
+    const settlements = scenarioResult?.scenario.settlements ?? [];
+    const replacedByGroup = new Map();
+    for (const s of settlements) {
+      s.replaced.forEach((r, i) => {
+        const tx = cashflow.upcoming.find((t) => t.id === r.id);
+        if (tx?.transfer_group_id) replacedByGroup.set(tx.transfer_group_id, i === 0 ? s.amount : 0);
+      });
+    }
+    const real = cashflow.upcoming
+      .filter((tx) => cashflowAccountIds.includes(tx.account_id))
+      .map((tx) => (replacedByGroup.has(tx.transfer_group_id)
+        ? { ...tx, _replacedWith: replacedByGroup.get(tx.transfer_group_id) }
+        : tx));
+
+    const nameOf = (id) => ({ id, name: accountById[id]?.name || 'Account' });
+    const synthetic = [];
+    for (const leg of itemLegs(toEngineItems(playgroundItems), accountById)) {
+      if (leg.date < todayStr || (leg.transfer && !leg.out)) continue;
+      const item = playgroundItems.find((i) => i.id === leg.itemId);
+      const to = leg.transfer ? accountById[item?.toAccountId]?.name : null;
+      synthetic.push({
+        id: `test-${leg.itemId}`,
+        transaction_date: leg.date,
+        description: `${item?.description || (leg.transfer ? 'Transfer' : 'Test item')}${to ? ` → ${maskAccountName(to)}` : ''}`,
+        amount: leg.amount,
+        is_income: !leg.out,
+        account_id: leg.accountId,
+        accounts: nameOf(leg.accountId),
+        _synthetic: 'hypothetical',
+      });
+    }
+    for (const s of settlements) {
+      if (s.replaced.length || s.amount <= 0 || s.paymentDate < todayStr) continue;
+      synthetic.push({
+        id: `settle-${s.cardId}-${s.closeDate}`,
+        transaction_date: s.paymentDate,
+        description: `${maskAccountName(accountById[s.cardId]?.name || 'Card')} statement payment`,
+        amount: s.amount,
+        is_income: false,
+        account_id: s.payerId,
+        accounts: nameOf(s.payerId),
+        _synthetic: 'settlement',
+      });
+    }
+    return [...real, ...synthetic].sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+  }, [cashflow.upcoming, cashflow.todayStr, cashflowAccountIds, scenarioResult, playgroundItems, accountById]);
+
+  async function saveCashflowSettings(next) {
+    setPendingSettings(next);
+    try {
+      await setUserPreferenceOffline(CASHFLOW_SETTINGS_KEY, next);
+      // Saved and the preference query is invalidated; read from it again.
+      setPendingSettings(null);
+    } catch (err) {
+      setMutationError(err?.message || 'Failed to save cashflow settings.');
+    }
+  }
+
+  function handleRoleChange(accountId, role) {
+    saveCashflowSettings({ ...cashflowSettings, roles: { ...cashflowSettings.roles, [accountId]: role } });
+  }
+
+  function handleCushionChange(cents) {
+    saveCashflowSettings({ ...cashflowSettings, cushion: cents });
+  }
+
   const loadError =
     mutationError ||
     balancesQuery.error?.message ||
     nwQuery.error?.message ||
+    (activeSection === 'cashflow' ? cashflow.error?.message : '') ||
     '';
 
   // Favorite account ids — not yet in react-query (single user pref). Loaded once.
@@ -98,25 +228,6 @@ export default function AccountsPage() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-
-  // Merge real upcoming transactions with playground items for AvailableToSpend
-  const mergedUpcomingTx = useMemo(() => {
-    const synthetic = [];
-    for (const item of playgroundItems) {
-      if (!item.accountId || !item.amount || !item.date) continue;
-      const amtCents = toCents(item.amount);
-      if (amtCents === 0) continue;
-      if (item.type === 'expense') {
-        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: false, transaction_date: item.date });
-      } else if (item.type === 'income') {
-        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: true, transaction_date: item.date });
-      } else if (item.type === 'transfer' && item.toAccountId) {
-        synthetic.push({ account_id: item.accountId, amount: amtCents, is_income: false, transaction_date: item.date });
-        synthetic.push({ account_id: item.toAccountId, amount: amtCents, is_income: true, transaction_date: item.date });
-      }
-    }
-    return [...upcomingTx, ...synthetic];
-  }, [upcomingTx, playgroundItems]);
 
   useEffect(() => { document.title = 'Budget App | Accounts'; }, []);
 
@@ -359,7 +470,7 @@ export default function AccountsPage() {
             {/* Account selector chips */}
             <div className="mb-4">
               <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
-                Select Accounts
+                Chart Accounts
               </p>
               <div className="flex flex-wrap gap-2">
                 {accounts.filter((a) => !a.closed_at).map((acct) => {
@@ -396,6 +507,17 @@ export default function AccountsPage() {
               </div>
             </div>
 
+            {/* Can I afford it? */}
+            {scenarioResult && Object.values(scenarioResult.roles).includes('cash') && (
+              <CashflowSummary
+                summary={scenarioResult.summary}
+                hasItems={hasEnabledItems}
+                unsetCards={unsetCards}
+                onCushionChange={handleCushionChange}
+                onManageAccounts={() => setShowManagerModal(true)}
+              />
+            )}
+
             {/* Cashflow chart */}
             <Suspense
               fallback={
@@ -404,69 +526,96 @@ export default function AccountsPage() {
             >
               <CashflowChart
                 accounts={accounts}
-                selectedAccountIds={cashflowAccountIds}
-                playgroundItems={playgroundItems}
-                projectedToDate={debouncedProjectedToDate}
+                chartAccountIds={cashflowAccountIds}
+                result={scenarioResult}
+                hasItems={hasEnabledItems}
+                todayStr={cashflow.todayStr}
+                range={cashflowRange}
+                onRangeChange={setCashflowRange}
+                isLoading={cashflow.isLoading}
               />
             </Suspense>
 
-            {/* Available to spend */}
-            {!isLoading && (
-              <AvailableToSpend
-                accounts={accounts}
-                selectedAccountIds={cashflowAccountIds}
-                upcomingTransactions={mergedUpcomingTx}
-              />
-            )}
-
             {/* ── Test Transactions (collapsible) ── */}
             <div className="mt-6">
-              <button
-                type="button"
-                onClick={() => setShowPlayground((v) => !v)}
-                className="flex w-full items-center justify-between rounded-xl border border-stone-200/60 bg-stone-50/60 px-4 py-3 text-left transition-colors hover:bg-stone-100/60 dark:border-stone-700/60 dark:bg-stone-800/40 dark:hover:bg-stone-700/40"
-              >
-                <div className="flex items-center gap-2">
+              <SectionToggle
+                open={showPlayground}
+                onToggle={() => setShowPlayground((v) => !v)}
+                title="Test Transactions"
+                icon={(
                   <svg className="h-4 w-4 text-teal-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
                   </svg>
-                  <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">Test Transactions</span>
-                  {playgroundItems.length > 0 && (
-                    <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:bg-teal-900/40 dark:text-teal-400">
-                      {playgroundItems.length}
-                    </span>
-                  )}
-                </div>
-                <svg
-                  className={`h-4 w-4 text-stone-400 transition-transform ${showPlayground ? 'rotate-180' : ''}`}
-                  fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                </svg>
-              </button>
+                )}
+                badge={playgroundItems.length > 0 && (
+                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:bg-teal-900/40 dark:text-teal-400">
+                    {playgroundItems.filter((i) => i.enabled !== false).length}/{playgroundItems.length}
+                  </span>
+                )}
+              />
               {showPlayground && (
                 <div className="rounded-b-xl border border-t-0 border-stone-200/60 bg-white/60 px-4 pb-4 dark:border-stone-700/60 dark:bg-stone-800/30">
                   <TestTransactions
-                    accounts={accounts}
+                    accounts={openAccounts}
+                    items={playgroundItems}
                     onItemsChange={setPlaygroundItems}
+                    settlementInfo={settlementInfo}
                   />
                 </div>
               )}
             </div>
 
-            {/* Upcoming transactions */}
-            {!upcomingLoading && (
-              <UpcomingTransactions
-                transactions={upcomingTx}
-                onViewTransaction={(accountId) => navigate(`/app/transactions?account=${accountId}`)}
+            {/* ── Account setup (collapsible) ── */}
+            <div className="mt-3">
+              <SectionToggle
+                open={showSetup}
+                onToggle={() => setShowSetup((v) => !v)}
+                title="Account Setup"
+                icon={(
+                  <svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+                  </svg>
+                )}
+                badge={unsetCards.length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                    {unsetCards.length} card{unsetCards.length === 1 ? '' : 's'} to set up
+                  </span>
+                )}
+              />
+              {showSetup && (
+                <div className="rounded-b-xl border border-t-0 border-stone-200/60 bg-white/60 px-4 pb-4 dark:border-stone-700/60 dark:bg-stone-800/30">
+                  <CashflowAccountSetup
+                    accounts={openAccounts}
+                    roles={cashflow.roles}
+                    onRoleChange={handleRoleChange}
+                    onManageAccounts={() => setShowManagerModal(true)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Per-account outlook */}
+            {!isLoading && (
+              <AvailableToSpend
+                accounts={accounts}
+                chartAccountIds={cashflowAccountIds}
+                result={scenarioResult}
+                todayStr={cashflow.todayStr}
               />
             )}
-            {upcomingLoading && (
+
+            {/* Upcoming transactions */}
+            {cashflow.isLoading ? (
               <div className="mt-6 space-y-2">
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="h-12 animate-pulse rounded-xl bg-stone-100 dark:bg-stone-700/50" />
                 ))}
               </div>
+            ) : (
+              <UpcomingTransactions
+                transactions={upcomingRows}
+                onViewTransaction={(accountId) => navigate(`/app/transactions?account=${accountId}`)}
+              />
             )}
           </>
         )}

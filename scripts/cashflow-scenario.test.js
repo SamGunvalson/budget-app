@@ -5,6 +5,7 @@ import {
   clampedDate,
   headroomFrom,
   itemLegs,
+  itemSettlementInfo,
   resolveAccountRoles,
   settlementPayer,
   statementCycles,
@@ -253,4 +254,21 @@ test("headroom looks only at the chosen date and later", () => {
   assert.equal(headroomFrom([100, 50, 300], dates, "2026-11-17", 20), 30);
   assert.equal(headroomFrom([100, 50, 300], dates, "2026-11-19", 20), 280);
   assert.equal(headroomFrom([100], ["2026-11-17"], "2027-01-01", 0), null);
+});
+
+test("item settlement info says when a card charge is paid", () => {
+  const byId = { chk: checking, visa: cardA, bare: { id: "bare", type: "credit_card" } };
+  const series = makeSeries("2026-11-01", "2026-12-31", { chk: 500000, visa: 0, bare: 0 });
+  const items = [
+    { id: 1, type: "expense", accountId: "visa", amount: 100000, date: "2026-11-20" },
+    { id: 2, type: "expense", accountId: "visa", amount: 100000, date: "2026-12-23" },
+    { id: 3, type: "expense", accountId: "bare", amount: 100000, date: "2026-11-20" },
+    { id: 4, type: "expense", accountId: "chk", amount: 100000, date: "2026-11-20" },
+  ];
+  const result = buildCashflowScenario({ accounts: Object.values(byId), series, items, todayStr: TODAY });
+  const info = (i) => itemSettlementInfo(items[i], byId, result.scenario.settlements);
+  assert.deepEqual(info(0), { status: "settles", closeDate: "2026-11-22", paymentDate: "2026-12-17", payerId: "chk" });
+  assert.deepEqual(info(1), { status: "after-range", closeDate: "2027-01-22", dueDate: "2027-02-17", payerId: "chk" });
+  assert.deepEqual(info(2), { status: "not-set-up" });
+  assert.equal(info(3), null);
 });

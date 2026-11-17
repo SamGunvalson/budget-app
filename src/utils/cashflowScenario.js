@@ -395,3 +395,30 @@ export function buildCashflowScenario({
     },
   };
 }
+
+/**
+ * When a hypothetical card charge gets paid, for the item list.
+ * Returns null for items that are not charges on a card, otherwise
+ *  { status: 'settles', closeDate, paymentDate, payerId }  — paid within the range
+ *  { status: 'after-range', closeDate, dueDate, payerId }  — statement known, payment past the range
+ *  { status: 'not-set-up' }                                 — card has no usable cycle
+ */
+export function itemSettlementInfo(item, accountsById = {}, settlements = []) {
+  const account = accountsById[item?.accountId];
+  if (!item?.date || !account || isAssetType(account.type) || item.type !== "expense") return null;
+  const payer = settlementPayer(account, accountsById);
+  if (!payer) return { status: "not-set-up" };
+  const { y, m } = parts(item.date);
+  const [cycle] = statementCycles({
+    closeDay: account.statement_close_day,
+    dueDay: account.payment_due_day,
+    from: item.date,
+    to: clampedDate(y, m + 1, 31),
+  });
+  if (!cycle) return { status: "not-set-up" };
+  const match = settlements.find((s) => s.cardId === account.id && s.closeDate === cycle.closeDate);
+  if (match && match.amount > 0) {
+    return { status: "settles", closeDate: cycle.closeDate, paymentDate: match.paymentDate, payerId: match.payerId };
+  }
+  return { status: "after-range", closeDate: cycle.closeDate, dueDate: cycle.dueDate, payerId: payer.id };
+}

@@ -409,6 +409,31 @@ export async function getUpcomingTransactions({ accountIds, endDate }) {
   return allData;
 }
 
+/**
+ * Payments into the given card accounts on or after `startDate` that have
+ * really happened or are scheduled (posted or pending transfer legs). The
+ * cashflow forecast subtracts these from a statement so it is not paid twice.
+ * Card legs of payments are transfer rows with is_income = true.
+ *
+ * @param {{ accountIds: string[], startDate: string }} opts
+ * @returns {Promise<Array>}
+ */
+export async function getCardPayments({ accountIds, startDate }) {
+  if (!accountIds?.length || !startDate) return [];
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id, account_id, amount, is_income, transfer_group_id, status, transaction_date")
+    .in("account_id", accountIds)
+    .is("deleted_at", null)
+    .eq("is_income", true)
+    .not("transfer_group_id", "is", null)
+    .in("status", ["posted", "pending"])
+    .gte("transaction_date", startDate)
+    .order("transaction_date", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 // ── Favorite Accounts ──
 
 /**
