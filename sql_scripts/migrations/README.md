@@ -7,6 +7,7 @@ Paths now include `migrations/`.
 
 | Script | Existing-database purpose | Current setup equivalent |
 | --- | --- | --- |
+| [supabase_account_statement_cycle.sql](./supabase_account_statement_cycle.sql) | Adds credit card statement close day, payment due day, and paying account; replaces `get_account_balances` to return them | Core base and phase-3 aggregations |
 | [supabase_accounts_closed.sql](./supabase_accounts_closed.sql) | Adds account closure and recurring pause fields | Core base |
 | [supabase_asymmetric_transfer.sql](./supabase_asymmetric_transfer.sql) | Adds incoming transfer amount and constraint | Core base |
 | [supabase_custom_interval.sql](./supabase_custom_interval.sql) | Adds custom schedule fields and frequency checks | Core base |

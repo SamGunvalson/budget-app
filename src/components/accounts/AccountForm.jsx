@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toCents, toDollars, getTodayString, maskAccountName } from '../../utils/helpers';
-import { ACCOUNT_TYPES, isAccountClosed } from '../../services/accounts';
+import { ACCOUNT_TYPES, isAccountClosed, isAssetAccount } from '../../services/accounts';
 
 const ACCOUNT_TYPE_GROUPS = [
   {
@@ -18,7 +18,8 @@ const ACCOUNT_TYPE_GROUPS = [
  *
  * Props:
  *  - accounts: array of existing account objects (for the selector)
- *  - onSubmit(values): called with { name, type, starting_balance, id? }
+ *  - onSubmit(values): called with { name, type, starting_balance, id?,
+ *      statement_close_day, payment_due_day, payment_account_id }
  *  - onDelete(id): called when an account is confirmed for deletion
  *  - onClose(id, closedAt): called when closing an account
  *  - onReopen(id): called when reopening a closed account
@@ -37,10 +38,19 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [closureDate, setClosureDate] = useState('');
+  // Statement cycle (credit cards only) — kept as strings for the inputs.
+  const [statementCloseDay, setStatementCloseDay] = useState('');
+  const [paymentDueDay, setPaymentDueDay] = useState('');
+  const [paymentAccountId, setPaymentAccountId] = useState('');
 
   const isEditing = selectedId !== '';
   const selectedAccount = isEditing ? accounts.find((a) => a.id === selectedId) : null;
   const isClosed = isAccountClosed(selectedAccount);
+  const isCreditCard = type === 'credit_card';
+  // Accounts that can pay a card statement: open asset accounts other than this one.
+  const paymentAccountOptions = accounts.filter(
+    (a) => isAssetAccount(a.type) && !isAccountClosed(a) && a.id !== selectedId,
+  );
 
   function handleAccountSelectionChange(nextSelectedId) {
     setSelectedId(nextSelectedId);
@@ -51,23 +61,23 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
     setClosureDate('');
     setIsDeleting(false);
     setIsClosing(false);
-    if (!nextSelectedId) {
+    const acct = nextSelectedId ? accounts.find((a) => a.id === nextSelectedId) : null;
+    if (acct) {
+      setName(acct.name || '');
+      setType(acct.type || 'checking');
+      // raw: this value is edited and saved back, so it must never be the
+      // safe-mode scrambled number.
+      setStartingBalance(String(toDollars(acct.starting_balance || 0, { raw: true })));
+      setStatementCloseDay(acct.statement_close_day ? String(acct.statement_close_day) : '');
+      setPaymentDueDay(acct.payment_due_day ? String(acct.payment_due_day) : '');
+      setPaymentAccountId(acct.payment_account_id || '');
+    } else {
       setName('');
       setType('checking');
       setStartingBalance('');
-    } else {
-      const acct = accounts.find((a) => a.id === nextSelectedId);
-      if (acct) {
-        setName(acct.name || '');
-        setType(acct.type || 'checking');
-        // raw: this value is edited and saved back, so it must never be the
-        // safe-mode scrambled number.
-        setStartingBalance(String(toDollars(acct.starting_balance || 0, { raw: true })));
-      } else {
-        setName('');
-        setType('checking');
-        setStartingBalance('');
-      }
+      setStatementCloseDay('');
+      setPaymentDueDay('');
+      setPaymentAccountId('');
     }
   }
 
@@ -77,6 +87,11 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
     if (!type) errs.type = 'Please select an account type.';
     const numBalance = parseFloat(startingBalance);
     if (startingBalance && isNaN(numBalance)) errs.startingBalance = 'Starting balance must be a number.';
+    if (isCreditCard) {
+      const isDay = (v) => v === '' || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31);
+      if (!isDay(statementCloseDay)) errs.statementCloseDay = 'Enter a day from 1 to 31.';
+      if (!isDay(paymentDueDay)) errs.paymentDueDay = 'Enter a day from 1 to 31.';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -93,6 +108,10 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
         name: name.trim(),
         type,
         starting_balance: toCents(parseFloat(startingBalance) || 0),
+        // Only credit cards carry a statement cycle; clear it for other types.
+        statement_close_day: isCreditCard && statementCloseDay ? Number(statementCloseDay) : null,
+        payment_due_day: isCreditCard && paymentDueDay ? Number(paymentDueDay) : null,
+        payment_account_id: isCreditCard && paymentAccountId ? paymentAccountId : null,
       });
     } catch (err) {
       setSubmitError(err?.message || 'Failed to save account.');
@@ -215,6 +234,65 @@ export default function AccountForm({ accounts = [], onSubmit, onDelete, onClose
         </p>
         {errors.startingBalance && <p className="text-xs text-red-500">{errors.startingBalance}</p>}
       </div>
+
+      {/* Statement & payment — credit cards only; feeds the cashflow forecast */}
+      {isCreditCard && (
+        <fieldset className="space-y-3 rounded-xl border border-stone-200/60 p-4 dark:border-stone-700/60">
+          <legend className="px-1 text-sm font-medium text-stone-700 dark:text-stone-300">Statement &amp; payment</legend>
+          <p className="text-xs text-stone-400 dark:text-stone-500">
+            Optional. Used by the Cashflow tab to show when this card&apos;s balance is paid
+            from your bank account. Days past the end of a short month use its last day.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label htmlFor="statement-close-day" className="block text-xs font-medium text-stone-600 dark:text-stone-400">Statement closes on day</label>
+              <input
+                id="statement-close-day"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="31"
+                step="1"
+                value={statementCloseDay}
+                onChange={(e) => setStatementCloseDay(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
+                placeholder="e.g., 22"
+              />
+              {errors.statementCloseDay && <p className="text-xs text-red-500">{errors.statementCloseDay}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="payment-due-day" className="block text-xs font-medium text-stone-600 dark:text-stone-400">Payment due on day</label>
+              <input
+                id="payment-due-day"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="31"
+                step="1"
+                value={paymentDueDay}
+                onChange={(e) => setPaymentDueDay(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
+                placeholder="e.g., 17"
+              />
+              {errors.paymentDueDay && <p className="text-xs text-red-500">{errors.paymentDueDay}</p>}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="payment-account" className="block text-xs font-medium text-stone-600 dark:text-stone-400">Paid from</label>
+            <select
+              id="payment-account"
+              value={paymentAccountId}
+              onChange={(e) => setPaymentAccountId(e.target.value)}
+              className="w-full rounded-xl border border-stone-300 bg-stone-50/50 px-4 py-2.5 text-base text-stone-900 placeholder-stone-400 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100 dark:placeholder-stone-500 dark:focus:bg-stone-700"
+            >
+              <option value="">Not set</option>
+              {paymentAccountOptions.map((a) => (
+                <option key={a.id} value={a.id}>{maskAccountName(a.name)}</option>
+              ))}
+            </select>
+          </div>
+        </fieldset>
+      )}
 
       {/* Favorite toggle — only shown when editing an existing account */}
       {isEditing && onToggleFavorite && (

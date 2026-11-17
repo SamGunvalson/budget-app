@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { SourceTextModule, SyntheticModule } from "node:vm";
 import * as helpers from "../src/utils/helpers.js";
+import * as accountRules from "../src/utils/accountRules.js";
 
 /**
  * Load a src/ module with its imports replaced by the given dependency map.
@@ -339,4 +340,46 @@ test("SVC-9: full backup keeps inactive reference rows and includes partnerships
   assert.deepEqual(backup.data.split_expenses, [{ id: "split", partnership_id: "partnership" }]);
   assert.equal(stats.partnerships, 1);
   assert.equal(stats.splitExpenses, 1);
+});
+
+test("account statement cycle is normalized and sent on create and update", async () => {
+  const fake = fakeSupabase({ respond: () => ({ data: { id: "card" }, error: null }) });
+  const accounts = await loadModule("../src/services/accounts.js", {
+    "./supabase": { supabase: fake.supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./categories": { getUserPreference: async () => null, setUserPreference: async () => {} },
+    "../utils/helpers": { ...helpers },
+    "../utils/accountRules": { ...accountRules },
+  });
+  const { normalizeStatementCycle, STATEMENT_CYCLE_FIELDS } = accountRules;
+
+  assert.deepEqual(normalizeStatementCycle({}), {});
+  assert.deepEqual(
+    normalizeStatementCycle({ statement_close_day: "22", payment_due_day: 17, payment_account_id: "" }),
+    { statement_close_day: 22, payment_due_day: 17, payment_account_id: null },
+  );
+  assert.deepEqual(normalizeStatementCycle({ statement_close_day: "" }), { statement_close_day: null });
+  assert.throws(() => normalizeStatementCycle({ statement_close_day: 0 }), /1 to 31/);
+  assert.throws(() => normalizeStatementCycle({ payment_due_day: 32 }), /1 to 31/);
+  assert.throws(() => normalizeStatementCycle({ payment_due_day: 2.5 }), /1 to 31/);
+  assert.throws(() => normalizeStatementCycle({ payment_account_id: "card" }, "card"), /its own/);
+
+  await accounts.createAccount({
+    id: "card", name: " Visa ", type: "credit_card",
+    statement_close_day: "22", payment_due_day: "17", payment_account_id: "checking",
+  });
+  const insert = fake.calls[0].steps.find((s) => s.method === "insert").args[0];
+  assert.equal(insert.statement_close_day, 22);
+  assert.equal(insert.payment_due_day, 17);
+  assert.equal(insert.payment_account_id, "checking");
+
+  // Partial updates leave unspecified cycle fields untouched.
+  await accounts.updateAccount("card", { name: "Visa" });
+  const nameOnly = fake.calls[1].steps.find((s) => s.method === "update").args[0];
+  for (const field of STATEMENT_CYCLE_FIELDS) assert.ok(!(field in nameOnly));
+
+  await accounts.updateAccount("card", { payment_due_day: null, payment_account_id: "" });
+  const cleared = fake.calls[2].steps.find((s) => s.method === "update").args[0];
+  assert.equal(cleared.payment_due_day, null);
+  assert.equal(cleared.payment_account_id, null);
+  assert.ok(!("statement_close_day" in cleared));
 });

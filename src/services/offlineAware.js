@@ -1336,6 +1336,7 @@ import {
   getAccountBalanceHistory as _getAccountBalanceHistory,
   getUpcomingTransactions as _getUpcomingTransactions,
 } from "./accounts";
+import { normalizeStatementCycle } from "../utils/accountRules";
 
 export async function getAccountsOffline() {
   return swrRead({
@@ -1730,6 +1731,7 @@ export async function createAccountOffline(acctData) {
     name: acctData.name?.trim(),
     type: acctData.type,
     starting_balance: acctData.starting_balance || 0,
+    ...normalizeStatementCycle(acctData, id),
     is_active: true,
     created_at: now,
     updated_at: now,
@@ -1752,6 +1754,7 @@ export async function updateAccountOffline(id, updates) {
   const updated = {
     ...existing,
     ...updates,
+    ...normalizeStatementCycle(updates, id),
     updated_at: new Date().toISOString(),
   };
   await putOffline(

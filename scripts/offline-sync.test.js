@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, mock, test } from "node:test";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { SourceTextModule, SyntheticModule } from "node:vm";
+import * as accountRules from "../src/utils/accountRules.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const sources = {
@@ -240,6 +241,7 @@ async function loadOfflineAware({ services = {}, flush = async () => {}, base, s
     "../utils/categoryArchive": {
       isAvailableCategory: (c) => c.is_active !== false && c.is_archived !== true,
     },
+    "../utils/accountRules": { ...accountRules },
     ...services,
   });
   return { offlineAware, offlineDb, db, flushes, scheduled, cache };
@@ -1689,6 +1691,7 @@ test("follow-up 8: account, category and budget plan services insert a supplied 
   const accounts = await load(sources.accounts, {
     ...modules,
     "./categories": { ...categories },
+    "../utils/accountRules": { ...accountRules },
   });
 
   await accounts.createAccount({ name: " Cash ", type: "checking", id: "acct-1" });

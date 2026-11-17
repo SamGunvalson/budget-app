@@ -1,6 +1,7 @@
 import { supabase, getCurrentUser } from "./supabase";
 import { getUserPreference, setUserPreference } from "./categories";
 import { getTodayString } from "../utils/helpers";
+import { normalizeStatementCycle } from "../utils/accountRules";
 
 /**
  * Account type constants and groupings.
@@ -101,11 +102,12 @@ export async function getAccount(id) {
 
 /**
  * Create a new account.
- * @param {{ name: string, type: string, starting_balance: number }} account
+ * @param {{ name: string, type: string, starting_balance: number, statement_close_day?: number|null, payment_due_day?: number|null, payment_account_id?: string|null }} account
  * @returns {Promise<Object>} Created account
  */
-export async function createAccount({ name, type, starting_balance = 0, id }) {
+export async function createAccount({ name, type, starting_balance = 0, id, ...rest }) {
   const user = await getCurrentUser();
+  const cycle = normalizeStatementCycle(rest, id);
 
   const { data, error } = await supabase
     .from("accounts")
@@ -116,6 +118,7 @@ export async function createAccount({ name, type, starting_balance = 0, id }) {
       name: name.trim(),
       type,
       starting_balance,
+      ...cycle,
     })
     .select("*")
     .single();
@@ -127,7 +130,7 @@ export async function createAccount({ name, type, starting_balance = 0, id }) {
 /**
  * Update an existing account.
  * @param {string} id
- * @param {{ name?: string, type?: string, starting_balance?: number, is_active?: boolean }} updates
+ * @param {{ name?: string, type?: string, starting_balance?: number, is_active?: boolean, statement_close_day?: number|null, payment_due_day?: number|null, payment_account_id?: string|null }} updates
  * @returns {Promise<Object>} Updated account
  */
 export async function updateAccount(id, updates) {
@@ -140,6 +143,7 @@ export async function updateAccount(id, updates) {
     payload.starting_balance = updates.starting_balance;
   if (updates.is_active !== undefined) payload.is_active = updates.is_active;
   if (updates.closed_at !== undefined) payload.closed_at = updates.closed_at;
+  Object.assign(payload, normalizeStatementCycle(updates, id));
   payload.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
