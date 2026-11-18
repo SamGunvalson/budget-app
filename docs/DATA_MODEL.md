@@ -145,10 +145,22 @@ RLS checks parent budget-plan ownership, not a nonexistent `budget_items.user_id
 | `starting_balance` | BIGINT | Default 0 cents |
 | `is_active` | BOOLEAN | Default true |
 | `closed_at` | DATE | Nullable; NULL means open |
+| `statement_close_day` | INT | Nullable; 1-31 when set |
+| `payment_due_day` | INT | Nullable; 1-31 when set |
+| `payment_account_id` | UUID | Nullable; FK to accounts, set NULL on delete; must differ from `id` |
 | `created_at`, `updated_at` | TIMESTAMPTZ | Default `now()` |
 
 Active rows have a user index and unique `(user_id, name)` index.
-RLS enforces ownership. Assets are checking, savings, retirement, brokerage;
+RLS enforces ownership.
+
+The statement-cycle columns describe when a credit
+card's statement closes, when its payment is due, and which account pays it.
+They feed the cashflow forecast only; the database does not generate payments
+from them. Days past a short month's end are treated as that month's last day.
+A paying account that is inactive or closed is treated as unset.
+`get_account_balances` returns these columns alongside the balance fields.
+
+Assets are checking, savings, retirement, brokerage;
 liabilities are credit cards, loans, mortgages. Assets add income and subtract
 expenses; liabilities add charges and subtract payments.
 
@@ -447,6 +459,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.5
+**Document version**: 3.6
 
-**Last updated**: 2026-11-12
+**Last updated**: 2026-11-17

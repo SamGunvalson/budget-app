@@ -38,6 +38,7 @@ import {
   getMaxProjectedDateOffline,
   getAccountBalanceHistoryOffline,
   getUpcomingTransactionsOffline,
+  getCardPaymentsOffline,
   // categories
   getCategoriesOffline,
   // user preferences
@@ -183,6 +184,23 @@ export function useUpcomingTransactions(opts, { enabled = true } = {}) {
     ],
     queryFn: () => getUpcomingTransactionsOffline(opts),
     enabled: enabled && Array.isArray(accountIds) && accountIds.length > 0,
+  });
+}
+
+/**
+ * Posted/pending payments into cards since `startDate` (cashflow forecast).
+ * Keyed under `transactions` so transaction writes invalidate it.
+ */
+export function useCardPayments(opts, { enabled = true } = {}) {
+  const { accountIds, startDate } = opts ?? {};
+  return useQuery({
+    queryKey: [
+      "transactions",
+      "cardPayments",
+      { accountIds: accountIds ?? null, startDate: startDate ?? null },
+    ],
+    queryFn: () => getCardPaymentsOffline(opts),
+    enabled: enabled && Array.isArray(accountIds) && accountIds.length > 0 && !!startDate,
   });
 }
 

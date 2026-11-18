@@ -1335,7 +1335,9 @@ import {
   isAssetAccount,
   getAccountBalanceHistory as _getAccountBalanceHistory,
   getUpcomingTransactions as _getUpcomingTransactions,
+  getCardPayments as _getCardPayments,
 } from "./accounts";
+import { normalizeStatementCycle } from "../utils/accountRules";
 
 export async function getAccountsOffline() {
   return swrRead({
@@ -1730,6 +1732,7 @@ export async function createAccountOffline(acctData) {
     name: acctData.name?.trim(),
     type: acctData.type,
     starting_balance: acctData.starting_balance || 0,
+    ...normalizeStatementCycle(acctData, id),
     is_active: true,
     created_at: now,
     updated_at: now,
@@ -1752,6 +1755,7 @@ export async function updateAccountOffline(id, updates) {
   const updated = {
     ...existing,
     ...updates,
+    ...normalizeStatementCycle(updates, id),
     updated_at: new Date().toISOString(),
   };
   await putOffline(
@@ -1956,6 +1960,29 @@ export async function getUpcomingTransactionsOffline(opts) {
   // Attach cached category/account data
   rows = await attachJoins(rows);
 
+  rows.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+  return rows;
+}
+
+/**
+ * Posted/pending payments into card accounts since `startDate` — backend
+ * first, IndexedDB when offline. See getCardPayments in services/accounts.js.
+ */
+export async function getCardPaymentsOffline(opts) {
+  const result = await tryOnline(() => _getCardPayments(opts));
+  if (!result.offline) return result.data;
+
+  const { accountIds, startDate } = opts;
+  if (!accountIds?.length || !startDate) return [];
+  const rows = (await db.transactions.toArray()).filter(
+    (r) =>
+      !r.deleted_at &&
+      accountIds.includes(r.account_id) &&
+      r.is_income &&
+      r.transfer_group_id &&
+      (r.status === "posted" || r.status === "pending") &&
+      r.transaction_date >= startDate,
+  );
   rows.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
   return rows;
 }

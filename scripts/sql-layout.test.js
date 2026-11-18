@@ -25,6 +25,7 @@ const setupScripts = [
   'supabase_rls_complete.sql',
 ];
 const migrationScripts = [
+  'supabase_account_statement_cycle.sql',
   'supabase_accounts_closed.sql',
   'supabase_asymmetric_transfer.sql',
   'supabase_custom_interval.sql',
@@ -89,6 +90,23 @@ test('report as-of upgrade matches the fresh report RPC definitions', () => {
     assert.match(base, /p_as_of\s+date\s+DEFAULT NULL/);
     assert.match(base, /AND \(p_as_of IS NULL OR \(t\.status = 'posted' AND t\.transaction_date <= p_as_of\)\)/);
   }
+});
+
+test('statement cycle upgrade matches the fresh account schema and balances RPC', () => {
+  const setup = readSqlFile('supabase_phase3_aggregations.sql');
+  const migration = readSqlFile('migrations/supabase_account_statement_cycle.sql');
+  const rpc = /DROP FUNCTION IF EXISTS get_account_balances\([^)]*\);\s+CREATE OR REPLACE FUNCTION get_account_balances\([\s\S]*?\n\$\$;/;
+  const base = setup.match(rpc)?.[0];
+  assert.ok(base, 'Missing get_account_balances in fresh setup');
+  assert.equal(migration.match(rpc)?.[0], base, 'get_account_balances upgrade differs from fresh setup');
+  const schema = readSqlFile('supabase_schema_create.sql');
+  for (const column of ['statement_close_day', 'payment_due_day', 'payment_account_id']) {
+    assert.match(schema, new RegExp(`\\n\\s+${column}\\s`), `Base schema missing ${column}`);
+    assert.match(migration, new RegExp(`ADD COLUMN IF NOT EXISTS ${column}\\s`), `Upgrade missing ${column}`);
+    assert.match(base, new RegExp(`a\\.${column},`), `get_account_balances does not return ${column}`);
+  }
+  assert.match(schema, /CONSTRAINT accounts_payment_account_not_self/);
+  assert.match(migration, /ADD CONSTRAINT accounts_payment_account_not_self/);
 });
 
 test('legacy repair include resolves and database image bundles historical migrations', () => {

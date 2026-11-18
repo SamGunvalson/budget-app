@@ -135,8 +135,16 @@ CREATE TABLE accounts (
   starting_balance BIGINT     DEFAULT 0,
   is_active       BOOLEAN     DEFAULT TRUE,
   closed_at       DATE        DEFAULT NULL,
+  -- Statement cycle (credit cards): day-of-month the statement closes and the
+  -- payment is due, and the account that pays it. Days past a short month's
+  -- end clamp to its last day. Used by the cashflow forecast.
+  statement_close_day INT     CHECK (statement_close_day BETWEEN 1 AND 31),
+  payment_due_day     INT     CHECK (payment_due_day BETWEEN 1 AND 31),
+  payment_account_id  UUID    REFERENCES accounts(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ DEFAULT NOW()
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT accounts_payment_account_not_self
+    CHECK (payment_account_id IS NULL OR payment_account_id <> id)
 );
 
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;

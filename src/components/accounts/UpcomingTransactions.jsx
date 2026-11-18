@@ -20,6 +20,9 @@ function formatShortDate(dateStr) {
  *
  * Props:
  *  - transactions: Array<{ id, transaction_date, description, payee, amount, is_income, status, categories, accounts }>
+ *    Forecast-only rows set `_synthetic: 'hypothetical' | 'settlement'` and are
+ *    not clickable. Placeholder payments the forecast replaces carry
+ *    `_replacedWith` (cents) — the calculated amount.
  *  - onViewTransaction: (accountId: string) => void
  */
 export default function UpcomingTransactions({ transactions = [], onViewTransaction }) {
@@ -71,8 +74,9 @@ export default function UpcomingTransactions({ transactions = [], onViewTransact
                 <button
                   key={tx.id}
                   type="button"
+                  disabled={Boolean(tx._synthetic)}
                   onClick={() => onViewTransaction?.(tx.account_id || tx.accounts?.id)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-stone-50 dark:hover:bg-stone-700/40 first:rounded-t-xl last:rounded-b-xl"
+                  className="flex w-full disabled:cursor-default items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-stone-50 dark:hover:bg-stone-700/40 first:rounded-t-xl last:rounded-b-xl"
                 >
                   {/* Category color dot */}
                   <span
@@ -98,11 +102,27 @@ export default function UpcomingTransactions({ transactions = [], onViewTransact
 
                   {/* Amount */}
                   <div className="shrink-0 text-right">
-                    <p className={`text-sm font-bold ${tx.is_income ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {tx.is_income ? '+' : '−'}{formatCurrency(Math.abs(tx.amount))}
-                    </p>
-                    <p className="text-[10px] text-stone-400 dark:text-stone-500">
-                      {tx.status === 'projected' ? 'projected' : 'pending'}
+                    {tx._replacedWith != null ? (
+                      <p className="text-sm font-bold text-stone-700 dark:text-stone-200">
+                        <span className="mr-1.5 text-xs font-medium text-stone-400 line-through">
+                          {formatCurrency(Math.abs(tx.amount))}
+                        </span>
+                        {tx.is_income ? '+' : '−'}{formatCurrency(tx._replacedWith)}
+                      </p>
+                    ) : (
+                      <p className={`text-sm font-bold ${tx.is_income ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {tx.is_income ? '+' : '−'}{formatCurrency(Math.abs(tx.amount))}
+                      </p>
+                    )}
+                    <p className={`text-[10px] ${
+                      tx._synthetic === 'hypothetical' ? 'font-semibold text-teal-600 dark:text-teal-400'
+                        : tx._synthetic === 'settlement' || tx._replacedWith != null ? 'font-semibold text-violet-600 dark:text-violet-400'
+                          : 'text-stone-400 dark:text-stone-500'
+                    }`}>
+                      {tx._synthetic === 'hypothetical' ? 'test item'
+                        : tx._synthetic === 'settlement' ? 'statement payment (forecast)'
+                          : tx._replacedWith != null ? 'placeholder → statement balance'
+                            : tx.status === 'projected' ? 'projected' : 'pending'}
                     </p>
                   </div>
                 </button>

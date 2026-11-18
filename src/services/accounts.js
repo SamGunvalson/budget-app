@@ -1,6 +1,7 @@
 import { supabase, getCurrentUser } from "./supabase";
 import { getUserPreference, setUserPreference } from "./categories";
 import { getTodayString } from "../utils/helpers";
+import { normalizeStatementCycle } from "../utils/accountRules";
 
 /**
  * Account type constants and groupings.
@@ -101,11 +102,12 @@ export async function getAccount(id) {
 
 /**
  * Create a new account.
- * @param {{ name: string, type: string, starting_balance: number }} account
+ * @param {{ name: string, type: string, starting_balance: number, statement_close_day?: number|null, payment_due_day?: number|null, payment_account_id?: string|null }} account
  * @returns {Promise<Object>} Created account
  */
-export async function createAccount({ name, type, starting_balance = 0, id }) {
+export async function createAccount({ name, type, starting_balance = 0, id, ...rest }) {
   const user = await getCurrentUser();
+  const cycle = normalizeStatementCycle(rest, id);
 
   const { data, error } = await supabase
     .from("accounts")
@@ -116,6 +118,7 @@ export async function createAccount({ name, type, starting_balance = 0, id }) {
       name: name.trim(),
       type,
       starting_balance,
+      ...cycle,
     })
     .select("*")
     .single();
@@ -127,7 +130,7 @@ export async function createAccount({ name, type, starting_balance = 0, id }) {
 /**
  * Update an existing account.
  * @param {string} id
- * @param {{ name?: string, type?: string, starting_balance?: number, is_active?: boolean }} updates
+ * @param {{ name?: string, type?: string, starting_balance?: number, is_active?: boolean, statement_close_day?: number|null, payment_due_day?: number|null, payment_account_id?: string|null }} updates
  * @returns {Promise<Object>} Updated account
  */
 export async function updateAccount(id, updates) {
@@ -140,6 +143,7 @@ export async function updateAccount(id, updates) {
     payload.starting_balance = updates.starting_balance;
   if (updates.is_active !== undefined) payload.is_active = updates.is_active;
   if (updates.closed_at !== undefined) payload.closed_at = updates.closed_at;
+  Object.assign(payload, normalizeStatementCycle(updates, id));
   payload.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
@@ -403,6 +407,31 @@ export async function getUpcomingTransactions({ accountIds, endDate }) {
   }
 
   return allData;
+}
+
+/**
+ * Payments into the given card accounts on or after `startDate` that have
+ * really happened or are scheduled (posted or pending transfer legs). The
+ * cashflow forecast subtracts these from a statement so it is not paid twice.
+ * Card legs of payments are transfer rows with is_income = true.
+ *
+ * @param {{ accountIds: string[], startDate: string }} opts
+ * @returns {Promise<Array>}
+ */
+export async function getCardPayments({ accountIds, startDate }) {
+  if (!accountIds?.length || !startDate) return [];
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id, account_id, amount, is_income, transfer_group_id, status, transaction_date")
+    .in("account_id", accountIds)
+    .is("deleted_at", null)
+    .eq("is_income", true)
+    .not("transfer_group_id", "is", null)
+    .in("status", ["posted", "pending"])
+    .gte("transaction_date", startDate)
+    .order("transaction_date", { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
 // ── Favorite Accounts ──
