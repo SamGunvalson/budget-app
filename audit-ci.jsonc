@@ -1,0 +1,13 @@
+{
+  // Shared config for `npm run audit:security` and the CI audit jobs.
+  // Fails on high/critical advisories except those allowlisted below.
+  "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+  "high": true,
+  "allowlist": [
+    // picomatch <=4.0.7 ReDoS via crafted extglob patterns. No patched release
+    // exists yet (checked 2026-11-18). picomatch only runs at build time (vite,
+    // workbox) on patterns from our own config, never on user input.
+    // Remove once a fixed picomatch ships and `npm update picomatch` picks it up.
+    "GHSA-fc5q-39xc-vjpf"
+  ]
+}
