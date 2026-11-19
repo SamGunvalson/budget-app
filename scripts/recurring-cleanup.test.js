@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { SourceTextModule, SyntheticModule } from "node:vm";
 import { addDays, format, isAfter, startOfDay } from "date-fns";
+import * as cashflowScenario from "../src/utils/cashflowScenario.js";
+import * as statementPayments from "../src/utils/statementPayments.js";
 
 const source = readFileSync(new URL("../src/services/recurring.js", import.meta.url), "utf8");
 
@@ -19,7 +21,7 @@ async function loadRecurring({ queries = [], rpcs = [], overrides = {} } = {}) {
           return Promise.resolve(queries.shift()).then(resolve, reject);
         },
       };
-      for (const method of ["select", "insert", "update", "eq", "in", "is", "not", "gt", "lte", "limit", "ilike", "order", "single", "maybeSingle"]) {
+      for (const method of ["select", "insert", "update", "eq", "in", "is", "not", "gt", "lte", "limit", "ilike", "order", "single", "maybeSingle", "gte", "neq"]) {
         query[method] = (...args) => {
           call.steps.push({ method, args });
           return query;
@@ -43,6 +45,9 @@ async function loadRecurring({ queries = [], rpcs = [], overrides = {} } = {}) {
     },
     "./partnerships": { getPartnership: () => null, getPartnerId: () => null },
     "./splitExpenses": { computeShares: () => null, createSplitExpense: () => null },
+    "./accounts": { getAccountBalanceHistory: async () => [] },
+    "../utils/cashflowScenario": cashflowScenario,
+    "../utils/statementPayments": statementPayments,
     ...overrides,
   };
   const module = new SourceTextModule(source);
@@ -223,4 +228,57 @@ test("generation requested mid-run queues exactly one follow-up run", async () =
   // The guard resets: a later call starts a fresh run.
   queries.push({ data: [], error: null }, { data: [], error: null });
   assert.equal((await recurring.generateProjectedTransactions({ today })).generated, 0);
+});
+
+test("a statement-payment template creates a pending payment for the closed statement only", async () => {
+  const today = new Date("2026-11-17T00:00:00");
+  const card = {
+    id: "visa", type: "credit_card", statement_close_day: 10, payment_due_day: 5, closed_at: null, is_active: true,
+  };
+  // Owes $800 from Nov 3; nothing in the open cycle.
+  const series = [];
+  for (let d = new Date("2026-09-01T00:00:00"); d <= addDays(today, 90); d = addDays(d, 1)) {
+    const date = format(d, "yyyy-MM-dd");
+    series.push({ date, balances: { visa: date >= "2026-11-03" ? 80000 : 0 } });
+  }
+  const template = {
+    id: "tpl", description: "Visa payment", account_id: "chk", to_account_id: "visa", to_accounts: card,
+    category_id: "cat", amount: -100, is_transfer: true, pays_statement_balance: true, occurrences: [],
+  };
+  let balanceArgs;
+  const { recurring, calls } = await loadRecurring({
+    queries: [
+      { data: [template], error: null }, // templates
+      { data: [], error: null }, // existing recurring rows
+      { data: [], error: null }, // card payments
+      { data: [], error: null }, // template rows
+      { data: [], error: null }, // dedup check
+      { data: [
+        { id: "out", is_income: false, amount: 80000 },
+        { id: "in", is_income: true, amount: 80000 },
+      ], error: null }, // insert
+    ],
+    overrides: {
+      "./accounts": {
+        getAccountBalanceHistory: async (args) => { balanceArgs = args; return series; },
+      },
+    },
+  });
+  const result = await recurring.generateProjectedTransactions({ today });
+  assert.equal(result.generated, 2);
+  assert.deepEqual(balanceArgs, { accountIds: ["visa"], startDate: "2026-09-01", endDate: "2027-02-15" });
+
+  const insert = calls.at(-1).steps.find((step) => step.method === "insert").args[0];
+  assert.deepEqual(insert.map((row) => [row.account_id, row.amount, row.is_income]), [
+    ["chk", 80000, false],
+    ["visa", 80000, true],
+  ]);
+  for (const row of insert) {
+    assert.equal(row.status, "pending");
+    assert.equal(row.transaction_date, "2026-12-05");
+    assert.equal(row.recurring_occurrence_date, "2026-12-05");
+    assert.equal(row.recurring_template_id, "tpl");
+  }
+  // The generic loop must not have projected the template's $1 placeholder.
+  assert.equal(calls.filter((c) => c.steps?.some((step) => step.method === "insert")).length, 1);
 });

@@ -36,6 +36,7 @@ import {
   createRecurringGroup,
   updateRecurringGroup,
   generateProjectedTransactions,
+  recalculateStatementPayment,
   refreshRecurringTemplateFamily,
   getRecurringTemplateById,
   getRecurringTemplates,
@@ -566,6 +567,15 @@ export default function TransactionsPage() {
       .forEach((c) => handleConfirmWithSplitRef.current?.(c.id));
   }, []);
 
+  const handleRecalculate = useCallback(async (txId) => {
+    try {
+      await recalculateStatementPayment(txId);
+      invalidateRecurringSideEffects();
+    } catch (err) {
+      handleError(err?.message || 'Failed to recalculate payment.');
+    }
+  }, [invalidateRecurringSideEffects, handleError]);
+
   const handleSkipAll = useCallback((children) => {
     children
       .filter((c) => c.status !== 'posted')
@@ -870,6 +880,7 @@ export default function TransactionsPage() {
             accounts={accounts}
             onConfirm={handleConfirmWithSplit}
             onSkip={mgr.handleSkip}
+            onRecalculate={handleRecalculate}
             onSplit={onSplitProp}
             splitTransactionIds={splitTransactionIds}
             onConfirmAll={handleConfirmAll}

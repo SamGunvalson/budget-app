@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import AccountForm from '../components/accounts/AccountForm';
 import AccountList from '../components/accounts/AccountList';
 import NetWorthSummary from '../components/accounts/NetWorthSummary';
@@ -32,6 +33,7 @@ import {
 } from '../hooks/queries';
 import useCashflowScenario, { toEngineItems } from '../hooks/useCashflowScenario';
 import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accounts';
+import { generateProjectedTransactions, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import { itemLegs, itemSettlementInfo, settlementPayer } from '../utils/cashflowScenario';
 import { toDateString, maskAccountName } from '../utils/helpers';
 
@@ -63,6 +65,7 @@ function SectionToggle({ open, onToggle, title, badge, icon }) {
 // ================================================
 export default function AccountsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Section tab: 'overview' | 'cashflow'
   const [activeSection, setActiveSection] = useSessionState('accountsActiveSection', 'overview');
@@ -253,6 +256,13 @@ export default function AccountsPage() {
       if (values.id) {
         const { id, ...updates } = values;
         await updateAccount(id, updates);
+        // Statement payments follow the card's cycle; refresh them in the
+        // background (online only — generation is skipped offline anyway).
+        if (updates.type === 'credit_card' && navigator.onLine) {
+          generateProjectedTransactions({ windowDays: PROJECTION_WINDOW_DAYS })
+            .then(() => queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'active' }))
+            .catch((err) => console.error('Failed to refresh statement payments:', err));
+        }
       } else {
         await createAccount(values);
       }

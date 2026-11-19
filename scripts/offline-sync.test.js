@@ -7,6 +7,7 @@ import { afterEach, beforeEach, mock, test } from "node:test";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { SourceTextModule, SyntheticModule } from "node:vm";
 import * as accountRules from "../src/utils/accountRules.js";
+import * as statementPayments from "../src/utils/statementPayments.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const sources = {
@@ -242,6 +243,7 @@ async function loadOfflineAware({ services = {}, flush = async () => {}, base, s
       isAvailableCategory: (c) => c.is_active !== false && c.is_archived !== true,
     },
     "../utils/accountRules": { ...accountRules },
+    "../utils/statementPayments": { ...statementPayments },
     ...services,
   });
   return { offlineAware, offlineDb, db, flushes, scheduled, cache };
@@ -777,6 +779,32 @@ test("APP-1: a linked transfer needs an available Account Transfer category offl
   assert.equal(await db.transactions.count(), 0);
 });
 
+test("editing a generated transfer's amount offline locks it against recalculation", async () => {
+  const { offlineAware, db } = await loadOfflineAware();
+  await seedLookups(db);
+  const generated = { recurring_template_id: "tpl", status: "pending", deleted_at: null, category_id: "c-xfer" };
+  await db.transactions.bulkPut([
+    { ...generated, id: "out", transfer_group_id: "g1", account_id: "a-check", amount: 5000, is_income: false },
+    { ...generated, id: "in", transfer_group_id: "g1", account_id: "a-card", amount: 5000, is_income: true },
+    { id: "o2", transfer_group_id: "g2", account_id: "a-check", category_id: "c-xfer", amount: 100, is_income: false, deleted_at: null },
+    { id: "i2", transfer_group_id: "g2", account_id: "a-card", category_id: "c-xfer", amount: 100, is_income: true, deleted_at: null },
+  ]);
+  const edit = (id, amount, date = "2026-03-05") => offlineAware.updateTransferOffline(id, {
+    from_account_id: "a-check", to_account_id: "a-card", amount,
+    description: "Card payment", payee: "", transaction_date: date, category_id: "c-xfer",
+  });
+
+  // Same amount (only the date moved): still recalculated.
+  let legs = await edit("in", 5000, "2026-03-06");
+  assert.deepEqual(legs.map((l) => !!l.amount_locked), [false, false]);
+  // New amount: both legs locked.
+  legs = await edit("in", 6000);
+  assert.deepEqual(legs.map((l) => l.amount_locked), [true, true]);
+  // A transfer typed by hand is never locked.
+  legs = await edit("i2", 200);
+  assert.deepEqual(legs.map((l) => !!l.amount_locked), [false, false]);
+});
+
 test("APP-1: transfer and linked-transfer edits update both legs offline", async () => {
   const { offlineAware, db } = await loadOfflineAware();
   await seedLookups(db);
@@ -1231,6 +1259,7 @@ async function loadTransactionsService() {
     "./supabase": { supabase, getCurrentUser: async () => ({ id: "user-1" }) },
     "./offlineDb": { ...offlineDb },
     "../utils/ids": { ...(await load(sources.ids, {})) },
+    "../utils/statementPayments": { ...statementPayments },
   };
   const service = await load(sources.transactions, modules);
   return { service, inserts, modules };

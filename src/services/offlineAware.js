@@ -25,6 +25,7 @@ import { newId } from "../utils/ids";
 import { swrRead, notifyTable } from "./cache";
 import { requestSync, schedulePush } from "./sync";
 import { isAvailableCategory } from "../utils/categoryArchive";
+import { amountLockedAfterEdit } from "../utils/statementPayments";
 
 // ── SWR helpers ──
 //
@@ -1120,6 +1121,13 @@ function planOutgoingIncoming(legs, updates) {
     payee: updates.payee?.trim() || null,
     transaction_date: updates.transaction_date,
   };
+  // Mirrors the online update: a hand-edited generated payment is locked.
+  if (amountLockedAfterEdit([
+    { leg: outgoingLeg, amount: updates.from_amount },
+    { leg: incomingLeg, amount: updates.to_amount },
+  ])) {
+    shared.amount_locked = true;
+  }
   return [
     {
       row: outgoingLeg,

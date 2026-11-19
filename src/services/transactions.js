@@ -1,5 +1,6 @@
 import { supabase, getCurrentUser } from "./supabase";
 import { newId } from "../utils/ids";
+import { amountLockedAfterEdit } from "../utils/statementPayments";
 
 // Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
 // trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
@@ -594,6 +595,13 @@ export async function updateAsymmetricTransfer(
     transaction_date,
     updated_at: now,
   };
+  // A hand-edited generated payment keeps its amount from now on.
+  if (amountLockedAfterEdit([
+    { leg: outgoingLeg, amount: from_amount },
+    { leg: incomingLeg, amount: to_amount },
+  ])) {
+    shared.amount_locked = true;
+  }
 
   const { data: updatedOut, error: outErr } = await supabase
     .from("transactions")
@@ -671,6 +679,13 @@ export async function updateTransfer(
     transaction_date,
     updated_at: now,
   };
+  // A hand-edited generated payment keeps its amount from now on.
+  if (amountLockedAfterEdit([
+    { leg: outgoingLeg, amount },
+    { leg: incomingLeg, amount },
+  ])) {
+    shared.amount_locked = true;
+  }
 
   // Update outgoing leg (from account)
   const { data: updatedOut, error: outErr } = await supabase

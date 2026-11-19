@@ -178,6 +178,9 @@ CREATE TABLE transactions (
                            CHECK (status IN ('projected', 'pending', 'posted')),
   recurring_template_id    UUID,       -- FK added below in step 8
   recurring_occurrence_date DATE,      -- originally-scheduled occurrence date; never changes when user edits the transaction
+  -- TRUE once the user edits the amount of a generated statement payment, so
+  -- recalculation from the card's statement leaves it alone.
+  amount_locked          BOOLEAN     NOT NULL DEFAULT FALSE,
   created_at             TIMESTAMPTZ DEFAULT NOW(),
   updated_at             TIMESTAMPTZ DEFAULT NOW(),
   deleted_at             TIMESTAMPTZ
@@ -280,7 +283,14 @@ CREATE TABLE recurring_templates (
   -- Asymmetric transfer: when set, the incoming leg uses to_amount instead of amount.
   -- Valid whenever a destination account is present (is_transfer = TRUE or linked transfer with to_account_id set).
   to_amount        BIGINT      DEFAULT NULL CHECK (to_amount IS NULL OR (to_account_id IS NOT NULL AND to_amount > 0)),
-  CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL)
+  -- Credit card payment whose amount comes from the destination card's
+  -- statement balance (and schedule from its due day) instead of `amount`.
+  pays_statement_balance BOOLEAN NOT NULL DEFAULT FALSE,
+  CONSTRAINT transfer_needs_to_account CHECK (is_transfer = FALSE OR to_account_id IS NOT NULL),
+  CONSTRAINT statement_payment_is_plain_transfer CHECK (
+    pays_statement_balance = FALSE
+    OR (is_transfer = TRUE AND group_id IS NULL AND is_group_parent = FALSE)
+  )
 );
 
 ALTER TABLE recurring_templates ENABLE ROW LEVEL SECURITY;

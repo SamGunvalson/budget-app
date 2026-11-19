@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   buildCashflowScenario,
   clampedDate,
+  computeStatementPayments,
   headroomFrom,
   itemLegs,
   itemSettlementInfo,
@@ -271,4 +272,102 @@ test("item settlement info says when a card charge is paid", () => {
   assert.deepEqual(info(1), { status: "after-range", closeDate: "2027-01-22", dueDate: "2027-02-17", payerId: "chk" });
   assert.deepEqual(info(2), { status: "not-set-up" });
   assert.equal(info(3), null);
+});
+
+// ── computeStatementPayments (shared with recurring generation) ─────────────
+
+// Closes the 10th, due the 5th of the next month.
+const card10 = { id: "visa", type: "credit_card", statement_close_day: 10, payment_due_day: 5 };
+
+function cardSeries(start, end, events = []) {
+  const series = makeSeries(start, end, { visa: 0 }, events.map((e) => ({ ...e, id: "visa" })));
+  return { dates: series.map((pt) => pt.date), balances: series.map((pt) => pt.balances.visa) };
+}
+
+const summarize = (statements) =>
+  statements.map((s) => [s.closeDate, s.paymentDate, s.closed, s.amount]);
+
+test("a card with nothing on it needs no statement payments", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-02-28");
+  const { statements } = computeStatementPayments({ card: card10, dates, balances, todayStr: TODAY });
+  assert.deepEqual(statements, []);
+});
+
+test("a closed statement is paid in full on the due date", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [{ date: "2026-11-03", delta: 80000 }]);
+  const { statements, balances: after } = computeStatementPayments({ card: card10, dates, balances, todayStr: TODAY });
+  assert.deepEqual(summarize(statements), [["2026-11-10", "2026-12-05", true, 80000]]);
+  assert.equal(after[dates.indexOf("2026-12-05")], 0);
+});
+
+test("the open cycle is estimated from charges so far plus projected card charges", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-02-28", [
+    { date: "2026-11-12", delta: 20000 }, // posted charge after the Nov 10 close
+    { date: "2026-12-01", delta: 1500 }, // projected subscription before the Dec 10 close
+    { date: "2027-01-02", delta: 1500 }, // and the next one
+  ]);
+  const { statements } = computeStatementPayments({ card: card10, dates, balances, todayStr: TODAY });
+  assert.deepEqual(summarize(statements), [
+    ["2026-12-10", "2027-01-05", false, 21500],
+    ["2027-01-10", "2027-02-05", false, 1500],
+  ]);
+});
+
+test("refunds larger than charges leave nothing to pay", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [
+    { date: "2026-11-01", delta: 3000 },
+    { date: "2026-11-02", delta: -5000 },
+  ]);
+  const { statements } = computeStatementPayments({ card: card10, dates, balances, todayStr: TODAY });
+  assert.deepEqual(statements, []);
+});
+
+test("a stale generated payment is recalculated and later cycles build on the fix", () => {
+  // $800 statement; the generated row still says $700 (a charge was imported late).
+  const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [
+    { date: "2026-11-03", delta: 80000 },
+    { date: "2026-12-05", delta: -70000 }, // the stale pending payment, already in the series
+    { date: "2026-11-20", delta: 10000 },
+  ]);
+  const [card, from] = placeholder("stmt", "2026-12-05", 70000, { status: "pending" });
+  const ours = (tx) => tx.recurring_template_id === "tpl" && tx.status !== "posted" && !tx.amount_locked;
+  const { statements } = computeStatementPayments({
+    card: card10, dates, balances, todayStr: TODAY, isReplaceable: ours,
+    transactions: [{ ...card, recurring_template_id: "tpl" }, { ...from, recurring_template_id: "tpl" }],
+  });
+  assert.deepEqual(summarize(statements), [
+    ["2026-11-10", "2026-12-05", true, 80000],
+    ["2026-12-10", "2027-01-05", false, 10000],
+  ]);
+  assert.deepEqual(statements[0].replaced.map((tx) => tx.id), ["stmt-card"]);
+});
+
+test("a hand-edited payment is kept and only the rest is paid", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [
+    { date: "2026-11-03", delta: 80000 },
+    { date: "2026-12-05", delta: -50000 },
+  ]);
+  const [card] = placeholder("stmt", "2026-12-05", 50000, { status: "projected" });
+  const { statements } = computeStatementPayments({
+    card: card10, dates, balances, todayStr: TODAY,
+    transactions: [{ ...card, amount_locked: true }],
+  });
+  assert.deepEqual(summarize(statements), [["2026-11-10", "2026-12-05", true, 30000]]);
+  assert.equal(statements[0].alreadyPaid, 50000);
+  assert.deepEqual(statements[0].replaced, []);
+});
+
+test("the forecast keeps a hand-edited projected payment", () => {
+  const tx = placeholder("g1", "2026-12-15", 5000).map((t) => ({ ...t, amount_locked: true }));
+  const series = makeSeries("2026-11-01", "2026-12-31", { chk: 500000, visa: 0 }, [
+    { date: "2026-11-10", id: "visa", delta: 80000 },
+    { date: "2026-12-15", id: "visa", delta: -5000 },
+    { date: "2026-12-15", id: "chk", delta: -5000 },
+  ]);
+  const result = buildCashflowScenario({ accounts: [checking, cardA], series, transactions: tx, todayStr: TODAY });
+  const [s] = result.baseline.settlements;
+  assert.equal(s.alreadyPaid, 5000);
+  assert.equal(s.amount, 75000);
+  assert.equal(s.paymentDate, "2026-12-17");
+  assert.equal(at(result, "baseline", "chk", "2026-12-31"), 420000);
 });

@@ -4,6 +4,13 @@ import { categoryLabel, resolveCategoryId, selectableCategories } from '../../ut
 import { toCents, toDollars, formatCurrency, CATEGORY_TYPE_ORDER, CATEGORY_TYPE_LABELS, maskAccountName, getTodayString } from '../../utils/helpers';
 import { ACCOUNT_TYPES } from '../../services/accounts';
 import { FREQUENCY_OPTIONS, DAY_OF_WEEK_LABELS } from '../../utils/recurringCalculations';
+import { canPayStatementBalance } from '../../utils/statementPayments';
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
 
 function getInitialFormValues(initialValues, isEditing) {
   if (!initialValues) {
@@ -30,6 +37,7 @@ function getInitialFormValues(initialValues, isEditing) {
       splitPayer: 'me',
       splitPartnerSharePct: 50,
       toAmountForAccount: '',
+      paysStatement: false,
     };
   }
 
@@ -46,7 +54,9 @@ function getInitialFormValues(initialValues, isEditing) {
         ? initialValues.to_account_id
         : '',
     categoryId: initialValues.category_id || '',
-    amount: String(toDollars(Math.abs(initialValues.amount), { raw: true })),
+    amount: initialValues.pays_statement_balance && !initialValues.amount
+      ? ''
+      : String(toDollars(Math.abs(initialValues.amount), { raw: true })),
     description: initialValues.description || '',
     payee: initialValues.payee || '',
     frequency: initialValues.frequency || 'monthly',
@@ -66,6 +76,7 @@ function getInitialFormValues(initialValues, isEditing) {
       initialValues.to_amount != null
         ? String(toDollars(Math.abs(initialValues.to_amount), { raw: true }))
         : '',
+    paysStatement: !!initialValues.pays_statement_balance,
   };
 }
 
@@ -120,6 +131,8 @@ export default function RecurringForm({
   const [splitPartnerSharePct, setSplitPartnerSharePct] = useState(initialFormValues.splitPartnerSharePct);
   // Asymmetric transfer: amount credited to destination account (null/blank = symmetric)
   const [toAmountForAccount, setToAmountForAccount] = useState(initialFormValues.toAmountForAccount);
+  // Credit card payment that pays the card's statement balance
+  const [paysStatement, setPaysStatement] = useState(initialFormValues.paysStatement);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -128,6 +141,13 @@ export default function RecurringForm({
   // Derive isIncome and isTransfer from txType
   const isIncome = txType === 'income';
   const isTransfer = txType === 'transfer';
+
+  // Statement payments: a transfer into a credit card can take its amount and
+  // due date from the card's statement cycle instead of a fixed schedule.
+  const toAccount = isTransfer ? accounts.find((a) => a.id === toAccountId) : null;
+  const toCard = toAccount?.type === 'credit_card' ? toAccount : null;
+  const cardReady = canPayStatementBalance(toCard);
+  const statementMode = !!toCard && cardReady && paysStatement;
 
   // Filter categories based on type
   const filteredCategories = isTransfer
@@ -156,10 +176,10 @@ export default function RecurringForm({
   );
 
   // Whether we need day_of_month, day_of_month_2, or day_of_week
-  const needsDayOfMonth = ['monthly', 'semi_monthly', 'quarterly', 'yearly'].includes(frequency)
-    || (frequency === 'custom' && customUnit === 'months');
-  const needsDayOfMonth2 = frequency === 'semi_monthly';
-  const needsDayOfWeek = ['weekly', 'biweekly'].includes(frequency);
+  const needsDayOfMonth = !statementMode && (['monthly', 'semi_monthly', 'quarterly', 'yearly'].includes(frequency)
+    || (frequency === 'custom' && customUnit === 'months'));
+  const needsDayOfMonth2 = !statementMode && frequency === 'semi_monthly';
+  const needsDayOfWeek = !statementMode && ['weekly', 'biweekly'].includes(frequency);
 
   const validate = () => {
     const errs = {};
@@ -170,9 +190,9 @@ export default function RecurringForm({
     if (!effectiveCategoryId) errs.categoryId = 'Category is required';
     if (!description.trim()) errs.description = 'Description is required';
     const amtNum = parseFloat(amount);
-    if (!amount || isNaN(amtNum) || amtNum <= 0) errs.amount = 'Enter a positive amount';
+    if (!statementMode && (!amount || isNaN(amtNum) || amtNum <= 0)) errs.amount = 'Enter a positive amount';
     // Asymmetric transfer validation (applies to both pure transfers and linked transfers)
-    if ((isTransfer || linkedAccountId) && toAmountForAccount !== '') {
+    if (!statementMode && (isTransfer || linkedAccountId) && toAmountForAccount !== '') {
       const toAmt = parseFloat(toAmountForAccount);
       if (isNaN(toAmt) || toAmt <= 0) errs.toAmountForAccount = 'Enter a positive amount';
       else if (!isNaN(amtNum) && toAmt > amtNum) errs.toAmountForAccount = 'Cannot exceed the total payment amount';
@@ -183,7 +203,7 @@ export default function RecurringForm({
       const pct = parseInt(splitPartnerSharePct, 10);
       if (isNaN(pct) || pct < 1 || pct > 99) errs.splitPartnerSharePct = 'Partner share must be 1–99%';
     }
-    if (frequency === 'custom') {
+    if (!statementMode && frequency === 'custom') {
       const iv = parseInt(customInterval, 10);
       if (isNaN(iv) || iv < 1) errs.customInterval = 'Interval must be at least 1';
     }
@@ -211,7 +231,8 @@ export default function RecurringForm({
     setIsSaving(true);
     setSubmitError('');
 
-    const amountCents = toCents(parseFloat(amount));
+    // Statement payments store no amount; the card's statement supplies it.
+    const amountCents = statementMode ? 0 : toCents(parseFloat(amount));
 
     try {
       await onSubmit({
@@ -223,12 +244,14 @@ export default function RecurringForm({
         is_income: isIncome,
         is_transfer: isTransfer,
         to_account_id: isTransfer ? toAccountId : (linkedAccountId || null),
-        frequency,
-        day_of_month: needsDayOfMonth ? parseInt(dayOfMonth, 10) : null,
+        frequency: statementMode ? 'monthly' : frequency,
+        day_of_month: statementMode
+          ? toCard.payment_due_day
+          : needsDayOfMonth ? parseInt(dayOfMonth, 10) : null,
         day_of_month_2: needsDayOfMonth2 ? parseInt(dayOfMonth2, 10) : null,
         day_of_week: needsDayOfWeek ? parseInt(dayOfWeek, 10) : null,
-        custom_interval: frequency === 'custom' ? parseInt(customInterval, 10) : null,
-        custom_unit: frequency === 'custom' ? customUnit : null,
+        custom_interval: !statementMode && frequency === 'custom' ? parseInt(customInterval, 10) : null,
+        custom_unit: !statementMode && frequency === 'custom' ? customUnit : null,
         start_date: startDate,
         end_date: endDate || null,
         auto_confirm: autoConfirm,
@@ -239,9 +262,10 @@ export default function RecurringForm({
           !isTransfer && isSplit && splitMethod === 'custom'
             ? parseInt(splitPartnerSharePct, 10)
             : null,
-        to_amount: (isTransfer || linkedAccountId) && toAmountForAccount !== ''
+        to_amount: !statementMode && (isTransfer || linkedAccountId) && toAmountForAccount !== ''
           ? Math.abs(toCents(parseFloat(toAmountForAccount)))
           : null,
+        pays_statement_balance: statementMode,
       });
     } catch (err) {
       setSubmitError(err?.message || 'Failed to save recurring template');
@@ -330,6 +354,14 @@ export default function RecurringForm({
 
       {/* Amount + Category */}
       <div className="grid grid-cols-2 gap-3">
+        {statementMode ? (
+          <div>
+            <label className={labelClass}>Total payment</label>
+            <p className="rounded-xl border border-dashed border-stone-200 px-4 py-1.5 text-sm text-stone-500 sm:py-2.5 dark:border-stone-700 dark:text-stone-400">
+              Statement balance
+            </p>
+          </div>
+        ) : (
         <div>
           <label className={labelClass}>{isTransfer ? 'Total payment ($) *' : 'Amount ($) *'}</label>
           <AmountInput
@@ -346,6 +378,7 @@ export default function RecurringForm({
           />
           {errors.amount && <p className={errorClass}>{errors.amount}</p>}
         </div>
+        )}
         <div>
           <label className={labelClass}>Category *</label>
           <select value={effectiveCategoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
@@ -363,7 +396,7 @@ export default function RecurringForm({
       </div>
 
       {/* Asymmetric transfer amount (e.g. only principal credited to loan account) */}
-      {(isTransfer ? toAccountId : linkedAccountId) && (
+      {!statementMode && (isTransfer ? toAccountId : linkedAccountId) && (
         <div>
           <label className={labelClass}>
             {isTransfer ? 'Amount applied to account ($)' : 'Amount applied to linked account ($)'}
@@ -453,6 +486,31 @@ export default function RecurringForm({
         </div>
       </div>
 
+      {/* Pay the card's statement balance */}
+      {toCard && (
+        <div className="flex items-start gap-3 rounded-xl border border-stone-200/60 bg-stone-50/50 px-4 py-3 dark:border-stone-700/40 dark:bg-stone-800/50">
+          <label className={`relative mt-0.5 inline-flex items-center ${cardReady ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+            <input
+              type="checkbox"
+              checked={statementMode}
+              disabled={!cardReady || isSaving}
+              onChange={(e) => setPaysStatement(e.target.checked)}
+              aria-label="Pay statement balance"
+              className="peer sr-only"
+            />
+            <div className="peer h-5 w-9 rounded-full bg-stone-300 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-amber-500 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-amber-500 dark:bg-stone-600 dark:peer-checked:bg-amber-500" />
+          </label>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-stone-700 dark:text-stone-300">Pay statement balance</p>
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              {cardReady
+                ? <>Pays each statement in full on the {ordinal(toCard.payment_due_day)}, after it closes on the {ordinal(toCard.statement_close_day)}. Months with no balance are skipped; you can still edit any payment.</>
+                : <>Add this card&apos;s statement close day and payment due day on the Accounts page to use this.</>}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Schedule section (collapsible) */}
       <div className="rounded-xl border border-stone-200/60 bg-stone-50/50 p-4 dark:border-stone-700/40 dark:bg-stone-800/50">
         <button
@@ -464,7 +522,9 @@ export default function RecurringForm({
           <span className="flex items-center gap-2">
             {!scheduleOpen && (
               <span className="text-xs font-normal text-amber-600 dark:text-amber-400">
-                {FREQUENCY_OPTIONS.find((o) => o.value === frequency)?.label}
+                {statementMode
+                  ? `Monthly · Due the ${ordinal(toCard.payment_due_day)}`
+                  : FREQUENCY_OPTIONS.find((o) => o.value === frequency)?.label}
                 {needsDayOfMonth && ` · Day ${dayOfMonth}`}
                 {needsDayOfWeek && ` · ${DAY_OF_WEEK_LABELS[parseInt(dayOfWeek, 10)]}`}
               </span>
@@ -482,7 +542,13 @@ export default function RecurringForm({
         </button>
 
         {scheduleOpen && (<>
+          {statementMode && (
+            <p className="mt-4 text-sm text-stone-600 dark:text-stone-400">
+              Monthly on the card&apos;s due date (the {ordinal(toCard.payment_due_day)}). Change it on the Accounts page.
+            </p>
+          )}
           {/* Frequency + Day selectors */}
+          {!statementMode && (
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Frequency *</label>
@@ -564,6 +630,7 @@ export default function RecurringForm({
               </div>
             )}
           </div>
+          )}
 
           {/* Start / End dates */}
           <div className="mt-3 grid grid-cols-2 gap-3">
