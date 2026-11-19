@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PostgrestClient } from '@supabase/postgrest-js';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { clearAllOfflineData } from './offlineDb';
+import { withReadableError } from './httpErrors';
 import {
   clearServerConfig,
   loadServerConfig,
@@ -79,7 +80,15 @@ const authedFetch = async (input, init = {}) => {
   if (response.status === 401 || expiredJwt) {
     response = await send(true);
   }
-  return response;
+  return withReadableError(response);
+};
+
+// Supabase mode: same readable-error treatment for PostgREST calls only;
+// auth-js classifies its own error responses by status.
+const supabaseFetch = async (input, init) => {
+  const response = await fetch(input, init);
+  const url = input instanceof Request ? input.url : String(input);
+  return url.includes('/rest/v1/') ? withReadableError(response) : response;
 };
 
 const createLocalClient = () => new PostgrestClient(`${_origin}/rest/v1`, { fetch: authedFetch });
@@ -89,7 +98,7 @@ const applyConfig = ({ backendMode, serverOrigin, supabaseUrl, supabaseAnonKey, 
   _origin = serverOrigin || _origin;
   _client = backendMode === 'local'
     ? createLocalClient()
-    : createClient(supabaseUrl, supabaseAnonKey);
+    : createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: supabaseFetch } });
   _cachedUser = null;
   _userPromise = null;
   _cacheUnsubscribe?.();

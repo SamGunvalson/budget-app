@@ -2614,3 +2614,69 @@ test("SVC-12: an offline transfer delete queues both legs or neither", async () 
   await assert.rejects(failing.offlineAware.deleteTransactionOffline("out"), (err) => err.code === "42501");
   assert.deepEqual(await failing.db.transactions.toArray(), transferRows());
 });
+
+// ── upsertBudgetItemsOffline: bulk save used by the budget form ──
+
+test("budget items: an online bulk upsert is one backend call and is cached", async () => {
+  setOnline(true);
+  const sent = [];
+  const { offlineAware, offlineDb, db } = await loadOfflineAware({
+    services: {
+      "./budgets": {
+        upsertBudgetItems: async (items) => {
+          sent.push(items);
+          return items.map((item, i) => ({ id: `srv-${i}`, ...item }));
+        },
+        upsertBudgetItem: failIfCalled("upsertBudgetItem"),
+      },
+    },
+  });
+  await db.budget_plans.put({ id: "p1", month: 3, year: 2026 });
+  const items = [
+    { budget_plan_id: "p1", category_id: "c-food", planned_amount: 100 },
+    { budget_plan_id: "p1", category_id: "c-rent", planned_amount: 200 },
+  ];
+
+  const saved = await offlineAware.upsertBudgetItemsOffline(items);
+
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0], items);
+  assert.deepEqual(saved.map((r) => r.id), ["srv-0", "srv-1"]);
+  assert.equal((await db.budget_items.get("srv-1")).planned_amount, 200);
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+});
+
+test("budget items: an offline bulk upsert queues each item and updates existing ones", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware({
+    services: { "./budgets": { upsertBudgetItems: failIfCalled("upsertBudgetItems") } },
+  });
+  await db.budget_items.put({ id: "i1", budget_plan_id: "p1", category_id: "c-food", planned_amount: 1 });
+
+  const saved = await offlineAware.upsertBudgetItemsOffline([
+    { budget_plan_id: "p1", category_id: "c-food", planned_amount: 100 },
+    { budget_plan_id: "p1", category_id: "c-rent", planned_amount: 200 },
+  ]);
+
+  assert.equal(saved[0].id, "i1");
+  const existing = await db.budget_items.get("i1");
+  assert.equal(existing.planned_amount, 100);
+  assert.equal(existing._action, "update");
+  const created = await db.budget_items.get(saved[1].id);
+  assert.equal(created.planned_amount, 200);
+  assert.equal(created._action, "create");
+  assert.equal(await offlineDb.getPendingSyncCount(), 2);
+});
+
+test("budget items: a bulk upsert onto an unsynced plan is queued behind it", async () => {
+  const { offlineAware, db, plan } = await withPendingLookups({
+    services: { "./budgets": { upsertBudgetItems: failIfCalled("upsertBudgetItems") } },
+  });
+
+  const [item] = await offlineAware.upsertBudgetItemsOffline([
+    { budget_plan_id: plan.id, category_id: "c-food", planned_amount: 40000 },
+  ]);
+
+  const stored = await db.budget_items.get(item.id);
+  assert.equal(stored._action, "create");
+  assert.equal(stored.planned_amount, 40000);
+});

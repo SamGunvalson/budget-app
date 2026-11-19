@@ -9,6 +9,13 @@ if (!config.databaseUrl) {
 }
 
 const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
+// An idle client whose connection Postgres drops (restart, upgrade, network
+// blip) emits 'error' on the pool. Unhandled, that event crashes the process
+// and Nginx returns 502 until Docker restarts it. The pool already discards
+// the broken client, so logging is enough; the next query opens a new one.
+pool.on("error", (err) => {
+  console.error("idle database client error:", err.message);
+});
 let app;
 try {
   app = buildApp(config, { pool });
