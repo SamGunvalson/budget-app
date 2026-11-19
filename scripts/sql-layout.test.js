@@ -28,6 +28,7 @@ const migrationScripts = [
   'supabase_account_statement_cycle.sql',
   'supabase_accounts_closed.sql',
   'supabase_asymmetric_transfer.sql',
+  'supabase_card_statement_payments.sql',
   'supabase_custom_interval.sql',
   'supabase_partnership_hardening_rls.sql',
   'supabase_partnership_seen.sql',

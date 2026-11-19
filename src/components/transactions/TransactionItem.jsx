@@ -9,6 +9,7 @@ import { isValidInlineEdit } from '../../utils/transactionFormRules';
 function TransactionStatusBadges({
   isProjected,
   isPending,
+  isAmountLocked,
   isTransfer,
   isLinkedTransfer,
   effectiveIsIncome,
@@ -23,6 +24,13 @@ function TransactionStatusBadges({
           <span title="Projected" className="inline-flex shrink-0 items-center">
             <svg className="h-3.5 w-3.5 text-stone-400 dark:text-stone-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </span>
+        )}
+        {isAmountLocked && (
+          <span title="Amount edited — not recalculated from the statement" className="inline-flex shrink-0 items-center">
+            <svg className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
             </svg>
           </span>
         )}
@@ -77,6 +85,14 @@ function TransactionStatusBadges({
       {isPending && (
         <span className="inline-flex shrink-0 items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
           PENDING
+        </span>
+      )}
+      {isAmountLocked && (
+        <span
+          title="Amount edited — not recalculated from the statement"
+          className="inline-flex shrink-0 items-center rounded-md bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold text-stone-600 dark:bg-stone-700 dark:text-stone-300"
+        >
+          EDITED
         </span>
       )}
       {isTransfer && (
@@ -211,7 +227,7 @@ function DropdownItem({ onClick, onClose, colorClass, children }) {
  * KebabMenu — single ⋮ button that opens a portal-rendered dropdown of row actions.
  * Uses fixed positioning so the dropdown is never clipped by the scrollable table container.
  */
-function KebabMenu({ transaction, isNotPosted, isTransfer, splitTransactionIds, onConfirm, onSkip, onSplit, onEdit, onDelete }) {
+function KebabMenu({ transaction, isNotPosted, isTransfer, splitTransactionIds, onConfirm, onSkip, onRecalculate, onSplit, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const btnRef = useRef(null);
@@ -290,6 +306,18 @@ function KebabMenu({ transaction, isNotPosted, isTransfer, splitTransactionIds, 
               Skip
             </DropdownItem>
           )}
+          {isNotPosted && transaction.amount_locked && onRecalculate && (
+            <DropdownItem
+              onClick={() => onRecalculate(transaction.id)}
+              onClose={close}
+              colorClass="text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              Recalculate
+            </DropdownItem>
+          )}
           {onSplit && !splitTransactionIds?.has(transaction.id) && !isTransfer && (
             <DropdownItem
               onClick={() => onSplit(transaction)}
@@ -344,6 +372,7 @@ function KebabMenu({ transaction, isNotPosted, isTransfer, splitTransactionIds, 
  *  - categories: all categories (for inline category dropdown)
  *  - onConfirm(id): confirm a pending transaction → posted
  *  - onSkip(id): skip (soft-delete) a projected/pending transaction
+ *  - onRecalculate(id): drop a hand edit so a generated payment follows its statement again
  *  - onSplit(transaction): open split modal for this transaction
  *  - splitTransactionIds: Set<string> of transaction IDs that have been split
  */
@@ -359,6 +388,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   accounts,
   onConfirm,
   onSkip,
+  onRecalculate,
   onSplit,
   splitTransactionIds,
   isMobile = false,
@@ -375,6 +405,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   const isProjected = txStatus === 'projected';
   const isPending = txStatus === 'pending';
   const isNotPosted = isProjected || isPending;
+  const isAmountLocked = isNotPosted && !!transaction.amount_locked;
 
   // Build category options for dropdown
   const categoryOptions = (categories || []).map((c) => ({
@@ -464,6 +495,7 @@ const TransactionItem = forwardRef(function TransactionItem({
                   compact
                   isProjected={isProjected}
                   isPending={isPending}
+                  isAmountLocked={isAmountLocked}
                   isTransfer={isTransfer}
                   isLinkedTransfer={isLinkedTransfer}
                   effectiveIsIncome={effectiveIsIncome}
@@ -498,6 +530,7 @@ const TransactionItem = forwardRef(function TransactionItem({
             splitTransactionIds={splitTransactionIds}
             onConfirm={onConfirm}
             onSkip={onSkip}
+            onRecalculate={onRecalculate}
             onSplit={onSplit}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -604,6 +637,7 @@ const TransactionItem = forwardRef(function TransactionItem({
           <TransactionStatusBadges
             isProjected={isProjected}
             isPending={isPending}
+            isAmountLocked={isAmountLocked}
             isTransfer={isTransfer}
             isLinkedTransfer={isLinkedTransfer}
             effectiveIsIncome={effectiveIsIncome}
@@ -675,6 +709,7 @@ const TransactionItem = forwardRef(function TransactionItem({
           splitTransactionIds={splitTransactionIds}
           onConfirm={onConfirm}
           onSkip={onSkip}
+          onRecalculate={onRecalculate}
           onSplit={onSplit}
           onEdit={onEdit}
           onDelete={onDelete}

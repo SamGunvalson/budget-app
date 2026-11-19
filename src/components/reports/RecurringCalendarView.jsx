@@ -69,6 +69,7 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
           is_income: t.is_group_parent ? occurrenceAmount >= 0 : t.is_income,
           is_transfer: t.is_transfer,
           is_group: t.is_group_parent,
+          pays_statement: !!t.pays_statement_balance,
           categoryColor: t.categories?.color || '#8B5CF6',
         });
       }
@@ -181,8 +182,10 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
                   type="button"
                   onClick={(e) => handleChipClick(e, item)}
                   title={`${item.description} · ${
-                    item.is_transfer ? '' : item.is_income ? '+' : '−'
-                  }${formatCurrency(Math.abs(item.amount))}`}
+                    item.pays_statement
+                      ? 'statement balance'
+                      : `${item.is_transfer ? '' : item.is_income ? '+' : '−'}${formatCurrency(Math.abs(item.amount))}`
+                  }`}
                   className="w-full truncate rounded px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-white transition-opacity hover:opacity-80 focus:outline-none focus:ring-1 focus:ring-white focus:ring-offset-1"
                   style={{ backgroundColor: item.categoryColor }}
                 >
@@ -193,7 +196,7 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
                       : item.is_income
                         ? ' +'
                         : ' −'}
-                    {formatCurrency(Math.abs(item.amount))}
+                    {item.pays_statement ? '' : formatCurrency(Math.abs(item.amount))}
                   </span>
                 </button>
               ))}

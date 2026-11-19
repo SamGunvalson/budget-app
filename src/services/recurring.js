@@ -7,6 +7,15 @@ import {
 } from "../utils/recurringCalculations";
 import { getPartnership, getPartnerId } from "./partnerships";
 import { computeShares, createSplitExpense } from "./splitExpenses";
+import { getAccountBalanceHistory } from "./accounts";
+import { computeStatementPayments } from "../utils/cashflowScenario";
+import {
+  canPayStatementBalance,
+  isStatementPaymentTemplate,
+  planStatementPaymentWrites,
+  replaceableFor,
+  withStatementSchedule,
+} from "../utils/statementPayments";
 
 // ── Concurrency guard for generateProjectedTransactions ──
 // Prevents duplicate projected transactions when the function is called
@@ -28,6 +37,17 @@ export const PROJECTION_WINDOW_DAYS = 90;
 // ── CRUD ──
 
 /**
+ * `pays_statement_balance` is only valid on a plain (non-group) transfer; the
+ * database enforces the same rule. When the transfer fields are not part of an
+ * update, the flag is passed through and the constraint decides.
+ */
+function statementFlag(value, { is_transfer, group_id, is_group_parent } = {}) {
+  if (!value) return false;
+  if (is_transfer === false || group_id || is_group_parent) return false;
+  return true;
+}
+
+/**
  * Fetch all active recurring templates for the current user.
  * Joins category and account (including to_account for transfers) for display.
  * Groups: top-level list returns parents + standalone templates.
@@ -38,7 +58,7 @@ export async function getRecurringTemplates() {
   const { data, error } = await supabase
     .from("recurring_templates")
     .select(
-      "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type), to_accounts:accounts!recurring_templates_to_account_id_fkey(id, name, type)",
+      "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type), to_accounts:accounts!recurring_templates_to_account_id_fkey(id, name, type, statement_close_day, payment_due_day, closed_at, is_active)",
     )
     .eq("is_active", true)
     .order("description");
@@ -49,10 +69,12 @@ export async function getRecurringTemplates() {
   const childMap = new Map(); // group_id -> [children]
   const topLevel = [];
 
-  for (const t of data) {
+  for (const raw of data) {
     // Flatten to_accounts join (Supabase returns it as an object or null)
-    t.to_account = t.to_accounts || null;
-    delete t.to_accounts;
+    raw.to_account = raw.to_accounts || null;
+    delete raw.to_accounts;
+    // Statement payments follow their card's due day, whatever is stored.
+    const t = withStatementSchedule(raw);
 
     // Skip paused templates
     if (t.is_paused) continue;
@@ -108,6 +130,7 @@ export async function createRecurringTemplate({
   split_payer,
   split_partner_share_pct,
   to_amount,
+  pays_statement_balance,
 }) {
   const user = await getCurrentUser();
 
@@ -141,6 +164,7 @@ export async function createRecurringTemplate({
         ? null
         : (split_partner_share_pct ?? null),
       to_amount: to_account_id ? (to_amount || null) : null,
+      pays_statement_balance: statementFlag(pays_statement_balance, { is_transfer, group_id, is_group_parent }),
     })
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type)",
@@ -239,6 +263,8 @@ export async function updateRecurringTemplate(id, updates) {
       : (updates.split_partner_share_pct ?? null);
   if (updates.to_amount !== undefined)
     payload.to_amount = (updates.to_account_id || updates.is_transfer) ? (updates.to_amount || null) : null;
+  if (updates.pays_statement_balance !== undefined)
+    payload.pays_statement_balance = statementFlag(updates.pays_statement_balance, updates);
 
   const { data, error } = await supabase
     .from("recurring_templates")
@@ -507,6 +533,7 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
     baseTx.recurring_template_id = opts.recurring_template_id;
   if (opts.recurring_occurrence_date)
     baseTx.recurring_occurrence_date = opts.recurring_occurrence_date;
+  if (opts.amount_locked) baseTx.amount_locked = true;
 
   const incomingAmount = template.to_amount != null ? Math.abs(template.to_amount) : Math.abs(template.amount);
   const { data, error } = await supabase
@@ -802,6 +829,7 @@ function statusForDate(occurrenceDate, today) {
  * @param {string} dateStr - The originally-scheduled occurrence date (YYYY-MM-DD)
  * @param {string} status - 'projected' or 'pending'
  * @param {string} templateId - The recurring_template_id to back-link
+ * @param {{ amount_locked?: boolean }} [extraOpts] - extra row fields (transfers)
  * @returns {Promise<Array<Object>>} created transactions
  */
 async function applyTemplateWithStatus(
@@ -810,10 +838,12 @@ async function applyTemplateWithStatus(
   dateStr,
   status,
   templateId,
+  extraOpts = {},
 ) {
   // recurring_occurrence_date records the originally-scheduled date and never
   // changes when the user later edits the transaction's actual date.
   const opts = {
+    ...extraOpts,
     status,
     recurring_template_id: templateId,
     recurring_occurrence_date: dateStr,
@@ -944,6 +974,8 @@ export async function generateProjectedTransactions({
     );
 
     for (const template of templates) {
+      // Statement payments get their amounts from the card (below).
+      if (isStatementPaymentTemplate(template)) continue;
       // Get occurrences from today through windowEnd
       const occurrences = getOccurrencesInRange(template, today, windowEnd);
       if (occurrences.length === 0) continue;
@@ -1018,6 +1050,10 @@ export async function generateProjectedTransactions({
       }
     }
 
+    createdTransactions.push(
+      ...(await syncStatementPayments({ templates, user, today, windowEnd })),
+    );
+
     return {
       generated: createdTransactions.length,
       transactions: createdTransactions,
@@ -1031,6 +1067,150 @@ export async function generateProjectedTransactions({
   } finally {
     if (_generatingPromise === run) _generatingPromise = null;
   }
+}
+
+// ── Statement-driven card payments ──
+
+/**
+ * Bring every statement-payment template's generated rows in line with its
+ * card's statements: create pending payments for closed statements with a
+ * balance, projected estimates for cycles with charges, recalculate unposted
+ * rows the user has not edited, and remove rows whose statement is now zero.
+ * Runs inside generateProjectedTransactions, so it shares its concurrency guard.
+ *
+ * @returns {Promise<Array<Object>>} created transactions
+ */
+async function syncStatementPayments({ templates, user, today, windowEnd }) {
+  const todayStr = format(today, "yyyy-MM-dd");
+  const windowEndStr = format(windowEnd, "yyyy-MM-dd");
+  // Far enough back to see the close of any statement still awaiting payment.
+  const from = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+  const fromStr = format(from, "yyyy-MM-dd");
+  const created = [];
+
+  for (const template of templates) {
+    if (!isStatementPaymentTemplate(template)) continue;
+    const card = template.to_account;
+    if (!canPayStatementBalance(card)) {
+      console.warn(
+        `Statement payment "${template.description}" skipped: its card needs a statement close day and payment due day.`,
+      );
+      continue;
+    }
+    try {
+      created.push(
+        ...(await syncTemplateStatementPayments({
+          template, card, user, todayStr, fromStr, windowEndStr,
+        })),
+      );
+    } catch (err) {
+      console.error(`Failed to sync statement payments for "${template.description}":`, err);
+    }
+  }
+  return created;
+}
+
+async function syncTemplateStatementPayments({ template, card, user, todayStr, fromStr, windowEndStr }) {
+  const [series, cardPaymentsRes, templateRowsRes] = await Promise.all([
+    getAccountBalanceHistory({ accountIds: [card.id], startDate: fromStr, endDate: windowEndStr }),
+    supabase
+      .from("transactions")
+      .select("id, account_id, amount, is_income, status, transaction_date, transfer_group_id, recurring_template_id, recurring_occurrence_date, amount_locked")
+      .eq("account_id", card.id)
+      .eq("is_income", true)
+      .not("transfer_group_id", "is", null)
+      .is("deleted_at", null)
+      .gte("transaction_date", fromStr),
+    supabase
+      .from("transactions")
+      .select("id, account_id, amount, is_income, status, transaction_date, transfer_group_id, recurring_template_id, recurring_occurrence_date, amount_locked")
+      .eq("recurring_template_id", template.id)
+      .is("deleted_at", null)
+      .gte("transaction_date", fromStr),
+  ]);
+  if (cardPaymentsRes.error) throw cardPaymentsRes.error;
+  if (templateRowsRes.error) throw templateRowsRes.error;
+
+  const templateRows = templateRowsRes.data || [];
+  const byId = new Map();
+  for (const tx of [...(cardPaymentsRes.data || []), ...templateRows]) byId.set(tx.id, tx);
+
+  const { statements } = computeStatementPayments({
+    card,
+    dates: series.map((pt) => pt.date),
+    balances: series.map((pt) => pt.balances?.[card.id] ?? 0),
+    transactions: [...byId.values()],
+    isReplaceable: replaceableFor(template.id),
+    todayStr,
+  });
+  const { creates, updates, deletes } = planStatementPaymentWrites({
+    statements, templateRows, todayStr, windowEndStr,
+  });
+
+  if (deletes.length) {
+    const tomorrow = format(addDays(new Date(`${todayStr}T00:00:00`), 1), "yyyy-MM-dd");
+    const { error } = await supabase.rpc("soft_delete_recurring_projections", {
+      p_template_ids: [template.id],
+      p_transaction_ids: deletes,
+      p_from_date: tomorrow,
+    });
+    if (error) throw error;
+  }
+
+  for (const u of updates) {
+    // Skip rows the user locked since they were read.
+    const { error } = await supabase
+      .from("transactions")
+      .update({ amount: u.amount, status: u.status, updated_at: new Date().toISOString() })
+      .in("id", u.ids)
+      .eq("amount_locked", false)
+      .neq("status", "posted")
+      .is("deleted_at", null);
+    if (error) throw error;
+  }
+
+  const created = [];
+  for (const c of creates) {
+    const txs = await applyTemplateWithStatus(
+      user,
+      { ...template, amount: c.amount, to_amount: null },
+      c.date,
+      c.status,
+      template.id,
+    );
+    created.push(...txs);
+  }
+  return created;
+}
+
+/**
+ * Undo a hand edit on a generated payment so its amount follows the card's
+ * statement again, then regenerate. Unlocks every unposted leg of the transfer.
+ * Online only, like generation itself.
+ *
+ * @param {string} transactionId - either leg
+ * @returns {Promise<void>}
+ */
+export async function recalculateStatementPayment(transactionId) {
+  const { data: tx, error } = await supabase
+    .from("transactions")
+    .select("id, transfer_group_id")
+    .eq("id", transactionId)
+    .single();
+  if (error) throw error;
+
+  let unlock = supabase
+    .from("transactions")
+    .update({ amount_locked: false, updated_at: new Date().toISOString() });
+  unlock = tx.transfer_group_id
+    ? unlock.eq("transfer_group_id", tx.transfer_group_id)
+    : unlock.eq("id", tx.id);
+  const { error: unlockErr } = await unlock
+    .neq("status", "posted")
+    .is("deleted_at", null);
+  if (unlockErr) throw unlockErr;
+
+  await generateProjectedTransactions();
 }
 
 /**
@@ -1240,12 +1420,19 @@ export async function recordManualPayment(
           }
         : template;
 
+    // A payment recorded by hand on a statement template is real money the
+    // user chose; statement recalculation must not rewrite it.
+    const statement = isStatementPaymentTemplate(template);
+    if (statement && !(Math.abs(effectiveTemplate.amount) > 0)) {
+      throw new Error("Enter the payment amount.");
+    }
     const txs = await applyTemplateWithStatus(
       user,
-      effectiveTemplate,
+      statement ? { ...effectiveTemplate, to_amount: null } : effectiveTemplate,
       dateStr,
       "pending",
       template.id,
+      statement ? { amount_locked: true } : {},
     );
     results.push(...txs);
   }

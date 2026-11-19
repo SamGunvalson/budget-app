@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import BudgetItemInput from './BudgetItemInput';
 import MonthYearSelector from '../common/MonthYearSelector';
-import { useAnnualBudgetData, useCategories } from '../../hooks/queries';
 import {
-  getBudgetPlan,
-  createBudgetPlan,
-  updateBudgetPlan,
-  getBudgetItems,
-  upsertBudgetItems,
-} from '../../services/budgets';
+  useAnnualBudgetData,
+  useBudgetItems,
+  useBudgetPlan,
+  useCategories,
+} from '../../hooks/queries';
+import {
+  createBudgetPlanOffline,
+  updateBudgetPlanOffline,
+  upsertBudgetItemsOffline,
+} from '../../services/offlineAware';
 import {
   formatCurrency,
 } from '../../utils/helpers';
@@ -48,12 +50,22 @@ export default function BudgetForm() {
 
   const { data: categories = [] } = useCategories();
   const annualBudgetQuery = useAnnualBudgetData(year);
+  // Reads go through the offline-aware SWR hooks: cached data renders at once,
+  // and a backend blip (e.g. a 502 from the proxy) falls back to the cache
+  // instead of surfacing as a load error.
+  const planQuery = useBudgetPlan(month, year);
+  const serverPlan = planQuery.data ?? null;
+  const itemsQuery = useBudgetItems(serverPlan?.id);
+  const serverItems = serverPlan ? itemsQuery.data : null;
+  const dataReady = planQuery.isSuccess && (!serverPlan || itemsQuery.isSuccess);
+  const isFetching = planQuery.isFetching || itemsQuery.isFetching;
+
   const [plan, setPlan] = useState(null);           // budget_plans row (or null)
   const [allocations, setAllocations] = useState({}); // { [categoryId]: cents }
   const [savedAllocations, setSavedAllocations] = useState({});
+  // Which month and which query results the form state was last seeded from.
+  const [seeded, setSeeded] = useState({ key: null, plan: null, items: null });
 
-  const queryClient = useQueryClient();
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -70,59 +82,45 @@ export default function BudgetForm() {
     .filter(([id]) => !incomeCategoryIds.has(id) && !transferCategoryIds.has(id))
     .reduce((sum, [, cents]) => sum + (cents || 0), 0);
   const remaining = totalIncomeCents - totalAllocated;
+  const isDirty = Object.keys({ ...allocations, ...savedAllocations })
+    .some((id) => (allocations[id] || 0) !== (savedAllocations[id] || 0));
 
-  // ---------- load data when month/year changes ----------
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
+  // ---------- seed form state from the queries ----------
+  // Render-time pattern (avoids set-state-in-effect lint rule). Seed when the
+  // month changes, and again when a background revalidation brings new data —
+  // but never over unsaved edits or mid-save.
+  const periodKey = `${year}-${month}`;
+  const periodChanged = seeded.key !== periodKey;
+  const dataChanged = seeded.plan !== serverPlan || seeded.items !== serverItems;
+  if (
+    dataReady &&
+    (periodChanged || (dataChanged && !isDirty && !isSaving && !isFetching))
+  ) {
+    setSeeded({ key: periodKey, plan: serverPlan, items: serverItems });
+    setPlan(serverPlan);
+    if (serverPlan) {
+      const alloc = {};
+      (serverItems ?? []).forEach((item) => {
+        alloc[item.category_id] = item.planned_amount;
+      });
+      setAllocations(alloc);
+      setSavedAllocations(alloc);
+    } else {
+      // new month – zeros
+      const alloc = {};
+      categories.filter((c) => !c.is_archived).forEach((c) => {
+        alloc[c.id] = 0;
+      });
+      setAllocations(alloc);
+      setSavedAllocations({});
+    }
+    if (periodChanged) {
       setError('');
       setSuccess('');
-      try {
-        // Categories now flow in via useCategories(); we only need to fetch
-        // the per-month plan and its items here.
-        const existingPlan = await getBudgetPlan(month, year);
-
-        if (cancelled) return;
-
-        if (existingPlan) {
-          setPlan(existingPlan);
-
-          const items = await getBudgetItems(existingPlan.id);
-          if (cancelled) return;
-          const alloc = {};
-          items.forEach((item) => {
-            alloc[item.category_id] = item.planned_amount;
-          });
-          setAllocations(alloc);
-          setSavedAllocations(alloc);
-        } else {
-          // new month – zeros
-          setPlan(null);
-          const alloc = {};
-          categories.filter((c) => !c.is_archived).forEach((c) => {
-            alloc[c.id] = 0;
-          });
-          setAllocations(alloc);
-          setSavedAllocations({});
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load budget data');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
     }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-    // `categories` is only read in the "new month, zero-fill" branch; we
-    // intentionally don't add it to the dep array because reload-on-cats-change
-    // would clobber unsaved allocations.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, year]);
+  }
+  const loadError = planQuery.error || itemsQuery.error || annualBudgetQuery.error;
+  const isLoading = periodChanged && !loadError;
 
   // ---------- handlers ----------
   const handleMonthYearChange = (m, y) => {
@@ -141,16 +139,17 @@ export default function BudgetForm() {
     try {
       let currentPlan = plan;
 
-      // 1. Create or update the budget plan
+      // 1. Create or update the budget plan. The offline wrappers keep the
+      // local cache in step and notify the budget_plans / budget_items queries.
       if (!currentPlan) {
-        currentPlan = await createBudgetPlan({
+        currentPlan = await createBudgetPlanOffline({
           month,
           year,
           total_income: totalIncomeCents,
         });
         setPlan(currentPlan);
       } else {
-        currentPlan = await updateBudgetPlan(currentPlan.id, {
+        currentPlan = await updateBudgetPlanOffline(currentPlan.id, {
           total_income: totalIncomeCents,
         });
         setPlan(currentPlan);
@@ -162,20 +161,13 @@ export default function BudgetForm() {
         category_id,
         planned_amount: planned_amount || 0,
       }));
-      await upsertBudgetItems(items);
+      await upsertBudgetItemsOffline(items);
 
       setSavedAllocations(allocations);
       setSuccess('Budget saved successfully!');
     } catch (err) {
       setError(err.message || 'Failed to save budget');
     } finally {
-      // These writes bypass the *Offline wrappers (no notifyTable), so refresh
-      // Plan vs Actual and the annual grid explicitly — also after a failure,
-      // which may have written the plan but not the items.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['budget_plans'] }),
-        queryClient.invalidateQueries({ queryKey: ['budget_items'] }),
-      ]).catch(() => {});
       setIsSaving(false);
     }
   };
@@ -215,9 +207,9 @@ export default function BudgetForm() {
       </div>
 
       {/* Alerts */}
-      {(error || annualBudgetQuery.error) && (
+      {(error || loadError) && (
         <div className="animate-fade-in rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-          <span className="mr-1.5">⚠</span>{error || annualBudgetQuery.error?.message}
+          <span className="mr-1.5">⚠</span>{error || loadError.message}
         </div>
       )}
       {success && (

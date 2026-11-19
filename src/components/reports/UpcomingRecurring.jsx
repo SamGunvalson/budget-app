@@ -120,6 +120,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
             amount: t.amount,
             is_income: t.is_income,
             is_transfer: t.is_transfer,
+            pays_statement: !!t.pays_statement_balance,
             date: d,
             dateStr: format(d, 'yyyy-MM-dd'),
             category: t.categories?.name || 'Uncategorized',
@@ -141,7 +142,10 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
     setRecordingId(template.id);
     setRecordDate(format(new Date(), 'yyyy-MM-dd'));
     // raw: the prefill is submitted back, so it must not be safe-mode scrambled.
-    setRecordAmount(String(toDollars(Math.abs(template.amount), { raw: true })));
+    // Statement payments have no stored amount; the user types what they paid.
+    setRecordAmount(template.pays_statement_balance
+      ? ''
+      : String(toDollars(Math.abs(template.amount), { raw: true })));
   };
 
   const handleCancelRecord = () => {
@@ -380,7 +384,9 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
                                 ? 'text-emerald-600 dark:text-emerald-400'
                                 : 'text-red-600 dark:text-red-400'
                           }`}>
-                            {t.is_transfer ? '' : t.is_income ? '+' : '−'}{formatCurrency(Math.abs(t.amount))}
+                            {t.pays_statement_balance
+                              ? 'Statement balance'
+                              : <>{t.is_transfer ? '' : t.is_income ? '+' : '−'}{formatCurrency(Math.abs(t.amount))}</>}
                           </span>
                         )}
                       </div>
@@ -681,7 +687,9 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
                   }`}>
                     {item.is_group
                       ? `Net: ${item.amount >= 0 ? '+' : '−'}${formatCurrency(Math.abs(item.amount))}`
-                      : `${item.is_transfer ? '' : item.is_income ? '+' : '−'}${formatCurrency(Math.abs(item.amount))}`
+                      : item.pays_statement
+                        ? 'If a balance'
+                        : `${item.is_transfer ? '' : item.is_income ? '+' : '−'}${formatCurrency(Math.abs(item.amount))}`
                     }
                   </span>
                 </div>

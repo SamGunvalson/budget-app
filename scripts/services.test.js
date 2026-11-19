@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { SourceTextModule, SyntheticModule } from "node:vm";
 import * as helpers from "../src/utils/helpers.js";
 import * as accountRules from "../src/utils/accountRules.js";
+import * as statementPayments from "../src/utils/statementPayments.js";
 
 /**
  * Load a src/ module with its imports replaced by the given dependency map.
@@ -134,6 +135,7 @@ async function loadTransactions({ failRpcFor = null, failCompanionLookup = false
   const transactions = await loadModule("../src/services/transactions.js", {
     "./supabase": { supabase: fake.supabase, getCurrentUser: async () => ({ id: "owner" }) },
     "../utils/ids": { newId: () => "new-id" },
+    "../utils/statementPayments": { ...statementPayments },
   });
   const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
   return { transactions, calls: fake.calls, byId };

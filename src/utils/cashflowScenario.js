@@ -4,7 +4,9 @@
 // which already includes pending and projected transactions), layers on
 // hypothetical "what if" items, and settles credit cards that have a statement
 // cycle configured: each statement's balance is paid in full from the paying
-// account, replacing any projected placeholder payment.
+// account, replacing any unlocked projected payment. The per-card statement
+// math (computeStatementPayments) is also used to generate the real recurring
+// statement-payment transactions.
 //
 // Everything is integer cents in *raw* account sign: assets are what you have,
 // liabilities are what you owe (positive = owed). Callers convert for display.
@@ -135,10 +137,7 @@ function makeState(dates, accountIds, series) {
 /** Add `delta` (raw sign) to an account from `dateStr` onward. */
 function applyDelta(state, accountId, dateStr, delta) {
   const series = state.balances[accountId];
-  if (!series || !delta) return;
-  for (let i = firstIndexOnOrAfter(state.dates, dateStr); i < series.length; i += 1) {
-    series[i] += delta;
-  }
+  if (series) applySeriesDelta(state.dates, series, dateStr, delta);
 }
 
 /**
@@ -177,18 +176,21 @@ export function itemLegs(items = [], accountsById = {}) {
 
 // ── Settlement ──────────────────────────────────────────────────────────────
 
+/** A projected payment the forecast may replace: not hand-edited by the user. */
+export const isProjectedPlaceholder = (tx) => tx.status === "projected" && !tx.amount_locked;
+
 /**
  * Payments into a card, split by kind. Card legs of transfers have
  * is_income = true (a payment reduces what is owed).
- *  - placeholders: projected rows (recurring payments with a stand-in amount)
- *  - recorded:     posted/pending rows (money that has or will really move)
+ *  - placeholders: rows whose amount the calculation replaces (`isReplaceable`)
+ *  - recorded:     everything else (money that has or will really move)
  */
-function cardPayments(cardId, transactions) {
+function cardPayments(cardId, transactions, isReplaceable) {
   const placeholders = [];
   const recorded = [];
   for (const tx of transactions) {
     if (tx.account_id !== cardId || !tx.is_income || !tx.transfer_group_id) continue;
-    if (tx.status === "projected") placeholders.push(tx);
+    if (isReplaceable(tx)) placeholders.push(tx);
     else recorded.push(tx);
   }
   return { placeholders, recorded };
@@ -199,28 +201,64 @@ function otherLegAccount(tx, byGroup) {
   return legs.find((l) => l.id !== tx.id)?.account_id ?? null;
 }
 
+/** Add `delta` to a single daily series from `dateStr` onward (in place). */
+function applySeriesDelta(dates, series, dateStr, delta) {
+  if (!delta) return;
+  for (let i = firstIndexOnOrAfter(dates, dateStr); i < series.length; i += 1) {
+    series[i] += delta;
+  }
+}
+
 /**
- * Settle one card in date order, mutating `state`. Returns settlement records.
+ * Pay-in-full statement payments for one card, in date order.
+ *
+ * Shared by the cashflow forecast and recurring statement-payment generation,
+ * so both always agree. Card side only: the paying account is the caller's job.
+ *
+ * @param {Object}   opts
+ * @param {Object}   opts.card          account row with statement_close_day / payment_due_day
+ * @param {string[]} opts.dates         ascending daily YYYY-MM-DD dates
+ * @param {number[]} opts.balances      card raw-sign balance per date (owed = positive);
+ *                                      includes posted, pending, and projected rows
+ * @param {Array}    [opts.transactions] payment legs (both legs of transfers are fine)
+ * @param {Function} [opts.isReplaceable] which card payments the computed payment
+ *                                      replaces; default: unlocked projected rows
+ * @param {Array}    [opts.extraPayments] [{ date, amount }] extra payments into the card
+ * @param {string}   opts.todayStr      YYYY-MM-DD local today
+ * @returns {{ balances: number[], statements: Array<{
+ *   closeDate: string, dueDate: string, paymentDate: string, closed: boolean,
+ *   statement: number, alreadyPaid: number, amount: number, replaced: Array }> }}
+ *   `balances` is a new series with replaced rows reversed and computed payments
+ *   applied. A statement is listed when it needs a payment or replaces a row.
  */
-function settleCard({ state, card, payer, accountsById, transactions, byGroup, hypotheticalPayments, todayStr }) {
-  const { dates } = state;
-  if (!dates.length || !state.balances[card.id]) return [];
+export function computeStatementPayments({
+  card,
+  dates = [],
+  balances = [],
+  transactions = [],
+  isReplaceable = isProjectedPlaceholder,
+  extraPayments = [],
+  todayStr,
+}) {
+  const series = balances.map((v) => Math.round(Number(v) || 0));
+  if (!dates.length || !card?.statement_close_day || !card?.payment_due_day) {
+    return { balances: series, statements: [] };
+  }
   const cycles = statementCycles({
     closeDay: card.statement_close_day,
     dueDay: card.payment_due_day,
     from: dates[0],
     to: dates[dates.length - 1],
   });
-  const { placeholders, recorded } = cardPayments(card.id, transactions);
-  const settlements = [];
+  const { placeholders, recorded } = cardPayments(card.id, transactions, isReplaceable);
+  const statements = [];
 
   for (const cycle of cycles) {
     const inWindow = (d) => d > cycle.closeDate && d <= cycle.nextCloseDate;
-    const windowPlaceholders = placeholders
+    const replaced = placeholders
       .filter((tx) => inWindow(tx.transaction_date) && tx.transaction_date > todayStr)
       .sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
-    const firstPlaceholderDate = windowPlaceholders[0]?.transaction_date;
-    const paymentDate = firstPlaceholderDate ?? cycle.dueDate;
+    const paymentDate = replaced[0]?.transaction_date ?? cycle.dueDate;
 
     // Payments already in the past are real history; leave them alone.
     if (paymentDate <= todayStr) continue;
@@ -228,53 +266,85 @@ function settleCard({ state, card, payer, accountsById, transactions, byGroup, h
     const closeIdx = dates.indexOf(cycle.closeDate);
     if (closeIdx === -1) continue;
 
-    const statement = Math.max(0, state.balances[card.id][closeIdx]);
-    const recordedTotal =
+    const statement = Math.max(0, series[closeIdx]);
+    const alreadyPaid =
       recorded
         .filter((tx) => inWindow(tx.transaction_date))
         .reduce((sum, tx) => sum + Math.abs(Number(tx.amount) || 0), 0)
-      + hypotheticalPayments
-        .filter((leg) => leg.accountId === card.id && inWindow(leg.date))
-        .reduce((sum, leg) => sum + leg.amount, 0);
-    const amount = Math.max(0, statement - recordedTotal);
+      + extraPayments
+        .filter((p) => inWindow(p.date))
+        .reduce((sum, p) => sum + Math.abs(Number(p.amount) || 0), 0);
+    const amount = Math.max(0, statement - alreadyPaid);
 
-    // Reverse each placeholder on both legs; the computed payment replaces it.
-    const replaced = [];
-    for (const tx of windowPlaceholders) {
-      const placeholderAmount = Math.abs(Number(tx.amount) || 0);
-      const fromId = otherLegAccount(tx, byGroup) ?? payer.id;
-      applyDelta(state, card.id, tx.transaction_date, placeholderAmount);
-      if (accountsById[fromId]) {
-        applyDelta(state, fromId, tx.transaction_date, -flowDelta(accountsById[fromId], placeholderAmount, true));
-      }
-      replaced.push({ id: tx.id, date: tx.transaction_date, amount: placeholderAmount, fromAccountId: fromId });
+    // Reverse each replaced row; the computed payment takes its place.
+    for (const tx of replaced) {
+      applySeriesDelta(dates, series, tx.transaction_date, Math.abs(Number(tx.amount) || 0));
     }
+    if (amount > 0) applySeriesDelta(dates, series, paymentDate, -amount);
+
+    if (amount > 0 || replaced.length) {
+      statements.push({
+        closeDate: cycle.closeDate,
+        dueDate: cycle.dueDate,
+        paymentDate,
+        closed: cycle.closeDate < todayStr,
+        statement,
+        alreadyPaid,
+        amount,
+        replaced,
+      });
+    }
+  }
+  return { balances: series, statements };
+}
+
+/**
+ * Settle one card in date order, mutating `state`. Returns settlement records.
+ */
+function settleCard({ state, card, payer, accountsById, transactions, byGroup, hypotheticalPayments, todayStr }) {
+  if (!state.dates.length || !state.balances[card.id]) return [];
+  const { balances, statements } = computeStatementPayments({
+    card,
+    dates: state.dates,
+    balances: state.balances[card.id],
+    transactions,
+    extraPayments: hypotheticalPayments.filter((leg) => leg.accountId === card.id),
+    todayStr,
+  });
+  state.balances[card.id] = balances;
+
+  return statements.map((s) => {
+    // Reverse each replaced row's other leg too.
+    const replaced = s.replaced.map((tx) => {
+      const amount = Math.abs(Number(tx.amount) || 0);
+      const fromId = otherLegAccount(tx, byGroup) ?? payer.id;
+      if (accountsById[fromId]) {
+        applyDelta(state, fromId, tx.transaction_date, -flowDelta(accountsById[fromId], amount, true));
+      }
+      return { id: tx.id, date: tx.transaction_date, amount, fromAccountId: fromId };
+    });
 
     // Pay from the placeholder's source account when there is one, so a
     // payment the user scheduled from another account stays there.
     const payFromId = replaced[0]?.fromAccountId && accountsById[replaced[0].fromAccountId]
       ? replaced[0].fromAccountId
       : payer.id;
-    if (amount > 0) {
-      applyDelta(state, card.id, paymentDate, -amount);
-      applyDelta(state, payFromId, paymentDate, flowDelta(accountsById[payFromId], amount, true));
+    if (s.amount > 0) {
+      applyDelta(state, payFromId, s.paymentDate, flowDelta(accountsById[payFromId], s.amount, true));
     }
 
-    if (amount > 0 || replaced.length) {
-      settlements.push({
-        cardId: card.id,
-        payerId: payFromId,
-        closeDate: cycle.closeDate,
-        dueDate: cycle.dueDate,
-        paymentDate,
-        statement,
-        alreadyPaid: recordedTotal,
-        amount,
-        replaced,
-      });
-    }
-  }
-  return settlements;
+    return {
+      cardId: card.id,
+      payerId: payFromId,
+      closeDate: s.closeDate,
+      dueDate: s.dueDate,
+      paymentDate: s.paymentDate,
+      statement: s.statement,
+      alreadyPaid: s.alreadyPaid,
+      amount: s.amount,
+      replaced,
+    };
+  });
 }
 
 // ── Scenario ────────────────────────────────────────────────────────────────

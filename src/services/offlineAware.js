@@ -25,6 +25,7 @@ import { newId } from "../utils/ids";
 import { swrRead, notifyTable } from "./cache";
 import { requestSync, schedulePush } from "./sync";
 import { isAvailableCategory } from "../utils/categoryArchive";
+import { amountLockedAfterEdit } from "../utils/statementPayments";
 
 // ── SWR helpers ──
 //
@@ -1120,6 +1121,13 @@ function planOutgoingIncoming(legs, updates) {
     payee: updates.payee?.trim() || null,
     transaction_date: updates.transaction_date,
   };
+  // Mirrors the online update: a hand-edited generated payment is locked.
+  if (amountLockedAfterEdit([
+    { leg: outgoingLeg, amount: updates.from_amount },
+    { leg: incomingLeg, amount: updates.to_amount },
+  ])) {
+    shared.amount_locked = true;
+  }
   return [
     {
       row: outgoingLeg,
@@ -2333,6 +2341,7 @@ import {
   updateBudgetPlan as _updateBudgetPlan,
   getBudgetItems as _getBudgetItems,
   upsertBudgetItem as _upsertBudgetItem,
+  upsertBudgetItems as _upsertBudgetItems,
 } from "./budgets";
 
 export async function getBudgetPlanOffline(month, year) {
@@ -2439,6 +2448,43 @@ export async function upsertBudgetItemOffline(itemData) {
     await cacheWritten("budget_items", [result.data]);
     return result.data;
   }
+  return queueBudgetItemOffline(itemData);
+}
+
+/**
+ * Bulk form of `upsertBudgetItemOffline`: one backend request when online,
+ * per-item queueing when offline.
+ * @param {Array<{ budget_plan_id: string, category_id: string, planned_amount: number }>} items
+ */
+export async function upsertBudgetItemsOffline(items) {
+  if (!items.length) return [];
+  const cached = await Promise.all(
+    items.map((item) =>
+      db.budget_items
+        .where("[budget_plan_id+category_id]")
+        .equals([item.budget_plan_id, item.category_id])
+        .first(),
+    ),
+  );
+  const result = await tryOnlineWrite(
+    "budget_items",
+    cached.map((row) => row?.id),
+    () => _upsertBudgetItems(items),
+    {
+      budget_plans: [...new Set(items.map((item) => item.budget_plan_id))],
+      categories: items.map((item) => item.category_id),
+    },
+  );
+  if (!result.offline) {
+    await cacheWritten("budget_items", result.data);
+    return result.data;
+  }
+  const rows = [];
+  for (const item of items) rows.push(await queueBudgetItemOffline(item));
+  return rows;
+}
+
+async function queueBudgetItemOffline(itemData) {
   // Check if an item with this budget_plan_id+category_id already exists locally
   const existing = await db.budget_items
     .where("[budget_plan_id+category_id]")

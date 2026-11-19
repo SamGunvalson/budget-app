@@ -68,6 +68,7 @@ export default function TransactionList({
   emptyMessage,
   onConfirm,
   onSkip,
+  onRecalculate,
   onSplit,
   splitTransactionIds,
   onConfirmAll,
@@ -286,6 +287,7 @@ export default function TransactionList({
                   accounts={accounts}
                   onConfirm={onConfirm}
                   onSkip={onSkip}
+                  onRecalculate={onRecalculate}
                   onSplit={onSplit}
                   splitTransactionIds={splitTransactionIds}
                   isMobile={isMobile}

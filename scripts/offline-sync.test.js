@@ -7,6 +7,7 @@ import { afterEach, beforeEach, mock, test } from "node:test";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { SourceTextModule, SyntheticModule } from "node:vm";
 import * as accountRules from "../src/utils/accountRules.js";
+import * as statementPayments from "../src/utils/statementPayments.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const sources = {
@@ -242,6 +243,7 @@ async function loadOfflineAware({ services = {}, flush = async () => {}, base, s
       isAvailableCategory: (c) => c.is_active !== false && c.is_archived !== true,
     },
     "../utils/accountRules": { ...accountRules },
+    "../utils/statementPayments": { ...statementPayments },
     ...services,
   });
   return { offlineAware, offlineDb, db, flushes, scheduled, cache };
@@ -777,6 +779,32 @@ test("APP-1: a linked transfer needs an available Account Transfer category offl
   assert.equal(await db.transactions.count(), 0);
 });
 
+test("editing a generated transfer's amount offline locks it against recalculation", async () => {
+  const { offlineAware, db } = await loadOfflineAware();
+  await seedLookups(db);
+  const generated = { recurring_template_id: "tpl", status: "pending", deleted_at: null, category_id: "c-xfer" };
+  await db.transactions.bulkPut([
+    { ...generated, id: "out", transfer_group_id: "g1", account_id: "a-check", amount: 5000, is_income: false },
+    { ...generated, id: "in", transfer_group_id: "g1", account_id: "a-card", amount: 5000, is_income: true },
+    { id: "o2", transfer_group_id: "g2", account_id: "a-check", category_id: "c-xfer", amount: 100, is_income: false, deleted_at: null },
+    { id: "i2", transfer_group_id: "g2", account_id: "a-card", category_id: "c-xfer", amount: 100, is_income: true, deleted_at: null },
+  ]);
+  const edit = (id, amount, date = "2026-03-05") => offlineAware.updateTransferOffline(id, {
+    from_account_id: "a-check", to_account_id: "a-card", amount,
+    description: "Card payment", payee: "", transaction_date: date, category_id: "c-xfer",
+  });
+
+  // Same amount (only the date moved): still recalculated.
+  let legs = await edit("in", 5000, "2026-03-06");
+  assert.deepEqual(legs.map((l) => !!l.amount_locked), [false, false]);
+  // New amount: both legs locked.
+  legs = await edit("in", 6000);
+  assert.deepEqual(legs.map((l) => l.amount_locked), [true, true]);
+  // A transfer typed by hand is never locked.
+  legs = await edit("i2", 200);
+  assert.deepEqual(legs.map((l) => !!l.amount_locked), [false, false]);
+});
+
 test("APP-1: transfer and linked-transfer edits update both legs offline", async () => {
   const { offlineAware, db } = await loadOfflineAware();
   await seedLookups(db);
@@ -1231,6 +1259,7 @@ async function loadTransactionsService() {
     "./supabase": { supabase, getCurrentUser: async () => ({ id: "user-1" }) },
     "./offlineDb": { ...offlineDb },
     "../utils/ids": { ...(await load(sources.ids, {})) },
+    "../utils/statementPayments": { ...statementPayments },
   };
   const service = await load(sources.transactions, modules);
   return { service, inserts, modules };
@@ -2613,4 +2642,70 @@ test("SVC-12: an offline transfer delete queues both legs or neither", async () 
   await failing.db.transactions.bulkPut(transferRows());
   await assert.rejects(failing.offlineAware.deleteTransactionOffline("out"), (err) => err.code === "42501");
   assert.deepEqual(await failing.db.transactions.toArray(), transferRows());
+});
+
+// ── upsertBudgetItemsOffline: bulk save used by the budget form ──
+
+test("budget items: an online bulk upsert is one backend call and is cached", async () => {
+  setOnline(true);
+  const sent = [];
+  const { offlineAware, offlineDb, db } = await loadOfflineAware({
+    services: {
+      "./budgets": {
+        upsertBudgetItems: async (items) => {
+          sent.push(items);
+          return items.map((item, i) => ({ id: `srv-${i}`, ...item }));
+        },
+        upsertBudgetItem: failIfCalled("upsertBudgetItem"),
+      },
+    },
+  });
+  await db.budget_plans.put({ id: "p1", month: 3, year: 2026 });
+  const items = [
+    { budget_plan_id: "p1", category_id: "c-food", planned_amount: 100 },
+    { budget_plan_id: "p1", category_id: "c-rent", planned_amount: 200 },
+  ];
+
+  const saved = await offlineAware.upsertBudgetItemsOffline(items);
+
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0], items);
+  assert.deepEqual(saved.map((r) => r.id), ["srv-0", "srv-1"]);
+  assert.equal((await db.budget_items.get("srv-1")).planned_amount, 200);
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+});
+
+test("budget items: an offline bulk upsert queues each item and updates existing ones", async () => {
+  const { offlineAware, offlineDb, db } = await loadOfflineAware({
+    services: { "./budgets": { upsertBudgetItems: failIfCalled("upsertBudgetItems") } },
+  });
+  await db.budget_items.put({ id: "i1", budget_plan_id: "p1", category_id: "c-food", planned_amount: 1 });
+
+  const saved = await offlineAware.upsertBudgetItemsOffline([
+    { budget_plan_id: "p1", category_id: "c-food", planned_amount: 100 },
+    { budget_plan_id: "p1", category_id: "c-rent", planned_amount: 200 },
+  ]);
+
+  assert.equal(saved[0].id, "i1");
+  const existing = await db.budget_items.get("i1");
+  assert.equal(existing.planned_amount, 100);
+  assert.equal(existing._action, "update");
+  const created = await db.budget_items.get(saved[1].id);
+  assert.equal(created.planned_amount, 200);
+  assert.equal(created._action, "create");
+  assert.equal(await offlineDb.getPendingSyncCount(), 2);
+});
+
+test("budget items: a bulk upsert onto an unsynced plan is queued behind it", async () => {
+  const { offlineAware, db, plan } = await withPendingLookups({
+    services: { "./budgets": { upsertBudgetItems: failIfCalled("upsertBudgetItems") } },
+  });
+
+  const [item] = await offlineAware.upsertBudgetItemsOffline([
+    { budget_plan_id: plan.id, category_id: "c-food", planned_amount: 40000 },
+  ]);
+
+  const stored = await db.budget_items.get(item.id);
+  assert.equal(stored._action, "create");
+  assert.equal(stored.planned_amount, 40000);
 });
