@@ -156,7 +156,7 @@ export function isIncomeDebit(transaction) {
  * rows are excluded. Pass `asOf = null` to treat every row as settled.
  *
  * Must stay in sync with the `p_as_of` filter in the report RPCs
- * (sql_scripts/supabase_phase3_aggregations.sql).
+ * (sql_scripts/phase3_aggregations.sql).
  *
  * @param {{ status?: string, transaction_date: string }} transaction
  * @param {string|null} asOf - YYYY-MM-DD local date, or null for no filter

@@ -8,7 +8,7 @@ Completed implementation plans are in the [performance archive](../archive/READM
 | --- | --- |
 | Cache-first reads and incremental pulls | [Offline wrappers](../../src/services/offlineAware.js), [cache](../../src/services/cache.js), [sync](../../src/services/sync.js) |
 | Query deduplication and table invalidation | [Query hooks](../../src/hooks/queries.js), [query client](../../src/services/queryClient.js), [bridge](../../src/services/queryBridge.js) |
-| Server aggregations and batched writes | [Aggregation SQL](../../sql_scripts/supabase_phase3_aggregations.sql), [mutation SQL](../../sql_scripts/supabase_phase4_mutations.sql) |
+| Server aggregations and batched writes | [Aggregation SQL](../../sql_scripts/phase3_aggregations.sql), [mutation SQL](../../sql_scripts/phase4_mutations.sql) |
 | Lazy routes/chunks and runtime caching | [App](../../src/App.jsx), [Vite/PWA configuration](../../vite.config.js) |
 | Transaction-list virtualization | [TransactionList](../../src/components/transactions/TransactionList.jsx) |
 | Opt-in timing helpers | [Performance helpers](../../src/utils/perf.js) |

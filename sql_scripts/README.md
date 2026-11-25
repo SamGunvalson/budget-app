@@ -2,8 +2,7 @@
 
 Top-level SQL files are the **current setup**. [`migrations/`](./migrations/)
 contains historical upgrades and repairs for existing databases; their effects
-are already represented in the current setup scripts. The `supabase_` filename
-prefix is historical; name new files without it.
+are already represented in the current setup scripts.
 
 ## Setup order
 
@@ -11,19 +10,19 @@ The [local initializer](./local/init.sh) applies
 [`local/apply_order.txt`](./local/apply_order.txt) on an empty volume: local
 roles/auth compatibility first, these seven setup scripts in order, then grants:
 
-1. [supabase_schema_create.sql](./supabase_schema_create.sql) - seven core tables,
+1. [schema_create.sql](./schema_create.sql) - seven core tables,
    indexes, initial policies, and transaction soft-delete RPC.
-2. [supabase_split_expenses.sql](./supabase_split_expenses.sql) - partnerships,
+2. [split_expenses.sql](./split_expenses.sql) - partnerships,
    shared expenses, and partner-email RPC.
-3. [supabase_add_updated_at.sql](./supabase_add_updated_at.sql) - remaining sync
+3. [add_updated_at.sql](./add_updated_at.sql) - remaining sync
    timestamps and update triggers.
-4. [supabase_category_archiving.sql](./supabase_category_archiving.sql) - archive/
+4. [category_archiving.sql](./category_archiving.sql) - archive/
    restore RPC and reference guards.
-5. [supabase_phase3_aggregations.sql](./supabase_phase3_aggregations.sql) - account/
+5. [phase3_aggregations.sql](./phase3_aggregations.sql) - account/
    reporting RPCs and supporting indexes.
-6. [supabase_phase4_mutations.sql](./supabase_phase4_mutations.sql) - batched
+6. [phase4_mutations.sql](./phase4_mutations.sql) - batched
    writes and the closed-account insert guard.
-7. [supabase_rls_complete.sql](./supabase_rls_complete.sql) - complete policy
+7. [rls_complete.sql](./rls_complete.sql) - complete policy
    definitions, after all referenced tables exist.
 
 The two base CREATE scripts are **not re-runnable**. Do not run all SQL files

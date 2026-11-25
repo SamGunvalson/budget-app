@@ -1,10 +1,10 @@
 -- =============================================================================
 -- Budget App — Full Schema Creation Script
--- Run this in the Supabase SQL Editor to create all tables from scratch on a
--- fresh Supabase project.
+-- Creates all core tables from scratch on a fresh database. Applied by
+-- local/init.sh in the order given by local/apply_order.txt.
 --
 -- Prerequisites:
---   • New Supabase project with auth.users already managed by Supabase Auth.
+--   • auth.users exists (created by local/01_auth_schema.sql).
 --   • Run the statements in order — foreign key dependencies are respected.
 --
 -- This is the core base, not the entire setup. Follow README.md for the split

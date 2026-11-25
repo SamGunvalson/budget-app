@@ -16,31 +16,31 @@ import { test } from 'node:test';
 
 const sqlDirectory = resolve(fileURLToPath(new URL('../sql_scripts/', import.meta.url)));
 const setupScripts = [
-  'supabase_schema_create.sql',
-  'supabase_split_expenses.sql',
-  'supabase_add_updated_at.sql',
-  'supabase_category_archiving.sql',
-  'supabase_phase3_aggregations.sql',
-  'supabase_phase4_mutations.sql',
-  'supabase_rls_complete.sql',
+  'schema_create.sql',
+  'split_expenses.sql',
+  'add_updated_at.sql',
+  'category_archiving.sql',
+  'phase3_aggregations.sql',
+  'phase4_mutations.sql',
+  'rls_complete.sql',
 ];
 const migrationScripts = [
-  'supabase_account_statement_cycle.sql',
-  'supabase_accounts_closed.sql',
-  'supabase_asymmetric_transfer.sql',
-  'supabase_card_statement_payments.sql',
-  'supabase_custom_interval.sql',
-  'supabase_partnership_hardening_rls.sql',
-  'supabase_partnership_seen.sql',
-  'supabase_recurring_group_new_children.sql',
-  'supabase_recurring_occurrence_date.sql',
-  'supabase_recurring_projection_cleanup.sql',
-  'supabase_report_as_of.sql',
-  'supabase_split_dedup.sql',
-  'supabase_split_fix_rls.sql',
-  'supabase_split_recurring.sql',
-  'supabase_split_soft_delete_rpc.sql',
-  'supabase_transactions_soft_delete_rls.sql',
+  'account_statement_cycle.sql',
+  'accounts_closed.sql',
+  'asymmetric_transfer.sql',
+  'card_statement_payments.sql',
+  'custom_interval.sql',
+  'partnership_hardening_rls.sql',
+  'partnership_seen.sql',
+  'recurring_group_new_children.sql',
+  'recurring_occurrence_date.sql',
+  'recurring_projection_cleanup.sql',
+  'report_as_of.sql',
+  'split_dedup.sql',
+  'split_fix_rls.sql',
+  'split_recurring.sql',
+  'split_soft_delete_rpc.sql',
+  'transactions_soft_delete_rls.sql',
 ];
 const readSqlFile = (file) => readFileSync(join(sqlDirectory, file), 'utf8');
 const applyOrder = readSqlFile('local/apply_order.txt').split('\n')
@@ -67,8 +67,8 @@ test('fresh setup contains all current scripts and no historical repairs', () =>
 
 test('base occurrence lookup index matches the retained upgrade definition', () => {
   const index = /CREATE INDEX(?: IF NOT EXISTS)? idx_transactions_recurring_occurrence\s+ON transactions\([^;]+;/;
-  const base = readSqlFile('supabase_schema_create.sql').match(index)?.[0];
-  const migration = readSqlFile('migrations/supabase_recurring_occurrence_date.sql').match(index)?.[0];
+  const base = readSqlFile('schema_create.sql').match(index)?.[0];
+  const migration = readSqlFile('migrations/recurring_occurrence_date.sql').match(index)?.[0];
   assert.ok(base);
   assert.ok(migration);
   const normalize = (sql) => sql.replace(' IF NOT EXISTS', '').replace(/\s+/g, ' ');
@@ -76,8 +76,8 @@ test('base occurrence lookup index matches the retained upgrade definition', () 
 });
 
 test('report as-of upgrade matches the fresh report RPC definitions', () => {
-  const setup = readSqlFile('supabase_phase3_aggregations.sql');
-  const migration = readSqlFile('migrations/supabase_report_as_of.sql');
+  const setup = readSqlFile('phase3_aggregations.sql');
+  const migration = readSqlFile('migrations/report_as_of.sql');
   for (const name of [
     'get_plan_vs_actual',
     'get_plan_vs_actual_ytd',
@@ -94,13 +94,13 @@ test('report as-of upgrade matches the fresh report RPC definitions', () => {
 });
 
 test('statement cycle upgrade matches the fresh account schema and balances RPC', () => {
-  const setup = readSqlFile('supabase_phase3_aggregations.sql');
-  const migration = readSqlFile('migrations/supabase_account_statement_cycle.sql');
+  const setup = readSqlFile('phase3_aggregations.sql');
+  const migration = readSqlFile('migrations/account_statement_cycle.sql');
   const rpc = /DROP FUNCTION IF EXISTS get_account_balances\([^)]*\);\s+CREATE OR REPLACE FUNCTION get_account_balances\([\s\S]*?\n\$\$;/;
   const base = setup.match(rpc)?.[0];
   assert.ok(base, 'Missing get_account_balances in fresh setup');
   assert.equal(migration.match(rpc)?.[0], base, 'get_account_balances upgrade differs from fresh setup');
-  const schema = readSqlFile('supabase_schema_create.sql');
+  const schema = readSqlFile('schema_create.sql');
   for (const column of ['statement_close_day', 'payment_due_day', 'payment_account_id']) {
     assert.match(schema, new RegExp(`\\n\\s+${column}\\s`), `Base schema missing ${column}`);
     assert.match(migration, new RegExp(`ADD COLUMN IF NOT EXISTS ${column}\\s`), `Upgrade missing ${column}`);
@@ -114,7 +114,7 @@ test('legacy repair include resolves and database image bundles historical migra
   const include = readSqlFile('local/98_local_fixes.sql').match(/^\\ir (.+)$/m)?.[1];
   assert.ok(include);
   assert.equal(resolve(sqlDirectory, 'local', include),
-    join(sqlDirectory, 'migrations/supabase_transactions_soft_delete_rls.sql'));
+    join(sqlDirectory, 'migrations/transactions_soft_delete_rls.sql'));
   assert.ok(existsSync(resolve(sqlDirectory, 'local', include)));
   const dockerfile = readSqlFile('Dockerfile');
   assert.match(dockerfile, /^COPY \*\.sql \/sql_scripts\/$/m);
@@ -124,8 +124,8 @@ test('legacy repair include resolves and database image bundles historical migra
 
 test('fresh base already supplies the soft-delete RPC and grants from the legacy repair', () => {
   const rpc = /CREATE OR REPLACE FUNCTION public\.soft_delete_transaction\(txn_id uuid\)[\s\S]*?GRANT EXECUTE ON FUNCTION public\.soft_delete_transaction\(uuid\) TO authenticated;/;
-  const base = readSqlFile('supabase_schema_create.sql').match(rpc)?.[0];
-  const migration = readSqlFile('migrations/supabase_transactions_soft_delete_rls.sql').match(rpc)?.[0];
+  const base = readSqlFile('schema_create.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/transactions_soft_delete_rls.sql').match(rpc)?.[0];
   assert.ok(base);
   assert.ok(migration);
   assert.equal(base, migration);
@@ -133,8 +133,8 @@ test('fresh base already supplies the soft-delete RPC and grants from the legacy
 
 test('fresh split setup and upgrade supply the same split soft-delete RPC', () => {
   const rpc = /CREATE OR REPLACE FUNCTION public\.soft_delete_split_expense\([\s\S]*?GRANT EXECUTE ON FUNCTION public\.soft_delete_split_expense\(uuid, uuid\) TO authenticated;/;
-  const setup = readSqlFile('supabase_split_expenses.sql').match(rpc)?.[0];
-  const migration = readSqlFile('migrations/supabase_split_soft_delete_rpc.sql').match(rpc)?.[0];
+  const setup = readSqlFile('split_expenses.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/split_soft_delete_rpc.sql').match(rpc)?.[0];
   assert.ok(setup);
   assert.equal(setup, migration);
   assert.match(setup, /SECURITY DEFINER\s+SET search_path = public/);
@@ -145,8 +145,8 @@ test('fresh split setup and upgrade supply the same split soft-delete RPC', () =
 
 test('fresh setup and recurring cleanup upgrade supply the same restricted RPC', () => {
   const rpc = /CREATE OR REPLACE FUNCTION public\.soft_delete_recurring_projections\([\s\S]*?GRANT EXECUTE ON FUNCTION public\.soft_delete_recurring_projections\(uuid\[\], uuid\[\], date\) TO authenticated;/;
-  const setup = readSqlFile('supabase_phase4_mutations.sql').match(rpc)?.[0];
-  const migration = readSqlFile('migrations/supabase_recurring_projection_cleanup.sql').match(rpc)?.[0];
+  const setup = readSqlFile('phase4_mutations.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/recurring_projection_cleanup.sql').match(rpc)?.[0];
   assert.ok(setup);
   assert.equal(setup, migration);
   assert.match(setup, /SECURITY DEFINER\s+SET search_path = public/);
@@ -208,7 +208,7 @@ test('initializer invokes psql in dependency order from an unrelated working dir
 });
 
 test('initializer stops immediately when a setup script fails', () => {
-  const failedScript = 'supabase_add_updated_at.sql';
+  const failedScript = 'add_updated_at.sql';
   const result = runInitializer(failedScript);
   assert.equal(result.status, 7, result.stderr);
   assert.equal(result.calls.length, applyOrder.indexOf(failedScript) + 1);
@@ -217,8 +217,8 @@ test('initializer stops immediately when a setup script fails', () => {
 
 test('fresh setup and group upgrade supply the same upsert_recurring_group RPC', () => {
   const rpc = /CREATE OR REPLACE FUNCTION upsert_recurring_group\([\s\S]*?\n\$\$;/;
-  const setup = readSqlFile('supabase_phase4_mutations.sql').match(rpc)?.[0];
-  const migration = readSqlFile('migrations/supabase_recurring_group_new_children.sql').match(rpc)?.[0];
+  const setup = readSqlFile('phase4_mutations.sql').match(rpc)?.[0];
+  const migration = readSqlFile('migrations/recurring_group_new_children.sql').match(rpc)?.[0];
   assert.ok(setup);
   assert.equal(setup, migration);
   // Inserted children must be recorded as kept, or the cleanup step

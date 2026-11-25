@@ -5,7 +5,7 @@
 -- when a recurring transaction is posted (via auto-confirm or manual confirm)
 -- a corresponding split_expenses record is created automatically.
 --
--- Run this in the Supabase SQL Editor after the base schema is in place.
+-- Run with psql as the database owner after the base schema is in place.
 -- All statements are idempotent (IF NOT EXISTS / IF EXISTS guards).
 -- =============================================================================
 

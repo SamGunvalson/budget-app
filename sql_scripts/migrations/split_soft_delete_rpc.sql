@@ -1,5 +1,5 @@
 -- Upgrade for existing databases: install the split soft-delete RPC.
--- Fresh setup gets the same function from supabase_split_expenses.sql.
+-- Fresh setup gets the same function from split_expenses.sql.
 -- Safe to rerun (CREATE OR REPLACE + idempotent grants).
 BEGIN;
 

@@ -7,22 +7,22 @@ Paths now include `migrations/`.
 
 | Script | Existing-database purpose | Current setup equivalent |
 | --- | --- | --- |
-| [supabase_account_statement_cycle.sql](./supabase_account_statement_cycle.sql) | Adds credit card statement close day, payment due day, and paying account; replaces `get_account_balances` to return them | Core base and phase-3 aggregations |
-| [supabase_card_statement_payments.sql](./supabase_card_statement_payments.sql) | Adds `recurring_templates.pays_statement_balance` (with its plain-transfer constraint) and `transactions.amount_locked` for statement-driven card payments | Core base |
-| [supabase_accounts_closed.sql](./supabase_accounts_closed.sql) | Adds account closure and recurring pause fields | Core base |
-| [supabase_asymmetric_transfer.sql](./supabase_asymmetric_transfer.sql) | Adds incoming transfer amount and constraint | Core base |
-| [supabase_custom_interval.sql](./supabase_custom_interval.sql) | Adds custom schedule fields and frequency checks | Core base |
-| [supabase_split_recurring.sql](./supabase_split_recurring.sql) | Adds recurring split configuration | Core base |
-| [supabase_recurring_occurrence_date.sql](./supabase_recurring_occurrence_date.sql) | Backfills occurrence dates, replaces dedup index, and adds lookup index | Core base, including both occurrence indexes |
-| [supabase_partnership_seen.sql](./supabase_partnership_seen.sql) | Adds partnership notification watermarks | Split base |
-| [supabase_split_dedup.sql](./supabase_split_dedup.sql) | Soft-deletes duplicate linked splits and adds uniqueness | Split base index; fresh databases have no old duplicates |
-| [supabase_split_fix_rls.sql](./supabase_split_fix_rls.sql) | Repairs split UPDATE/DELETE policies | Split base and complete RLS |
-| [supabase_partnership_hardening_rls.sql](./supabase_partnership_hardening_rls.sql) | Restricts partnership inserts to pending invites, installs the `partnerships_guard` trigger and one-active-partnership indexes, and requires split payers/linked transactions to belong to the partnership/caller | Split base and complete RLS |
-| [supabase_split_soft_delete_rpc.sql](./supabase_split_soft_delete_rpc.sql) | Installs the member-scoped `soft_delete_split_expense` RPC; direct soft-delete UPDATEs fail the split SELECT policy | Split base |
-| [supabase_transactions_soft_delete_rls.sql](./supabase_transactions_soft_delete_rls.sql) | Atomically replaces legacy transaction policies and installs soft-delete RPC | Core base RPC/policies and complete RLS |
-| [supabase_recurring_projection_cleanup.sql](./supabase_recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
-| [supabase_report_as_of.sql](./supabase_report_as_of.sql) | Replaces plan-vs-actual and spending-trend RPCs with versions taking optional `p_as_of`, so reports can exclude projected/pending/future rows | Phase-3 aggregations |
-| [supabase_recurring_group_new_children.sql](./supabase_recurring_group_new_children.sql) | Replaces `upsert_recurring_group` so children added while editing a group are kept instead of deactivated | Phase-4 mutations |
+| [account_statement_cycle.sql](./account_statement_cycle.sql) | Adds credit card statement close day, payment due day, and paying account; replaces `get_account_balances` to return them | Core base and phase-3 aggregations |
+| [card_statement_payments.sql](./card_statement_payments.sql) | Adds `recurring_templates.pays_statement_balance` (with its plain-transfer constraint) and `transactions.amount_locked` for statement-driven card payments | Core base |
+| [accounts_closed.sql](./accounts_closed.sql) | Adds account closure and recurring pause fields | Core base |
+| [asymmetric_transfer.sql](./asymmetric_transfer.sql) | Adds incoming transfer amount and constraint | Core base |
+| [custom_interval.sql](./custom_interval.sql) | Adds custom schedule fields and frequency checks | Core base |
+| [split_recurring.sql](./split_recurring.sql) | Adds recurring split configuration | Core base |
+| [recurring_occurrence_date.sql](./recurring_occurrence_date.sql) | Backfills occurrence dates, replaces dedup index, and adds lookup index | Core base, including both occurrence indexes |
+| [partnership_seen.sql](./partnership_seen.sql) | Adds partnership notification watermarks | Split base |
+| [split_dedup.sql](./split_dedup.sql) | Soft-deletes duplicate linked splits and adds uniqueness | Split base index; fresh databases have no old duplicates |
+| [split_fix_rls.sql](./split_fix_rls.sql) | Repairs split UPDATE/DELETE policies | Split base and complete RLS |
+| [partnership_hardening_rls.sql](./partnership_hardening_rls.sql) | Restricts partnership inserts to pending invites, installs the `partnerships_guard` trigger and one-active-partnership indexes, and requires split payers/linked transactions to belong to the partnership/caller | Split base and complete RLS |
+| [split_soft_delete_rpc.sql](./split_soft_delete_rpc.sql) | Installs the member-scoped `soft_delete_split_expense` RPC; direct soft-delete UPDATEs fail the split SELECT policy | Split base |
+| [transactions_soft_delete_rls.sql](./transactions_soft_delete_rls.sql) | Atomically replaces legacy transaction policies and installs soft-delete RPC | Core base RPC/policies and complete RLS |
+| [recurring_projection_cleanup.sql](./recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
+| [report_as_of.sql](./report_as_of.sql) | Replaces plan-vs-actual and spending-trend RPCs with versions taking optional `p_as_of`, so reports can exclude projected/pending/future rows | Phase-3 aggregations |
+| [recurring_group_new_children.sql](./recurring_group_new_children.sql) | Replaces `upsert_recurring_group` so children added while editing a group are kept instead of deactivated | Phase-4 mutations |
 
 ## Applying upgrades
 
@@ -43,7 +43,7 @@ Use the updated database image, which bundles this directory:
 # Example repair only; choose the migration required by your release.
 docker compose --env-file .env.selfhost exec -T db \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
-  -f /sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql
+  -f /sql_scripts/migrations/transactions_soft_delete_rls.sql
 ```
 
 The retained [`local/98_local_fixes.sql`](../local/98_local_fixes.sql) entrypoint

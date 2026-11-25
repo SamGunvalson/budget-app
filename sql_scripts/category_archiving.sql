@@ -1,4 +1,4 @@
--- Apply after the base schema and supabase_add_updated_at.sql.
+-- Apply after the base schema and add_updated_at.sql.
 BEGIN;
 
 ALTER TABLE public.categories

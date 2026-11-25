@@ -90,7 +90,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    ```bash
    docker compose --env-file .env.selfhost up -d --no-deps --wait db
    # Example only: replace with the migration filename specified by the release.
-   docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_feature_migration.sql
+   docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/feature_migration.sql
    docker compose --env-file .env.selfhost up -d
    ```
 
@@ -182,7 +182,7 @@ Run these from the Unraid web terminal (**>_** icon) or over SSH. Plain
 
      ```bash
      docker exec -i "$DB" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
-       -f /sql_scripts/migrations/supabase_report_as_of.sql
+       -f /sql_scripts/migrations/report_as_of.sql
      ```
 
    - **Unreleased branch.** The running image does not contain the file yet.
@@ -192,7 +192,7 @@ Run these from the Unraid web terminal (**>_** icon) or over SSH. Plain
 
      ```bash
      docker exec -i "$DB" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
-       < /mnt/user/appdata/budget-app/supabase_report_as_of.sql
+       < /mnt/user/appdata/budget-app/report_as_of.sql
      ```
 
    A successful run prints a run of `DROP FUNCTION` and `CREATE FUNCTION`
@@ -263,11 +263,11 @@ Use **Categories → Archive** to hide unused categories from new-entry lists
 without changing historical transactions, budgets, or totals. Archiving requires
 a connection; change or pause recurring schedules and quick-entry templates that
 reference the category first. Existing volumes need
-[`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
+[`add_updated_at.sql`](../sql_scripts/add_updated_at.sql)
 (if not already applied), then:
 
 ```bash
-docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_category_archiving.sql
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/category_archiving.sql
 ```
 
 The script is idempotent, supplies the authenticated RPC EXECUTE grant, and
@@ -277,13 +277,13 @@ notifies PostgREST to reload its schema.
 
 Reports pass `p_as_of` to `get_plan_vs_actual`, `get_plan_vs_actual_ytd`,
 `get_monthly_spending_trend`, and `get_yearly_spending_trend`. Apply
-[`migrations/supabase_report_as_of.sql`](../sql_scripts/migrations/supabase_report_as_of.sql)
+[`migrations/report_as_of.sql`](../sql_scripts/migrations/report_as_of.sql)
 **before** deploying the updated frontend, or report requests fail with a
 missing function signature. It is transactional, changes no data, is safe to
 rerun, and reloads the PostgREST schema itself.
 
 ```bash
-docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_report_as_of.sql
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/report_as_of.sql
 ```
 
 To verify, `\df get_plan_vs_actual` in `psql` should list `p_as_of date`.
@@ -295,13 +295,13 @@ If recurring edits fail while clearing projections with
 apply the owner-scoped cleanup RPC:
 
 ```bash
-docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_recurring_projection_cleanup.sql
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/recurring_projection_cleanup.sql
 ```
 
 For legacy transaction policies, first apply
-[`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql).
+[`migrations/transactions_soft_delete_rls.sql`](../sql_scripts/migrations/transactions_soft_delete_rls.sql).
 To verify or re-apply all policies, run
-[`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
+[`rls_complete.sql`](../sql_scripts/rls_complete.sql)
 after all schema prerequisites, including partnerships and split expenses.
 
 ## Dev container
@@ -396,11 +396,11 @@ packages or externalizing runtime imports.
 ### RLS Policy errors ("new row violates row-level security policy")
 
 1. Make sure you're logged in
-2. If editing a recurring template fails on a `PATCH` to `transactions`, check that the app is not requesting returned rows from the soft-delete operation: the SELECT policy hides rows after `deleted_at` is set. Use an app version that updates without returning those rows. For other transaction RLS failures, existing databases may need [`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) followed by [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql); see the [migration guide](../sql_scripts/migrations/README.md#applying-upgrades) for the local Docker command. Do not rerun the fresh-install initializer on an existing database.
+2. If editing a recurring template fails on a `PATCH` to `transactions`, check that the app is not requesting returned rows from the soft-delete operation: the SELECT policy hides rows after `deleted_at` is set. Use an app version that updates without returning those rows. For other transaction RLS failures, existing databases may need [`migrations/transactions_soft_delete_rls.sql`](../sql_scripts/migrations/transactions_soft_delete_rls.sql) followed by [`sql_scripts/rls_complete.sql`](../sql_scripts/rls_complete.sql); see the [migration guide](../sql_scripts/migrations/README.md#applying-upgrades) for the local Docker command. Do not rerun the fresh-install initializer on an existing database.
 3. In `psql`, check `\dp` / `pg_policies` shows policies on each table
 4. Make sure the full fresh-install sequence or the required incremental upgrades were applied
-5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`migrations/supabase_split_fix_rls.sql`](../sql_scripts/migrations/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
-6. If recurring confirmations created duplicate split rows, run [`migrations/supabase_split_dedup.sql`](../sql_scripts/migrations/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
+5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`migrations/split_fix_rls.sql`](../sql_scripts/migrations/split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
+6. If recurring confirmations created duplicate split rows, run [`migrations/split_dedup.sql`](../sql_scripts/migrations/split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
 
 ### Database tables not showing up
 

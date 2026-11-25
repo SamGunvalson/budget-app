@@ -10,7 +10,7 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 - [ ] Does every directly owned `INSERT` set `user_id: user.id` explicitly, with parent/shared ownership validated through the appropriate service and RLS contract?
 - [ ] Is `user.id` obtained from the selected auth adapter/session — not from client-supplied input?
 - [ ] Are there any raw SQL strings (template literals passed to `.rpc()` or similar)? If yes, are all parameters passed as bound arguments, never interpolated into the SQL string?
-- [ ] Does any new service function need a corresponding RLS policy in `supabase_rls_complete.sql`?
+- [ ] Does any new service function need a corresponding RLS policy in `rls_complete.sql`?
 
 ## File Import / Upload (`src/utils/csvParser.js`, `src/services/import.js`)
 
@@ -69,5 +69,5 @@ Use this checklist when reviewing any PR that touches data services, forms, rout
 
 ## After Merging
 
-- [ ] If RLS policies were changed: run the diagnostic query in `sql_scripts/supabase_rls_complete.sql` to confirm all tables still show `rls_enabled = true` with at least one policy.
+- [ ] If RLS policies were changed: run the diagnostic query in `sql_scripts/rls_complete.sql` to confirm all tables still show `rls_enabled = true` with at least one policy.
 - [ ] If `nginx.conf` was changed: test the deployed instance at [securityheaders.com](https://securityheaders.com) and confirm the grade did not drop.

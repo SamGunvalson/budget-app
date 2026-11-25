@@ -3,7 +3,7 @@ import { newId } from "../utils/ids";
 import { amountLockedAfterEdit } from "../utils/statementPayments";
 
 // Phase 4: the closed-account guard now lives in a Postgres BEFORE INSERT
-// trigger (`assert_account_open` in supabase_phase4_mutations.sql) — no
+// trigger (`assert_account_open` in phase4_mutations.sql) — no
 // client-side round-trip needed. The trigger raises with the same friendly
 // message the old JS guard used, so callers can surface error.message
 // unchanged.

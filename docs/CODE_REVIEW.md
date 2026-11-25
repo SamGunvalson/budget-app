@@ -27,7 +27,7 @@ needing Docker/PostgreSQL has been run: the auth-service suite, the self-host
 smoke test (now asserting CSP headers), and the RLS tests including the new
 `sql_scripts/local/tests/partnerships_rls.sql`.
 
-DB-1/DB-2 need `sql_scripts/migrations/supabase_partnership_hardening_rls.sql`
+DB-1/DB-2 need `sql_scripts/migrations/partnership_hardening_rls.sql`
 applied by hand to existing database volumes.
 
 Open decisions for the owner:
@@ -73,7 +73,7 @@ Several findings share one fix:
 1032, 1400, 1632, 1735); push at `src/services/sync.js:344`.
 Rows created offline are stored with `user_id: null` and `pushRow` upserts them
 unchanged. `user_id` is `UUID NOT NULL` with no default or trigger
-(`sql_scripts/supabase_schema_create.sql:27,56,78`), so the push fails, the row
+(`sql_scripts/schema_create.sql:27,56,78`), so the push fails, the row
 stays pending forever, and it never reaches the server. Check first whether
 the live database has a default that the scripts lack.
 Fix: in `pushRow`, set `clean.user_id` from `getCurrentUser()` for creates and
@@ -602,8 +602,8 @@ the soft-delete `USING`/`WITH CHECK` rule on `transactions` and
 use `auth.uid()`; every `.rpc()` call in `src/services` matches SQL names and
 arguments; `local/apply_order.txt` order is valid; money columns are BIGINT cents.
 
-**✅ DB-1 — high — verified.** `sql_scripts/supabase_split_expenses.sql:56-73`
-(same in `supabase_rls_complete.sql:137-154`).
+**✅ DB-1 — high — verified.** `sql_scripts/split_expenses.sql:56-73`
+(same in `rls_complete.sql:137-154`).
 Partnership INSERT only requires `user_a_id = auth.uid()`, so a user can insert
 `status='active'` with any `user_b_id`. UPDATE `WITH CHECK` lets either member
 reactivate a dissolved row or rewrite member ids and `invited_email`. Only the
@@ -614,59 +614,59 @@ dissolve through an RPC or a BEFORE UPDATE trigger that freezes identity
 columns and allows only valid transitions; add a unique index on active
 membership per user.
 
-**✅ DB-2 — medium — reported.** `supabase_split_expenses.sql:128-136`
-(`supabase_rls_complete.sql:183-192`).
+**✅ DB-2 — medium — reported.** `split_expenses.sql:128-136`
+(`rls_complete.sql:183-192`).
 split_expenses INSERT checks membership only: `paid_by_user_id` need not be a
 partner, and `transaction_id` can reference another user's transaction.
 Fix: check both in `WITH CHECK` or a trigger.
 
-**DB-3 — medium — reported.** `supabase_schema_create.sql:36`.
+**DB-3 — medium — reported.** `schema_create.sql:36`.
 `UNIQUE (user_id, name, is_active)` fails on the second soft-delete of a
 category with the same name.
 Fix: partial unique index on `(user_id, name) WHERE is_active`, with a
 migration and a DATA_MODEL update.
 
-**DB-4 — medium — reported.** `supabase_phase4_mutations.sql:73-76, 114-128`;
-`supabase_schema_create.sql:185-187, 280-282`.
+**DB-4 — medium — reported.** `phase4_mutations.sql:73-76, 114-128`;
+`schema_create.sql:185-187, 280-282`.
 `assert_account_open` is BEFORE INSERT only, so updates can move a transaction
 to a closed account. Ownership of referenced `account_id`/`category_id` is
 never checked.
 Fix: trigger on INSERT OR UPDATE OF `account_id`, and verify the referenced
 rows belong to `NEW.user_id`.
 
-**DB-5 — low — reported.** `supabase_phase4_mutations.sql:260-289, 299-373`.
+**DB-5 — low — reported.** `phase4_mutations.sql:260-289, 299-373`.
 `upsert_recurring_group` does not raise when the parent UPDATE matches no row,
 so children can be inserted under a parent the caller does not own.
 Fix: `IF NOT FOUND THEN RAISE`.
 
-**DB-6 — low — reported.** `supabase_schema_create.sql:135, 167`.
+**DB-6 — low — reported.** `schema_create.sql:135, 167`.
 `transactions.is_income` and `accounts.starting_balance` are nullable; a NULL
 drops the row from totals or makes the balance NULL. `recurring_templates.amount`
 lacks the `<> 0` check.
 Fix: `NOT NULL DEFAULT` with backfill and migration; add the check.
 
-**DB-7 — low — reported.** `supabase_split_expenses.sql:186`.
+**DB-7 — low — reported.** `split_expenses.sql:186`.
 `get_partner_email` uses unqualified `partnerships` with `search_path = public`.
 Fix: `SET search_path = public, pg_temp` and qualify the table.
 
-**DB-8 — low — reported.** `supabase_category_archiving.sql:133`,
-`supabase_split_expenses.sql:192`, phase3/phase4 functions.
+**DB-8 — low — reported.** `category_archiving.sql:133`,
+`split_expenses.sql:192`, phase3/phase4 functions.
 Execute privileges should be explicit rather than relying on defaults (Supabase support, where anon kept EXECUTE, was removed 2026-11-25).
 Fix: `REVOKE ... FROM PUBLIC, anon` and `GRANT ... TO authenticated` on each RPC.
 
-**DB-9 — low — reported, possibly intended.** `supabase_split_fix_rls.sql:44-53`,
-`supabase_rls_complete.sql:217-227`.
+**DB-9 — low — reported, possibly intended.** `split_fix_rls.sql:44-53`,
+`rls_complete.sql:217-227`.
 After a partnership is dissolved, either ex-member can still edit and
 hard-delete shared split expenses.
 
-**DB-10 — low — reported.** `supabase_add_updated_at.sql:45-58`.
+**DB-10 — low — reported.** `add_updated_at.sql:45-58`.
 `updated_at` triggers exist only on categories, budget_items and
 recurring_templates; the other four synced tables rely on the client clock,
 which the sync watermark depends on (see OFF-11).
 Fix: attach `set_updated_at` to transactions, accounts, budget_plans and
 user_preferences.
 
-**DB-11 — low — reported.** `supabase_rls_complete.sql:134, 148`.
+**DB-11 — low — reported.** `rls_complete.sql:134, 148`.
 Partnership policies cast `request.jwt.claims` directly; no lowercase check on
 `invited_email`.
 Fix: use `auth.email()`; add `CHECK (invited_email = lower(invited_email))`.
@@ -674,13 +674,13 @@ Fix: use `auth.email()`; add `CHECK (invited_email = lower(invited_email))`.
 **DB-12 — low — reported.** `sql_scripts/migrations/`.
 No migrations exist for several columns now in the base scripts
 (`transactions.status`, `recurring_template_id`, `transfer_group_id`, the
-recurring group columns). `supabase_rls_complete.sql:49` references a
+recurring group columns). `rls_complete.sql:49` references a
 nonexistent file. `local/tests/` covers only transactions RLS.
 Fix: state a minimum baseline or add a catch-up migration; add partnership and
 split RLS tests.
 
-**DB-13 — low — reported.** `supabase_phase3_aggregations.sql:281, 355, 393`;
-`supabase_schema_create.sql:132-139, 222-226`; `supabase_split_expenses.sql:114`.
+**DB-13 — low — reported.** `phase3_aggregations.sql:281, 355, 393`;
+`schema_create.sql:132-139, 222-226`; `split_expenses.sql:114`.
 `get_net_worth_history` joins on a non-sargable `date_trunc` and computes its
 CTE twice. Several indexes are unused or duplicated.
 Fix: filter by date range per month; drop the redundant indexes.
