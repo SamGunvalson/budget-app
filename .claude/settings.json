@@ -31,8 +31,7 @@
       "Read(./android/app/build/**)",
       "Read(./android/app/src/main/assets/**)",
       "Read(./package-lock.json)",
-      "Read(./server/auth/package-lock.json)",
-      "Read(./scripts/migrate-from-supabase/package-lock.json)"
+      "Read(./server/auth/package-lock.json)"
     ]
   },
   "hooks": {

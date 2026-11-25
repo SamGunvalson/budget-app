@@ -271,7 +271,7 @@ async function loadSync({ pending = {}, user = { id: "user-1" }, modules = {}, o
     select: () => result,
     single: () => result,
   };
-  const supabase = {
+  const api = {
     from(table) {
       return {
         upsert: (payload, options) => {
@@ -292,7 +292,7 @@ async function loadSync({ pending = {}, user = { id: "user-1" }, modules = {}, o
     },
   };
   const sync = await load(sources.sync, {
-    "./supabase": { supabase, getCurrentUser: async () => user },
+    "./backend": { db: api, getCurrentUser: async () => user },
     "./offlineDb": modules.offlineDb || {
       markSynced: async (table, id) => {
         synced.push(`${table}/${id}`);
@@ -1235,7 +1235,7 @@ test("OFF-5: ids are still generated where crypto.randomUUID is unavailable", as
 
 async function loadTransactionsService() {
   const inserts = [];
-  const supabase = {
+  const api = {
     from(table) {
       let payload;
       const query = {
@@ -1256,7 +1256,7 @@ async function loadTransactionsService() {
   };
   const { offlineDb } = await loadOfflineDb();
   const modules = {
-    "./supabase": { supabase, getCurrentUser: async () => ({ id: "user-1" }) },
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "user-1" }) },
     "./offlineDb": { ...offlineDb },
     "../utils/ids": { ...(await load(sources.ids, {})) },
     "../utils/statementPayments": { ...statementPayments },
@@ -2114,7 +2114,7 @@ test("OFF-12: a push in which nothing gets through is not retried on a timer", a
 async function loadSyncForPull(serve) {
   const base = await loadLocalStore();
   const requests = [];
-  const supabase = {
+  const api = {
     from(table) {
       const request = { table, since: null };
       const query = {
@@ -2135,7 +2135,7 @@ async function loadSyncForPull(serve) {
     },
   };
   const sync = await load(sources.sync, {
-    "./supabase": { supabase, getCurrentUser: async () => ({ id: "user-1" }) },
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "user-1" }) },
     "./offlineDb": { ...base.offlineDb },
     "../utils/syncQueue": { ...base.syncQueue },
     "./cache": { notifyTable: (name) => base.notified.push(name) },

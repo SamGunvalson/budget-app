@@ -30,5 +30,5 @@ context, then work through the steps below in order. $ARGUMENTS
 7. **Check.** Run `npm run verify`. Then ask the `db-reviewer` agent to review
    the diff.
 8. **Tell the user** which migration file must be applied by hand to existing
-   Supabase projects and self-hosted volumes. Never run SQL against a database
+   database volumes. Never run SQL against a database
    yourself.

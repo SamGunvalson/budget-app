@@ -29,7 +29,7 @@ function getSessionSeed() {
  * so that `formatCurrency`, `toDollars`, and `maskAccountName` all
  * return scrambled / masked values without any component refactoring.
  *
- * The preference is persisted to Supabase (`user_preferences`) via
+ * The preference is persisted to the server (`user_preferences`) via
  * the offline-aware layer, identical to the theme preference.
  *
  * The preference is stored together with the user id it was loaded for and

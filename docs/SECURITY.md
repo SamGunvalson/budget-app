@@ -6,24 +6,23 @@ This document describes the security invariants the app depends on. Any change t
 
 ## Security Invariants
 
-### 1. Supabase Row-Level Security (RLS) is the last line of defense
+### 1. PostgreSQL Row-Level Security (RLS) is the last line of defense
 
 Public financial tables have RLS enabled, scoped by owner or parent/partnership
 membership (see [complete policies](../sql_scripts/supabase_rls_complete.sql)
 and [data-model contracts](./DATA_MODEL.md)). Not every table has a `user_id`
-column. In self-hosted mode, PostgREST verifies the signed JWT and the local
-`auth.uid()` compatibility helper supplies identity; the same policies protect
-public data. Auth tables are isolated by backend-managed access/local grants
-and must not be exposed through PostgREST.
+column. PostgREST verifies the signed JWT and the `auth.uid()` compatibility
+helper supplies identity. Auth tables are isolated by local grants and must not
+be exposed through PostgREST.
 
 **This must never be disabled or weakened.**
 
-Verify at any time by running the diagnostic query at the bottom of `supabase_rls_complete.sql` in the Supabase SQL Editor.
+Verify at any time by running the diagnostic query at the bottom of `supabase_rls_complete.sql` with `psql` as the database owner.
 
 Transaction SELECT/UPDATE policies must also require `deleted_at IS NULL` in
 USING, while UPDATE WITH CHECK checks ownership without that condition.
 A permissive transactions FOR ALL policy defeats the live-row filter even when
-the narrower policies exist. For existing Supabase databases, run
+the narrower policies exist. For existing databases, run
 [migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
 as the database owner before reapplying the complete RLS script. It atomically
 replaces the legacy policy and installs the authenticated-only soft-delete RPC.
@@ -52,18 +51,18 @@ React auto-escapes all JSX interpolations, preventing reflected XSS. The app has
 
 ### 4. Offline data is cleared on logout
 
-The `signOut()` wrapper in [src/services/backend.js](../src/services/backend.js) clears offline data and session storage before ending the selected backend session through the [auth adapter](../src/services/auth/).
-**Never call `supabase.auth.signOut()` directly; route auth operations through the adapter and logout wrapper.**
+The `signOut()` wrapper in [src/services/backend.js](../src/services/backend.js) clears offline data and session storage before ending the session through the [auth adapter](../src/services/auth/).
+**Never call auth endpoints directly; route auth operations through the adapter and logout wrapper.**
 
 ### 5. All user-data routes require authentication
 
-Every route under `/app/*` is wrapped in `ProtectedRoute`, which checks the selected auth adapter session before rendering. Public routes (`/`, `/auth`) do not have access to user data.
+Every route under `/app/*` is wrapped in `ProtectedRoute`, which checks the auth adapter session before rendering. Public routes (`/`, `/auth`) do not have access to user data.
 
 **Any new page added under `/app/` must use `ProtectedRoute`.**
 
-### 6. Anon key is the only credential in the browser bundle
+### 6. No secrets in the browser bundle
 
-`VITE_SUPABASE_ANON_KEY` is the only Supabase credential baked into a Supabase-mode frontend build; it is intentionally public by Supabase design. The `service_role` key must **never** appear in `VITE_*` variables or anywhere in the frontend codebase. Local mode must not embed database or JWT signing secrets in the client.
+The frontend build contains no credentials. Database passwords and the JWT signing secret must **never** appear in `VITE_*` variables or anywhere in the frontend codebase; they live only in the server-side `.env.selfhost`.
 
 ### 7. File import is size- and row-limited
 

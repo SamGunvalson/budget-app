@@ -11,10 +11,10 @@ This guide walks you through setting up the Budget App from scratch.
 ## Self-hosted local Postgres
 
 This option runs PostgreSQL 16, PostgREST, the Fastify auth service, and the app's
-Nginx frontend in Docker Compose. It does not require Supabase. Nginx serves plain
+Nginx frontend in Docker Compose. Nginx serves plain
 HTTP; do not expose it to an untrusted network without TLS.
 
-Deployment requires only Docker Compose, `docker-compose.selfhost.yml`, and an
+Deployment requires only Docker Compose, `docker-compose.yml`, and an
 environment file. Download the Compose file and `.env.selfhost.example` from the
 same repository release; no Node.js, Git checkout, source build, or SQL bind mounts
 are needed on the server. The app, auth service, and initialized PostgreSQL image
@@ -39,7 +39,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
 2. Pull the published images and start the stack:
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
+   docker compose --env-file .env.selfhost up -d --pull always
    ```
 
 3. Open `http://localhost:8085` (or the configured `APP_PORT`) and sign up for
@@ -47,7 +47,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    the setting by recreating the stack:
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d
+   docker compose --env-file .env.selfhost up -d
    ```
 
    The auth service CLI can create accounts or reset passwords. It reads a new
@@ -58,19 +58,17 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    printf 'New password: '
    IFS= read -r -s NEW_PASSWORD
    printf '\n'
-   printf '%s\n' "$NEW_PASSWORD" | docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T auth node src/cli.js reset-password user@example.com
+   printf '%s\n' "$NEW_PASSWORD" | docker compose --env-file .env.selfhost exec -T auth node src/cli.js reset-password user@example.com
    unset NEW_PASSWORD
    ```
 
 4. Back up the database from the host. Treat the resulting SQL file as sensitive:
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db pg_dump -U postgres -d postgres > budget-app-backup.sql
+   docker compose --env-file .env.selfhost exec -T db pg_dump -U postgres -d postgres > budget-app-backup.sql
    ```
 
-   Store backups securely and verify that you can restore them. The migration
-   and cutover procedure from Supabase is documented in
-   [`scripts/migrate-from-supabase/README.md`](../scripts/migrate-from-supabase/README.md).
+   Store backups securely and verify that you can restore them.
 
 5. **Updates:** Back up first and read the release's migration instructions.
    Set `BUDGET_IMAGE_TAG` to a matching published tag for all three Budget App
@@ -79,7 +77,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    tags such as `1.2.3`. Use a tag present on all three images.
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost pull
+   docker compose --env-file .env.selfhost pull
    ```
 
    **Upgrading schema:** Postgres init scripts run only when the database volume
@@ -90,10 +88,10 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
    PostgreSQL 16 and the existing volume:
 
    ```bash
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --no-deps --wait db
+   docker compose --env-file .env.selfhost up -d --no-deps --wait db
    # Example only: replace with the migration filename specified by the release.
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_feature_migration.sql
-   docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d
+   docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_feature_migration.sql
+   docker compose --env-file .env.selfhost up -d
    ```
 
    Follow release-specific maintenance/downtime instructions; do not apply the
@@ -107,7 +105,7 @@ are published as `thewarguy/budget-app`, `thewarguy/budget-app-auth`, and
 
 ### Unraid Compose Manager and Caddy
 
-Paste `docker-compose.selfhost.yml` into your Compose Manager project and supply
+Paste `docker-compose.yml` into your Compose Manager project and supply
 the environment variables through its environment-file/settings support.
 Compose automatically reads `.env`; `.env.selfhost` requires an explicit
 `--env-file .env.selfhost` argument or equivalent manager configuration.
@@ -212,14 +210,14 @@ For development or testing unpublished changes, use the optional build override
 from a repository checkout:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml --env-file .env.selfhost up -d --build
+docker compose -f docker-compose.yml -f docker-compose.build.yml --env-file .env.selfhost up -d --build
 ```
 
 To run the deployment smoke test locally (requires Node.js 22+ and Docker),
 build disposable test tags, then run:
 
 ```bash
-BUDGET_IMAGE_TAG=selfhost-test docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml --env-file .env.selfhost build
+BUDGET_IMAGE_TAG=selfhost-test docker compose -f docker-compose.yml -f docker-compose.build.yml --env-file .env.selfhost build
 node --test scripts/test-selfhost.test.js
 ```
 
@@ -240,7 +238,7 @@ and make them public for unauthenticated pulls.
 Start the stack, then point Vite's same-origin API proxy at its Nginx service:
 
 ```bash
-VITE_BACKEND_MODE=local DEV_API_PROXY_TARGET=http://localhost:8085 npm run dev
+DEV_API_PROXY_TARGET=http://localhost:8085 npm run dev   # or set it in .env
 ```
 
 The browser uses Vite's `/rest/v1` and `/auth/v1` paths. Alternatively,
@@ -249,266 +247,68 @@ the browser origin. The [Vite configuration](../vite.config.js) enables the
 proxy only when `DEV_API_PROXY_TARGET` is set; if both are supplied,
 `VITE_API_ORIGIN` takes precedence as its proxy target.
 
-## Step 1: Supabase Setup (5-10 minutes)
+## Release upgrade notes
 
-### 1.1 Create Supabase Account
+These notes apply to existing database volumes. Fresh volumes get every change
+through [`local/apply_order.txt`](../sql_scripts/local/apply_order.txt). Back up
+first, recreate `db` from the updated image, and never rerun the base CREATE
+scripts on an existing database. Use the
+[migration catalog](./DATA_MODEL.md#sql-migration-scripts) to identify
+unapplied upgrades; on Unraid, see
+[applying a migration on Unraid](#applying-a-migration-on-unraid).
 
-1. Go to [https://supabase.com](https://supabase.com)
-2. Click "Start your project" / Sign up
-3. Use GitHub/Google sign-in or email
-
-### 1.2 Create New Project
-
-1. Click "New Project"
-2. Choose organization (create one if needed)
-3. Fill in project details:
-   - **Name**: `budget-app` (or your choice)
-   - **Database Password**: Generate a strong password (save it!)
-   - **Region**: Choose closest to you
-   - **Pricing Plan**: Free tier is perfect for learning
-4. Click "Create new project"
-5. Wait 2-3 minutes for provisioning
-
-### 1.3 Get API Credentials
-
-1. In your Supabase dashboard, click **"Settings"** (gear icon, bottom left)
-2. Click **"API"** in the sidebar
-3. Copy these values:
-   - **Project URL** (e.g., `https://xxxxx.supabase.co`)
-   - **Publishable key** (labeled "anon" in older UI - the long string under "Project API keys")
-   - ⚠️ **Use publishable, NOT secret** - publishable is safe for client-side apps with RLS
-
-### 1.4 Create Database Schema
-
-Use the SQL files in [`sql_scripts/`](../sql_scripts/) instead of copying SQL out of [`DATA_MODEL.md`](./DATA_MODEL.md). The data model doc is the schema reference; the scripts are the source of truth for setup.
-
-#### Required: Main app schema
-
-1. In Supabase dashboard, click **"SQL Editor"**
-2. Click **"New query"**
-3. Open [`sql_scripts/supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql)
-4. Copy the full contents into the SQL Editor and run it
-
-This creates the core app tables and their initial RLS policies:
-
-- `categories`
-- `user_preferences`
-- `budget_plans`
-- `budget_items`
-- `accounts`
-- `transactions`
-- `recurring_templates`
-
-#### Complete a fresh Supabase installation
-
-The base script creates seven core tables, not the complete installation.
-For the current frontend, run these additional scripts in order:
-
-1. [`supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql)
-   creates partnerships, split expenses, and the partner-email RPC.
-2. [`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
-   supplies the remaining sync timestamps and update triggers.
-3. [`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
-   installs archive/restore and reference guards.
-4. [`supabase_phase3_aggregations.sql`](../sql_scripts/supabase_phase3_aggregations.sql)
-   installs account/report/year-picker RPCs and supporting indexes.
-5. [`supabase_phase4_mutations.sql`](../sql_scripts/supabase_phase4_mutations.sql)
-   installs batched writes and the closed-account insert guard.
-6. [`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
-   re-applies the complete policies after all referenced tables exist.
-
-Using the split-expense UI is optional, but the complete RLS script references
-its tables unconditionally. This sequence installs the full supported schema.
-Do not run the local-only auth/role/grant scripts on Supabase. See the
-[SQL setup guide](../sql_scripts/README.md) and
-[historical migrations](../sql_scripts/migrations/README.md) for the separation
-between current setup and existing-database upgrades. The base already includes
-the recurring occurrence column, dedup constraint, and generation lookup index.
-
-#### Category archiving upgrade
+### Category archiving
 
 Use **Categories → Archive** to hide unused categories from new-entry lists
-without changing historical transactions, budgets, or totals. All five types
-are supported. Enable **Show archived** to restore one. Archiving is distinct
-from deletion; archived names remain reserved.
-
-Archiving requires a connection. Change or pause recurring schedules and
-change/remove quick-entry templates that reference the category first.
-Errors identify blockers. Linked recurring transfers also depend on the
-`Account Transfer` companion category. Paused schedules cannot resume with
-archived categories until those categories are restored or replaced.
-
-Historical filters retain an Archived label, and existing transactions may
-retain their archived category when edited. Saved budget allocations remain
-editable, including filling other months of the same year. Budget copy/import
-may explicitly carry archived categories forward; transaction CSV imports and
-other new-entry choices exclude them. Historical data works offline and
-restoration can queue for sync.
-
-For both fresh and existing Supabase installations, run
+without changing historical transactions, budgets, or totals. Archiving requires
+a connection; change or pause recurring schedules and quick-entry templates that
+reference the category first. Existing volumes need
 [`supabase_add_updated_at.sql`](../sql_scripts/supabase_add_updated_at.sql)
-if not already applied, then
-[`supabase_category_archiving.sql`](../sql_scripts/supabase_category_archiving.sql)
-in the SQL Editor before deploying the updated frontend. The latter is
-idempotent: it adds `is_archived` for existing categories (default false),
-installs the archive/restore RPC and reference guards, and notifies PostgREST
-to reload its schema. Ownership RLS and historical records remain unchanged.
-
-Fresh self-hosted databases apply it automatically through
-[`local/apply_order.txt`](../sql_scripts/local/apply_order.txt).
-Existing self-hosted volumes do **not** rerun initialization scripts. Back up
-first, then apply the migration explicitly using the updated database image:
+(if not already applied), then:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_category_archiving.sql
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/supabase_category_archiving.sql
 ```
 
-Existing volumes must already have the base schema and updated-at migration.
-Do not rerun the base CREATE script on an existing database. The shared
-archive migration also supplies the authenticated RPC EXECUTE grant; no new
-local-only function or duplicate migration is necessary.
+The script is idempotent, supplies the authenticated RPC EXECUTE grant, and
+notifies PostgREST to reload its schema.
 
-#### Report "Include upcoming" upgrade
+### Report "Include upcoming"
 
-Reports exclude projected, pending, and future-dated transactions by default,
-with an **Include upcoming** toggle. The frontend passes `p_as_of` to
-`get_plan_vs_actual`, `get_plan_vs_actual_ytd`, `get_monthly_spending_trend`,
-and `get_yearly_spending_trend`, so existing databases need
+Reports pass `p_as_of` to `get_plan_vs_actual`, `get_plan_vs_actual_ytd`,
+`get_monthly_spending_trend`, and `get_yearly_spending_trend`. Apply
 [`migrations/supabase_report_as_of.sql`](../sql_scripts/migrations/supabase_report_as_of.sql)
-**before** the updated frontend is deployed. Without it, report requests fail
-because PostgREST cannot find a matching function signature.
+**before** deploying the updated frontend, or report requests fail with a
+missing function signature. It is transactional, changes no data, is safe to
+rerun, and reloads the PostgREST schema itself.
 
-This is the only schema change for this release, assuming earlier release
-upgrades are already applied. It runs in a single transaction, replaces only
-those four functions, changes no data, and is safe to rerun. It ends with
-`NOTIFY pgrst, 'reload schema'`, so no PostgREST restart is needed. Fresh
-installs already get these definitions from `supabase_phase3_aggregations.sql`.
-
-- **Supabase:** run the file as the database owner in the SQL Editor.
-- **Self-hosted:** back up, recreate `db` from the updated image, then run:
-
-  ```bash
-  docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_report_as_of.sql
-  ```
-
-- **Unraid:** see [applying a migration on Unraid](#applying-a-migration-on-unraid).
+```bash
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_report_as_of.sql
+```
 
 To verify, `\df get_plan_vs_actual` in `psql` should list `p_as_of date`.
 
-#### Existing databases and RLS repair
+### RLS repair
 
-If recurring edits save the template but fail while clearing projections with
+If recurring edits fail while clearing projections with
 `42501: new row violates row-level security policy for table "transactions"`,
-apply
-[`migrations/supabase_recurring_projection_cleanup.sql`](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql)
-as the database owner in the Supabase SQL Editor before deploying the updated
-frontend. Cleanup uses an owner-scoped RPC rather than direct soft-delete
-UPDATEs; posted transactions and transaction RLS remain unchanged.
-
-Fresh self-hosted databases include the RPC in phase-4 setup. For an existing
-self-hosted volume, back up and apply it using the updated database image:
+apply the owner-scoped cleanup RPC:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_recurring_projection_cleanup.sql
+docker compose --env-file .env.selfhost exec -T db psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres -f /sql_scripts/migrations/supabase_recurring_projection_cleanup.sql
 ```
-
-Back up first and use the [migration catalog](./DATA_MODEL.md#sql-migration-scripts)
-to identify unapplied upgrades. Never rerun the base CREATE scripts on an
-existing database. Old databases may need column migrations already folded
-into today's base before applying archive, aggregation, or mutation scripts.
 
 For legacy transaction policies, first apply
-[`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
-to install the soft-delete RPC and replace the broad transaction policy.
-
-To verify or re-apply row-level security policies, run
+[`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql).
+To verify or re-apply all policies, run
 [`supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql)
 after all schema prerequisites, including partnerships and split expenses.
-
-Use this script when:
-
-- you want a policy audit after setup
-- you are fixing a broken or partially configured project
-- you added the split-expense tables and want to re-check all policies together
-
-#### Verify the database
-
-After running the scripts:
-
-1. Open **Table Editor** in Supabase
-2. Confirm the core tables exist
-3. Confirm `partnerships` and `split_expenses` also exist
-4. Review the query results at the bottom of the script output to confirm RLS is enabled where expected
-
-## Step 2: Local Project Setup
-
-### 2.1 Install Dependencies
-
-```bash
-git clone https://github.com/SamGunvalson/budget-app.git
-cd budget-app
-npm ci
-```
-
-### 2.2 Configure Environment Variables
-
-1. Copy `.env.example` to `.env`:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Open `.env` in your editor
-
-3. Replace the placeholder values:
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your_long_anon_key_here
-   ```
-
-**⚠️ IMPORTANT**: Never commit `.env` to Git (it's already in `.gitignore`)
-
-### 2.3 Start Development Server
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-## Step 3: Verify Setup
-
-### 3.1 Test Supabase Connection
-
-The app will show a simple UI. If Supabase is configured correctly, you should be able to:
-
-- Sign up for an account
-- Log in
-- See no console errors related to Supabase
-- Use accounts, budgets, reports, and category management after completing the fresh-install sequence
-
-Open Split Expenses and confirm there are no missing-table errors.
-
-### 3.2 Test Database
-
-Create an account and a transaction, edit it, and refresh the page to verify
-persistence. Check the browser Network panel for successful authenticated
-requests and the Supabase Table Editor for the saved rows. The app does not
-expose a `window.supabase` connection probe.
-
-## Step 4: Default Data Setup (Optional)
-
-### 4.1 Create Default Categories
-
-Create categories through **Categories** after signing in. This uses the
-selected backend, ownership checks, and cache invalidation without maintaining
-a second SQL seed list in documentation.
 
 ## Dev container
 
 The [dev-container configuration](../.devcontainer/devcontainer.json) uses
 Node 22. Install Docker Desktop and the VS Code Dev Containers extension,
-configure `.env`, then open the repository and choose **Reopen in Container**.
+configure `.env` from `.env.example`, then open the repository and choose **Reopen in Container**.
 Dependencies install automatically; run `npm run dev` at the repository root.
 The container includes ESLint, Prettier, Tailwind CSS IntelliSense, Claude,
 and React snippet extensions.
@@ -545,36 +345,6 @@ Then reopen the container. This affects all dev containers in the current
 VS Code profile. If other containers need Linux GUI apps, instead enable
 Docker Desktop WSL integration for the distro named in the failing mount
 and restart Docker Desktop.
-
-## Docker deployment with Supabase
-
-The [default Compose file](../docker-compose.yml) pulls the published frontend
-image and injects Supabase configuration at runtime:
-
-```bash
-cp .env.example .env
-# Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
-docker compose up -d --pull always
-```
-
-Open `http://<server-ip>:8085`. Use a trusted encrypted network such as Tailscale
-or a TLS reverse proxy; do not expose public plaintext HTTP.
-
-For an unpublished local frontend build:
-
-```bash
-docker build -t budget-app .
-docker run --name budget-app-local --restart unless-stopped \
-  -p 8085:8085 \
-  -e BACKEND_MODE=supabase \
-  -e SUPABASE_URL=https://your-project.supabase.co \
-  -e SUPABASE_ANON_KEY=your-public-key \
-  budget-app
-```
-
-No Supabase build arguments are required. In Unraid's manual Docker UI,
-select the published image or your local `budget-app` image, map host
-8085 to **container 8085**, and supply the same runtime environment variables.
 
 ## Validation
 
@@ -616,28 +386,27 @@ npm ci
 Restore the declared dependency tree rather than installing individual missing
 packages or externalizing runtime imports.
 
-### Supabase connection errors
+### Connection errors
 
-1. Check `.env` file has correct `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
-2. Restart dev server after changing `.env`
-3. In Supabase dashboard → Settings → API, verify the keys match
-4. Check browser console for specific error messages
+1. Confirm the stack is up: `docker compose --env-file .env.selfhost ps`
+2. Check `curl http://localhost:8085/auth/v1/health` returns `{"ok":true}`
+3. For `npm run dev`, check `.env` has `DEV_API_PROXY_TARGET` (or `VITE_API_ORIGIN`) and restart Vite after changing it
+4. Check the auth and PostgREST container logs and the browser console
 
 ### RLS Policy errors ("new row violates row-level security policy")
 
 1. Make sure you're logged in
 2. If editing a recurring template fails on a `PATCH` to `transactions`, check that the app is not requesting returned rows from the soft-delete operation: the SELECT policy hides rows after `deleted_at` is set. Use an app version that updates without returning those rows. For other transaction RLS failures, existing databases may need [`migrations/supabase_transactions_soft_delete_rls.sql`](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) followed by [`sql_scripts/supabase_rls_complete.sql`](../sql_scripts/supabase_rls_complete.sql); see the [migration guide](../sql_scripts/migrations/README.md#applying-upgrades) for the local Docker command. Do not rerun the fresh-install initializer on an existing database.
-3. In Supabase → Authentication → Policies, check each table has policies enabled
+3. In `psql`, check `\dp` / `pg_policies` shows policies on each table
 4. Make sure the full fresh-install sequence or the required incremental upgrades were applied
 5. If split-expense delete/edit still fails with `"new row violates row-level security policy for table split_expenses"`, run [`migrations/supabase_split_fix_rls.sql`](../sql_scripts/migrations/supabase_split_fix_rls.sql) to drop and recreate the split UPDATE/DELETE policies
 6. If recurring confirmations created duplicate split rows, run [`migrations/supabase_split_dedup.sql`](../sql_scripts/migrations/supabase_split_dedup.sql) to soft-delete duplicates and enforce one active split row per `transaction_id`
 
 ### Database tables not showing up
 
-1. Go to Supabase → SQL Editor → History
-2. Verify [`sql_scripts/supabase_schema_create.sql`](../sql_scripts/supabase_schema_create.sql) ran successfully
-3. Verify [`supabase_split_expenses.sql`](../sql_scripts/supabase_split_expenses.sql) also ran successfully
-4. Inspect the error and current schema before retrying; CREATE scripts are not safely re-runnable
+1. Check the `db` container logs from first start; the initializer runs only on an empty volume
+2. In `psql`, run `\dt public.*` and confirm the core, `partnerships`, and `split_expenses` tables exist
+3. Inspect the error and current schema before retrying; CREATE scripts are not safely re-runnable
 
 ### Port 5173 already in use
 
@@ -654,7 +423,7 @@ See the [README](../README.md) for features and the
 
 ## Additional Resources
 
-- [Supabase Docs](https://supabase.com/docs)
+- [PostgREST Docs](https://docs.postgrest.org)
 - [React Docs](https://react.dev)
 - [Recharts Docs](https://recharts.org)
 - [Tailwind CSS Docs](https://tailwindcss.com/docs)
@@ -663,13 +432,13 @@ See the [README](../README.md) for features and the
 ## Getting Help
 
 - Check browser DevTools console for errors
-- Check Supabase dashboard logs (Logs section)
+- Check container logs: `docker compose --env-file .env.selfhost logs auth postgrest db`
 - Review [`DATA_MODEL.md`](./DATA_MODEL.md) for schema reference
 - Review the SQL files in [`sql_scripts/`](../sql_scripts/) for the actual setup scripts
 - Ask AI with specific error messages and context
 
 ---
 
-**Setup Version**: 2.0
+**Setup Version**: 3.0
 
-**Last Updated**: November 2, 2026
+**Last Updated**: November 25, 2026

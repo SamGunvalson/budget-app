@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import { getTodayString } from "../utils/helpers";
 
 /**
@@ -51,7 +51,7 @@ export function computeShares(
  * @returns {Promise<Array>} List of split expenses, newest first
  */
 export async function getSplitExpenses(partnershipId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .select("*")
     .eq("partnership_id", partnershipId)
@@ -88,7 +88,7 @@ export async function createSplitExpense({
   expenseDate,
 }) {
   if (transactionId) {
-    const { data: existing, error: existingErr } = await supabase
+    const { data: existing, error: existingErr } = await db
       .from("split_expenses")
       .select("*")
       .eq("transaction_id", transactionId)
@@ -100,7 +100,7 @@ export async function createSplitExpense({
     if (existing) return existing;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .insert({
       partnership_id: partnershipId,
@@ -136,7 +136,7 @@ export async function createSettlement({
   paidByUserId,
   expenseDate,
 }) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .insert({
       partnership_id: partnershipId,
@@ -166,7 +166,7 @@ export async function deleteSplitExpense(id, partnershipId) {
   }
 
   // RPC, not a direct UPDATE: the SELECT policy rejects the soft-deleted new row.
-  const { error } = await supabase.rpc("soft_delete_split_expense", {
+  const { error } = await db.rpc("soft_delete_split_expense", {
     p_split_id: id,
     p_partnership_id: partnershipId,
   });
@@ -198,7 +198,7 @@ export async function updateSplitExpense({
   paidByUserId,
   expenseDate,
 }) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .update({
       description: description.trim(),
@@ -256,7 +256,7 @@ export async function getBalance(partnershipId) {
  * @returns {Promise<Object|null>} Split expense or null
  */
 export async function getSplitByTransaction(transactionId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .select("*")
     .eq("transaction_id", transactionId)
@@ -273,7 +273,7 @@ export async function getSplitByTransaction(transactionId) {
  * @returns {Promise<Set<string>>} Set of transaction IDs that are split
  */
 export async function getSplitTransactionIds(partnershipId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .select("transaction_id")
     .eq("partnership_id", partnershipId)
@@ -287,7 +287,7 @@ export async function getSplitTransactionIds(partnershipId) {
 // ─── Notification seen-state helpers ─────────────────────────────────────────
 //
 // Primary source of truth: the partnership row's user_a_seen_at / user_b_seen_at
-// columns in Supabase (cross-device).  localStorage is maintained as an offline
+// columns in Postgres (cross-device).  localStorage is maintained as an offline
 // fallback so the correct seen-at is available immediately before the DB fetch
 // completes or when the app is offline.
 
@@ -333,7 +333,7 @@ export function getLastSeenSplitsAt(userId, dbSeenAt = null) {
   })();
 
   if (dbSeenAt && localSeenAt) {
-    // Parse to ms to handle mixed ISO formats (e.g. Supabase "+00:00" vs JS "Z")
+    // Parse to ms to handle mixed ISO formats (e.g. Postgres "+00:00" vs JS "Z")
     const dbMs = Date.parse(dbSeenAt);
     const localMs = Date.parse(localSeenAt);
     if (!isNaN(dbMs) && !isNaN(localMs))

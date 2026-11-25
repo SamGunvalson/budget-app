@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { PostgrestClient } from '@supabase/postgrest-js';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { clearAllOfflineData } from './offlineDb';
@@ -10,17 +9,6 @@ import {
   testServerConnection,
 } from './serverConfig';
 
-const runtimeValue = (key) => {
-  const value = typeof window !== 'undefined' ? window.__ENV__?.[key] : null;
-  return value && !value.startsWith('__') ? value : undefined;
-};
-const configuredMode = runtimeValue('BACKEND_MODE') || import.meta.env.VITE_BACKEND_MODE;
-const envMode = typeof configuredMode === 'string' && !configuredMode.startsWith('__') ? configuredMode.toLowerCase() : undefined;
-const runtimeUrl = runtimeValue('SUPABASE_URL');
-const runtimeKey = runtimeValue('SUPABASE_ANON_KEY');
-const defaultSupabaseUrl = runtimeUrl || import.meta.env.VITE_SUPABASE_URL;
-const defaultSupabaseAnonKey = runtimeKey || import.meta.env.VITE_SUPABASE_ANON_KEY;
-
 let storedConfig = null;
 try {
   storedConfig = loadServerConfig();
@@ -28,19 +16,12 @@ try {
   console.error('Backend: stored server config is invalid:', error);
   clearServerConfig();
 }
-let _backendMode = envMode || storedConfig?.backendMode || 'supabase';
-if (!['supabase', 'local'].includes(_backendMode)) _backendMode = 'supabase';
 let _origin = storedConfig?.serverOrigin || (import.meta.env.VITE_API_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
 let _client = null;
 let _cachedUser = null;
 let _userPromise = null;
 let _cacheUnsubscribe = null;
-let _bootstrapState = { status: 'needs_setup', source: null, serverOrigin: null, supabaseUrl: null, backendMode: _backendMode };
-
-const requireSupabaseClient = () => {
-  if (!_client) throw new Error('Supabase client not initialized. Complete server setup first.');
-  return _client;
-};
+let _bootstrapState = { status: 'needs_setup', source: null, serverOrigin: null };
 
 const nativeFetch = async (url, init = {}) => {
   const headers = Object.fromEntries(new Headers(init.headers || {}).entries());
@@ -83,70 +64,35 @@ const authedFetch = async (input, init = {}) => {
   return withReadableError(response);
 };
 
-// Supabase mode: same readable-error treatment for PostgREST calls only;
-// auth-js classifies its own error responses by status.
-const supabaseFetch = async (input, init) => {
-  const response = await fetch(input, init);
-  const url = input instanceof Request ? input.url : String(input);
-  return url.includes('/rest/v1/') ? withReadableError(response) : response;
-};
-
-const createLocalClient = () => new PostgrestClient(`${_origin}/rest/v1`, { fetch: authedFetch });
-
-const applyConfig = ({ backendMode, serverOrigin, supabaseUrl, supabaseAnonKey, source }) => {
-  _backendMode = backendMode;
+const applyConfig = ({ serverOrigin, source }) => {
   _origin = serverOrigin || _origin;
-  _client = backendMode === 'local'
-    ? createLocalClient()
-    : createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: supabaseFetch } });
+  _client = new PostgrestClient(`${_origin}/rest/v1`, { fetch: authedFetch });
   _cachedUser = null;
   _userPromise = null;
   _cacheUnsubscribe?.();
   import('./auth/index.js').then(({ onAuthStateChange }) => {
     _cacheUnsubscribe = onAuthStateChange((_event, session) => { _cachedUser = session?.user ?? null; _userPromise = null; });
   }).catch(() => {});
-  _bootstrapState = {
-    status: 'ready', source, serverOrigin: serverOrigin || null,
-    supabaseUrl: supabaseUrl || null, backendMode,
-  };
+  _bootstrapState = { status: 'ready', source, serverOrigin: serverOrigin || null };
   return _bootstrapState;
 };
 
-export const getBackendMode = () => _backendMode;
 export const getServerOrigin = () => _origin;
-export const getSupabaseClientOrThrow = () => requireSupabaseClient();
-export const getSupabaseBootstrapState = () => _bootstrapState;
-export const isSupabaseReady = () => _bootstrapState.status === 'ready';
-export const initializeSupabaseClient = () => {
-  if (storedConfig) {
-    if (_backendMode === 'local') {
-      return applyConfig({ backendMode: 'local', serverOrigin: storedConfig.serverOrigin, source: 'user-config' });
-    }
-    const supabaseUrl = storedConfig.supabaseUrl || defaultSupabaseUrl;
-    const supabaseAnonKey = storedConfig.supabaseAnonKey || defaultSupabaseAnonKey;
-    if (supabaseUrl && supabaseAnonKey) {
-      return applyConfig({ backendMode: 'supabase', serverOrigin: storedConfig.serverOrigin, supabaseUrl, supabaseAnonKey, source: 'user-config' });
-    }
-  }
-  if (_backendMode === 'local') {
-    if (Capacitor.isNativePlatform()) {
-      _bootstrapState = { ..._bootstrapState, status: 'needs_setup', serverOrigin: null };
-      return _bootstrapState;
-    }
-    if (_origin) return applyConfig({ backendMode: 'local', serverOrigin: _origin, source: 'env-default' });
-  } else if (defaultSupabaseUrl && defaultSupabaseAnonKey) {
-    return applyConfig({ backendMode: 'supabase', supabaseUrl: defaultSupabaseUrl, supabaseAnonKey: defaultSupabaseAnonKey, source: 'env-default' });
-  }
+export const getBootstrapState = () => _bootstrapState;
+export const isBackendReady = () => _bootstrapState.status === 'ready';
+export const initializeBackend = () => {
+  if (storedConfig) return applyConfig({ serverOrigin: storedConfig.serverOrigin, source: 'user-config' });
+  // The web app is served by the same nginx that proxies the API, so its own
+  // origin is the default. Native builds have no such origin and must ask.
+  if (_origin && !Capacitor.isNativePlatform()) return applyConfig({ serverOrigin: _origin, source: 'env-default' });
   _client = null;
-  _bootstrapState = { status: 'needs_setup', source: null, serverOrigin: null, supabaseUrl: null, backendMode: _backendMode };
+  _bootstrapState = { status: 'needs_setup', source: null, serverOrigin: null };
   return _bootstrapState;
 };
 
 export const configureServer = async (serverInput) => {
   const resolved = await testServerConnection(serverInput);
-  const previous = { serverOrigin: _origin, backendMode: _backendMode };
-  const serverChanged = previous.serverOrigin !== resolved.serverOrigin || previous.backendMode !== resolved.backendMode;
-  if (serverChanged) {
+  if (_origin !== resolved.serverOrigin) {
     await clearAllOfflineData();
     try {
       const { signOut: adapterSignOut } = await import('./auth/index.js');
@@ -167,7 +113,6 @@ export const db = new Proxy({}, {
     return typeof value === 'function' ? value.bind(client) : value;
   },
 });
-export const supabase = db;
 
 export const getCurrentUser = async () => {
   if (_cachedUser) return _cachedUser;
@@ -196,11 +141,13 @@ export const signOut = async () => {
   try {
     if ('caches' in self) {
       const names = await caches.keys();
-      await Promise.all(names.filter((name) => name.startsWith('supabase-api') || name.startsWith('supabase-reference-tables') || name.startsWith('workbox-')).map((name) => caches.delete(name)));
+      // `supabase-` names are pre-v2 cache names; purge them on the way out too.
+      const prefixes = ['api-', 'reference-tables', 'supabase-', 'workbox-'];
+      await Promise.all(names.filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => caches.delete(name)));
     }
   } catch { /* cache API unavailable */ }
   const { signOut: adapterSignOut } = await import('./auth/index.js');
   await adapterSignOut();
 };
 
-initializeSupabaseClient();
+initializeBackend();

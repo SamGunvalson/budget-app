@@ -101,7 +101,7 @@ async function tryOnline(fn) {
     return { data };
   } catch (err) {
     if (isConnectivityError(err)) return { offline: true, error: err };
-    throw err; // Real Supabase error — let caller handle
+    throw err; // Real server error — let caller handle
   }
 }
 
@@ -325,9 +325,9 @@ import {
  * Fetch transactions — cache-first SWR.
  *
  * Returns cached rows from IndexedDB immediately. If we're online, kicks a
- * background Supabase fetch that updates the cache and notifies
+ * background server fetch that updates the cache and notifies
  * subscribers (`subscribeTable('transactions', …)`). On a cold cache the
- * Supabase fetch is awaited so the first paint has data.
+ * server fetch is awaited so the first paint has data.
  */
 export async function getTransactionsOffline(filters = {}) {
   return swrRead({
@@ -356,7 +356,7 @@ async function readTransactionsFromCache(filters = {}) {
     rows = rows.filter((r) => r.status === filters.status);
   }
 
-  // Attach cached category/account joins so the shape matches Supabase output.
+  // Attach cached category/account joins so the shape matches PostgREST output.
   // (Without this, components that read tx.categories.color crash on the
   // first paint when the row was written by a non-joining mutation path.)
   rows = await attachJoins(rows);
@@ -1315,7 +1315,7 @@ async function readTransactionsForYearFromCache({ year }) {
 }
 
 /**
- * Get pending review count — Supabase first, fall back to IndexedDB.
+ * Get pending review count — server first, fall back to IndexedDB.
  */
 export async function getPendingReviewCountOffline() {
   const result = await tryOnline(() => _getPendingReviewCount());
@@ -1378,11 +1378,11 @@ async function cacheAccountsHelper(data) {
 /**
  * Fetch account balances — cache-first SWR.
  *
- * Both online (Supabase RPC) and offline (local compute) paths return the
+ * Both online (server RPC) and offline (local compute) paths return the
  * same shape: account rows enriched with `balance`, `pending_net`,
  * `projected_balance`, `transaction_net`, `is_asset`.
  *
- * The authoritative Supabase result (including computed balance fields) is
+ * The authoritative server result (including computed balance fields) is
  * stored in `rpc_cache` so subsequent reads on any device always serve the
  * correct server-computed balances rather than a local recomputation from a
  * potentially incomplete Dexie transactions table.  The local
@@ -1530,7 +1530,7 @@ async function computeAccountBalancesFromCache({ projectedToDate } = {}) {
 }
 
 /**
- * Fetch net worth history — Supabase first, fall back to IndexedDB.
+ * Fetch net worth history — server first, fall back to IndexedDB.
  * Returns [] when offline and no cached transactions exist.
  */
 export async function getNetWorthHistoryOffline({ projectedToDate } = {}) {
@@ -1850,7 +1850,7 @@ export async function reopenAccountOffline(id) {
 }
 
 /**
- * Fetch per-account daily balance history — Supabase first, fall back to IndexedDB.
+ * Fetch per-account daily balance history — server first, fall back to IndexedDB.
  */
 export async function getAccountBalanceHistoryOffline(opts) {
   const result = await tryOnline(() => _getAccountBalanceHistory(opts));
@@ -1944,7 +1944,7 @@ export async function getAccountBalanceHistoryOffline(opts) {
 }
 
 /**
- * Fetch upcoming transactions — Supabase first, fall back to IndexedDB.
+ * Fetch upcoming transactions — server first, fall back to IndexedDB.
  */
 export async function getUpcomingTransactionsOffline(opts) {
   const result = await tryOnline(() => _getUpcomingTransactions(opts));
@@ -2419,7 +2419,7 @@ export async function getBudgetItemsOffline(budgetPlanId) {
         .equals(budgetPlanId)
         .toArray();
       // Re-attach the cached category join so consumers see the same shape
-      // they get from Supabase (`item.categories.name`, `.color`, `.type`).
+      // they get from the server (`item.categories.name`, `.color`, `.type`).
       return attachJoins(items, { accounts: false });
     },
     fetchFresh: () => _getBudgetItems(budgetPlanId),
@@ -2571,7 +2571,7 @@ function sortPlanVsActualCategories(a, b) {
 /**
  * Compute plan-vs-actual from Dexie tables.  Mirrors the JS version that
  * `services/budgets.js` used pre-Phase-3, but reads from IndexedDB instead
- * of paginating Supabase.  Used as the offline fallback.
+ * of paginating the server.  Used as the offline fallback.
  */
 async function computePlanVsActualFromCache({
   month,

@@ -171,7 +171,7 @@ test("change password", async () => {
   await a.close();
 });
 
-test("Supabase-style $2a$10$ hash login", async () => {
+test("bcrypt $2a$10$ hash login (accounts migrated from Supabase)", async () => {
   const a = await app();
   const e = email();
   const hash = bcrypt.hashSync("legacy-pass-1", 10).replace(/^\$2[aby]\$/, "$2a$");

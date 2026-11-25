@@ -2,11 +2,14 @@
 
 Top-level SQL files are the **current setup**. [`migrations/`](./migrations/)
 contains historical upgrades and repairs for existing databases; their effects
-are already represented in the current setup scripts.
+are already represented in the current setup scripts. The `supabase_` filename
+prefix is historical; name new files without it.
 
-## Fresh Supabase database
+## Setup order
 
-Run these in order as the database owner in the Supabase SQL Editor:
+The [local initializer](./local/init.sh) applies
+[`local/apply_order.txt`](./local/apply_order.txt) on an empty volume: local
+roles/auth compatibility first, these seven setup scripts in order, then grants:
 
 1. [supabase_schema_create.sql](./supabase_schema_create.sql) - seven core tables,
    indexes, initial policies, and transaction soft-delete RPC.
@@ -27,14 +30,8 @@ The two base CREATE scripts are **not re-runnable**. Do not run all SQL files
 alphabetically or recursively. Using the shared-expense UI is optional, but
 the complete RLS script requires its tables.
 
-## Fresh self-hosted database
-
-The [local initializer](./local/init.sh) applies
-[`local/apply_order.txt`](./local/apply_order.txt): local roles/auth compatibility
-first, the same seven setup scripts, then grants. It does not run historical
-migrations or the legacy local repair entrypoint.
-
-The database [Docker image](./Dockerfile) includes setup, local, and historical
+The initializer does not run historical migrations or the legacy local repair
+entrypoint. The database [Docker image](./Dockerfile) includes setup, local, and historical
 migration files. Initialization runs only on an empty volume. See the
 [local SQL guide](./local/README.md) for roles/grants and the
 [setup guide](../docs/SETUP_GUIDE.md#self-hosted-local-postgres) for deployment.

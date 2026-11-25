@@ -1,4 +1,4 @@
-# Rendered only when BACKEND_MODE=local
+# Rendered by docker-entrypoint.sh with the upstream service addresses.
 location /rest/v1/ {
     include /etc/nginx/snippets/security-headers.conf;
     include /etc/nginx/snippets/cors.conf;

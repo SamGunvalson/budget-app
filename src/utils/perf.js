@@ -2,7 +2,7 @@
  * Lightweight performance instrumentation.
  *
  * Goals (Phase 0 — Performance baseline):
- *  - Capture cold-boot, route-change, and Supabase-call timings without
+ *  - Capture cold-boot, route-change, and API-call timings without
  *    pulling in a tracing library.
  *  - Be a no-op in production unless the user opts in via either:
  *      • `localStorage.setItem('perf', '1')`           (persistent)

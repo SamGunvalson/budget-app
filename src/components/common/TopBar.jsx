@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { signOut } from '../../services/supabase';
-import { getCurrentUser } from '../../services/supabase';
+import { signOut, getCurrentUser } from '../../services/backend';
 import PAGE_REGISTRY from '../../constants/pages';
 import SyncStatus from './SyncStatus';
 import MobilePageDots from './MobilePageDots';

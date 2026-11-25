@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import {
   isIncomeDebit,
   isSettledTransaction,
@@ -90,7 +90,7 @@ async function fetchAllTransactions() {
   let hasMore = true;
 
   while (hasMore) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("transactions")
       .select("*, categories(id, name, type), accounts(id, name, type)")
       .eq("user_id", user.id)
@@ -108,7 +108,7 @@ async function fetchAllTransactions() {
 
 async function fetchAllBudgetPlans() {
   const user = await getCurrentUser();
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_plans")
     .select("*")
     .eq("user_id", user.id)
@@ -119,7 +119,7 @@ async function fetchAllBudgetPlans() {
 }
 
 async function fetchBudgetItemsForPlan(planId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_items")
     .select("*, categories(id, name, type)")
     .eq("budget_plan_id", planId);
@@ -129,7 +129,7 @@ async function fetchBudgetItemsForPlan(planId) {
 
 async function fetchAllCategories() {
   const user = await getCurrentUser();
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("categories")
     .select("*")
     .eq("user_id", user.id)
@@ -142,7 +142,7 @@ async function fetchAllCategories() {
 
 async function fetchAllAccounts() {
   const user = await getCurrentUser();
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("accounts")
     .select("*")
     .eq("user_id", user.id)
@@ -154,7 +154,7 @@ async function fetchAllAccounts() {
 
 async function fetchAllRecurringTemplates() {
   const user = await getCurrentUser();
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .select(
       "*, categories(id, name, type), accounts(id, name, type), to_account:accounts!to_account_id(id, name, type)",
@@ -167,7 +167,7 @@ async function fetchAllRecurringTemplates() {
 
 async function fetchAllUserPreferences() {
   const user = await getCurrentUser();
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("user_preferences")
     .select("*")
     .eq("user_id", user.id);
@@ -178,7 +178,7 @@ async function fetchAllUserPreferences() {
 // Partnerships and split expenses are scoped by RLS to the ones the current
 // user belongs to (there is no user_id column to filter on).
 async function fetchAllPartnerships() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .select("*")
     .order("created_at", { ascending: true });
@@ -187,7 +187,7 @@ async function fetchAllPartnerships() {
 }
 
 async function fetchAllSplitExpenses() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("split_expenses")
     .select("*")
     .is("deleted_at", null)

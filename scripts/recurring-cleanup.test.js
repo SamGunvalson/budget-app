@@ -11,7 +11,7 @@ const source = readFileSync(new URL("../src/services/recurring.js", import.meta.
 
 async function loadRecurring({ queries = [], rpcs = [], overrides = {} } = {}) {
   const calls = [];
-  const supabase = {
+  const api = {
     from(table) {
       const call = { table, steps: [] };
       calls.push(call);
@@ -36,7 +36,7 @@ async function loadRecurring({ queries = [], rpcs = [], overrides = {} } = {}) {
     },
   };
   const dependencies = {
-    "./supabase": { supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "owner" }) },
     "../utils/ids": { newId: () => randomUUID() },
     "date-fns": { addDays, format, isAfter, startOfDay },
     "../utils/recurringCalculations": {

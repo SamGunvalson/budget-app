@@ -20,28 +20,12 @@ export const getConnectionErrorMessage = (error, fallbackMessage) => {
     return 'Enter a valid server URL (for example: https://budget.example.ts.net).';
   }
 
-  if (code === 'SERVER_CONFIG_NOT_FOUND') {
-    return 'Could not load server config. Verify the URL points to your Budget App server root.';
-  }
-
-  if (code === 'INCOMPLETE_SERVER_CONFIG') {
-    return 'Server is missing required runtime backend configuration values.';
-  }
-
-  if (code === 'INVALID_SERVER_CONFIG') {
-    return 'Server returned an invalid config file. Ensure env-config.js is available.';
-  }
-
   if (code === 'CONNECTION_TIMEOUT') {
     return 'Connection timed out. Confirm the device is on your Tailscale network and try again.';
   }
 
-  if (code === 'LOCAL_HANDSHAKE_FAILED') {
-    return 'Server config loaded, but the local auth service health check failed.';
-  }
-
-  if (code === 'SUPABASE_HANDSHAKE_FAILED') {
-    return 'Server config loaded, but Supabase auth endpoint could not be reached.';
+  if (code === 'HEALTH_CHECK_FAILED') {
+    return 'Reached the server, but its auth service health check failed. Verify the URL points to your Budget App server root.';
   }
 
   if (deviceOffline) {
@@ -52,7 +36,7 @@ export const getConnectionErrorMessage = (error, fallbackMessage) => {
     return 'Secure connection failed. Check the certificate/TLS setup for this server.';
   }
 
-  if (includesAny(message, NETWORK_ERROR_PATTERNS) || code === 'SERVER_CONFIG_FETCH_FAILED') {
+  if (includesAny(message, NETWORK_ERROR_PATTERNS) ) {
     return 'Could not reach the server. Verify URL, VPN/Tailscale connectivity, and CORS settings.';
   }
 

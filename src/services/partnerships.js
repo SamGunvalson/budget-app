@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 
 /**
  * Get the active partnership for the current user.
@@ -7,7 +7,7 @@ import { supabase, getCurrentUser } from "./supabase";
 export async function getPartnership() {
   const user = await getCurrentUser();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .select("*")
     .eq("status", "active")
@@ -25,7 +25,7 @@ export async function getPartnership() {
 export async function getPendingInvites() {
   const user = await getCurrentUser();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .select("*")
     .eq("status", "pending")
@@ -43,7 +43,7 @@ export async function getPendingInvites() {
 export async function getSentInvites() {
   const user = await getCurrentUser();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .select("*")
     .eq("status", "pending")
@@ -72,7 +72,7 @@ export async function invitePartner(email) {
     throw new Error("You already have an active partnership.");
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .insert({
       user_a_id: user.id,
@@ -107,7 +107,7 @@ export async function acceptInvite(partnershipId) {
     );
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .update({
       user_b_id: user.id,
@@ -136,7 +136,7 @@ export async function acceptInvite(partnershipId) {
  * @param {string} partnershipId - ID of the partnership to decline
  */
 export async function declineInvite(partnershipId) {
-  const { error } = await supabase
+  const { error } = await db
     .from("partnerships")
     .delete()
     .eq("id", partnershipId)
@@ -152,7 +152,7 @@ export async function declineInvite(partnershipId) {
 export async function cancelInvite(partnershipId) {
   const user = await getCurrentUser();
 
-  const { error } = await supabase
+  const { error } = await db
     .from("partnerships")
     .delete()
     .eq("id", partnershipId)
@@ -168,7 +168,7 @@ export async function cancelInvite(partnershipId) {
  * @returns {Promise<Object>} Updated partnership
  */
 export async function dissolvePartnership(partnershipId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("partnerships")
     .update({
       status: "dissolved",
@@ -211,7 +211,7 @@ export async function getPartnerEmail(partnership, currentUserId) {
   }
 
   // Invitee (user_b) → look up the inviter's email via a security-definer RPC
-  const { data, error } = await supabase.rpc("get_partner_email", {
+  const { data, error } = await db.rpc("get_partner_email", {
     p_partnership_id: partnership.id,
   });
   if (error) throw error;
@@ -227,7 +227,7 @@ export async function getPartnerEmail(partnership, currentUserId) {
  */
 export async function markSplitsSeenDB(partnershipId, isUserA) {
   const column = isUserA ? 'user_a_seen_at' : 'user_b_seen_at';
-  const { error } = await supabase
+  const { error } = await db
     .from('partnerships')
     .update({ [column]: new Date().toISOString() })
     .eq('id', partnershipId);

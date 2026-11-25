@@ -20,7 +20,7 @@
  * Theme/safe-mode providers key their own state on the same user id.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { isSupabaseReady } from '../services/supabase';
+import { isBackendReady } from '../services/backend';
 import { getSession, onAuthStateChange } from '../services/auth';
 import { requestSync, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
@@ -70,7 +70,7 @@ export function AuthProvider({ children, enabled = true }) {
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    if (!enabled || !isSupabaseReady()) return undefined;
+    if (!enabled || !isBackendReady()) return undefined;
 
     let mounted = true;
 

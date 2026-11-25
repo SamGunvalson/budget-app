@@ -28,7 +28,7 @@ Examples:
 
 ## Backend and web assets
 
-[`npm run build:android`](../package.json) builds with [`.env.android`](../.env.android), selecting local mode and clearing baked-in Supabase values, then runs Capacitor sync.
+[`npm run build:android`](../package.json) builds with [`.env.android`](../.env.android), which leaves the server origin unset so the app asks for it, then runs Capacitor sync.
 
 ```bash
 npm run lint
@@ -37,9 +37,9 @@ npm run build:android
 npx cap open android
 ```
 
-Do **not** use plain `npm run build` for this self-hosted Android app: it may bake in Supabase settings from `.env`.
+Do **not** use plain `npm run build` for the Android app: it may bake in dev settings such as `VITE_API_ORIGIN` from `.env`.
 
-At first launch, choose **Connect to your server**, enter the server root URL, and test the connection. Setup reads the server's `/env-config.js` and checks `/auth/v1/health` for local mode. The server must be reachable from the phone, with the configured WebView CORS origins allowed. See [self-hosted setup](./SETUP_GUIDE.md#self-hosted-local-postgres).
+At first launch, choose **Connect to your server**, enter the server root URL, and test the connection. Setup checks the server's `/auth/v1/health` endpoint. The server must be reachable from the phone, with the configured WebView CORS origins allowed. See [self-hosted setup](./SETUP_GUIDE.md#self-hosted-local-postgres).
 
 Gradle's [preBuild tasks](../android/app/build.gradle) rebuild the Android-mode web app and copy it into the native project before debug/release builds, including Android Studio **Run**. After plugin changes, run `npm run build:android` **before** Gradle configures the project; copying assets alone does not sync native plugins.
 
@@ -95,5 +95,5 @@ For Google Play, complete the app content/privacy, data safety, content rating, 
 - Check refresh on launch, reconnect, foreground resume, and tapping the sync status dot.
 - Check both themes and safe mode.
 - Check **Archive** and **Show archived** on Categories. Archived categories remain in history/saved entries but not new-entry choices.
-- If archive writes fail with a current UI, verify the [category-archiving migration](./SETUP_GUIDE.md#category-archiving-upgrade) on the server.
+- If archive writes fail with a current UI, verify the [category-archiving migration](./SETUP_GUIDE.md#category-archiving) on the server.
 - Test real-device network/Tailscale access and actionable server-connection errors before release.

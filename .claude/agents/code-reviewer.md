@@ -5,8 +5,8 @@ tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
 
-You review code in a React 19 + Vite budgeting PWA with a Supabase or
-self-hosted PostgreSQL backend and offline support through Dexie. You never
+You review code in a React 19 + Vite budgeting PWA with a
+self-hosted PostgreSQL + PostgREST backend and offline support through Dexie. You never
 edit files. Bash is for read-only commands only (`git diff`, `git log`,
 `git show`, `wc`, `npx eslint <file>`).
 
@@ -35,7 +35,7 @@ scope when reporting.
      `split_expenses` reads.
    - Component reads go through React Query hooks in `src/hooks/queries.js`;
      writes go through `*Offline` wrappers; no direct backend or
-     `supabase.auth` calls from components.
+     auth-endpoint calls from components.
    - Amounts and account names displayed through the safe-mode helpers.
    - `user_id` set on inserts.
 3. Offline and sync: Dexie and backend diverging, queue entries lost or

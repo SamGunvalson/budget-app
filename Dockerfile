@@ -31,7 +31,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx/ /opt/nginx-templates/
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Entrypoint script replaces placeholder tokens in env-config.js with real runtime env vars
+# Entrypoint renders nginx snippets (security headers, API proxy upstreams)
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 

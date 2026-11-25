@@ -7,7 +7,7 @@ import { SafeModeProvider } from './contexts/SafeModeContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import useSafeMode from './hooks/useSafeMode';
 import useRoutePreload from './hooks/useRoutePreload';
-import { getSupabaseBootstrapState } from './services/supabase';
+import { getBootstrapState } from './services/backend';
 import {
   TransactionsSkeleton,
   BudgetSkeleton,
@@ -167,10 +167,10 @@ function AppRoutes({ serverState, onServerConfigured }) {
  * the session and re-bind its auth listener to the current client.
  */
 function App() {
-  const [serverState, setServerState] = useState(() => getSupabaseBootstrapState());
+  const [serverState, setServerState] = useState(() => getBootstrapState());
   const [clientEpoch, setClientEpoch] = useState(0);
   const handleServerConfigured = useCallback(() => {
-    setServerState(getSupabaseBootstrapState());
+    setServerState(getBootstrapState());
     setClientEpoch((epoch) => epoch + 1);
   }, []);
 

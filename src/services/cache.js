@@ -102,7 +102,7 @@ function endRevalidate() {
 
 // ── In-flight de-duplication ──
 // If a swrRead with the same key is already revalidating, we piggy-back on it
-// rather than starting a second identical Supabase request.
+// rather than starting a second identical server request.
 const inflight = new Map(); // key → Promise
 
 // ── The SWR read helper ──
@@ -119,7 +119,7 @@ const inflight = new Map(); // key → Promise
  *   Reads the current value from Dexie and returns it. Should never throw —
  *   return an "empty" value instead (e.g. `[]` or `null`).
  * @param {() => Promise<T>} opts.fetchFresh
- *   Fetches the authoritative value from the origin (Supabase). May throw.
+ *   Fetches the authoritative value from the origin (server). May throw.
  * @param {(data: T, meta: { fetchStartedAt: number }) => Promise<void>} opts.writeCache
  *   Persists fresh data back to Dexie. Errors here are logged but not thrown.
  *   `meta.fetchStartedAt` is the local `Date.now()` from just before the
@@ -217,7 +217,7 @@ export async function swrRead({
       // raw fresh response against the cached value would falsely flag those
       // as "changed" on every revalidation, which (via the react-query
       // bridge) would trigger another refetch → another notify → infinite
-      // loop of identical Supabase requests.
+      // loop of identical server requests.
       if (table) {
         let postCache;
         try {
@@ -257,7 +257,7 @@ function defaultIsEmpty(value) {
  * `transaction_date`) doesn't masquerade as a real change. Without this
  * guard, every background revalidation falsely reports "data changed",
  * notifies the bridge, invalidates the query, refetches → infinite loop
- * of identical Supabase requests.
+ * of identical server requests.
  */
 function shallowEqualData(a, b) {
   if (a === b) return true;

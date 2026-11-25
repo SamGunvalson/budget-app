@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 
 /**
  * Get (or return null) the budget plan for a specific month/year.
@@ -10,7 +10,7 @@ export async function getBudgetPlan(month, year) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_plans")
     .select("*")
     .eq("user_id", user.id)
@@ -31,7 +31,7 @@ export async function createBudgetPlan({ month, year, total_income, id }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_plans")
     .insert({
       // Optional client-generated id so a retry of the same create is idempotent.
@@ -58,7 +58,7 @@ export async function updateBudgetPlan(planId, { total_income }) {
   const payload = { updated_at: new Date().toISOString() };
   if (total_income !== undefined) payload.total_income = total_income;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_plans")
     .update(payload)
     .eq("id", planId)
@@ -75,7 +75,7 @@ export async function updateBudgetPlan(planId, { total_income }) {
  * @returns {Promise<Array>} budget_items rows with nested categories
  */
 export async function getBudgetItems(budgetPlanId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_items")
     .select("*, categories(id, name, color, type)")
     .eq("budget_plan_id", budgetPlanId);
@@ -95,7 +95,7 @@ export async function upsertBudgetItem({
   category_id,
   planned_amount,
 }) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_items")
     .upsert(
       { budget_plan_id, category_id, planned_amount },
@@ -127,7 +127,7 @@ export async function upsertBudgetItem({
  * @returns {Promise<{ categories: Array, plannedIncome: number, actualIncome: number }>}
  */
 export async function getPlanVsActual({ month, year, asOf = null }) {
-  const { data, error } = await supabase.rpc("get_plan_vs_actual", {
+  const { data, error } = await db.rpc("get_plan_vs_actual", {
     p_month: month,
     p_year: year,
     ...(asOf ? { p_as_of: asOf } : {}),
@@ -160,7 +160,7 @@ function coercePlanVsActualPayload(payload) {
  * @returns {Promise<{ categories: Array, plannedIncome: number, actualIncome: number }>}
  */
 export async function getPlanVsActualYTD({ year, throughMonth, asOf = null }) {
-  const { data, error } = await supabase.rpc("get_plan_vs_actual_ytd", {
+  const { data, error } = await db.rpc("get_plan_vs_actual_ytd", {
     p_year: year,
     p_through_month: throughMonth,
     ...(asOf ? { p_as_of: asOf } : {}),
@@ -178,7 +178,7 @@ export async function getBudgetPlansForYear(year) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_plans")
     .select("*")
     .eq("user_id", user.id)
@@ -197,7 +197,7 @@ export async function getBudgetPlansForYear(year) {
 export async function upsertBudgetItems(items) {
   if (!items.length) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("budget_items")
     .upsert(items, { onConflict: "budget_plan_id,category_id" })
     .select("*, categories(id, name, color, type)");
@@ -212,7 +212,7 @@ export async function upsertBudgetItems(items) {
  * @returns {Promise<void>}
  */
 export async function deleteBudgetItemsForPlan(planId) {
-  const { error } = await supabase
+  const { error } = await db
     .from("budget_items")
     .delete()
     .eq("budget_plan_id", planId);

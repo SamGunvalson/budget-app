@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { configureServer, testServer } from '../services/supabase';
+import { configureServer, testServer } from '../services/backend';
 import { getConnectionErrorMessage } from '../utils/connectionErrors';
 
 export default function ServerSetupPage({ serverState, onConfigured }) {

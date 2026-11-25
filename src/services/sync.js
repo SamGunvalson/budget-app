@@ -1,15 +1,15 @@
 /**
- * Sync engine — pushes offline-queued mutations to Supabase when online,
+ * Sync engine — pushes offline-queued mutations to the server when online,
  * then pulls fresh data via an *incremental* watermark per table.
  *
  * Flow:
  * 1. Listen for `online` events.
  * 2. On coming online (or manual trigger), read all `_offline === 1` records
  *    from IndexedDB via the syncQueue.
- * 3. Replay each mutation to Supabase (create → insert, update → update,
+ * 3. Replay each mutation to the server (create → insert, update → update,
  *    delete → soft-delete or deactivate).
  * 4. On success, clear the offline flags.
- * 5. After all mutations succeed, pull fresh data from Supabase → IndexedDB
+ * 5. After all mutations succeed, pull fresh data from the server → IndexedDB
  *    using each table's `sync_meta.last_synced` watermark so we only fetch
  *    rows whose `updated_at` is newer.
  *
@@ -23,7 +23,7 @@
  *  - Each successful per-table pull notifies subscribers via
  *    `notifyTable(tableName)` so consumers can react when fresh data lands.
  */
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import {
   markSynced,
   adoptServerRow,
@@ -201,7 +201,7 @@ const SYNC_TABLES = [
 ];
 
 /**
- * Pull fresh data from Supabase into IndexedDB.
+ * Pull fresh data from the server into IndexedDB.
  *
  * @param {Object} [opts]
  * @param {boolean} [opts.full=false] — when true, ignore the watermark and
@@ -474,7 +474,7 @@ const USER_SCOPED_TABLES = new Set([
  * @returns {Object} the cleaned row
  */
 export function buildPushPayload(tableName, row, userId) {
-  // Strip offline metadata before sending to Supabase
+  // Strip offline metadata before sending to the server
   const clean = { ...row };
   delete clean._offline;
   delete clean._action;
@@ -519,7 +519,7 @@ async function upsertOnNaturalKey(tableName, clean) {
   const payload = { ...clean };
   delete payload.id;
   delete payload.created_at;
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from(tableName)
     .upsert(payload, { onConflict: NATURAL_KEY_CONFLICT[tableName] })
     .select("*")
@@ -529,7 +529,7 @@ async function upsertOnNaturalKey(tableName, clean) {
 }
 
 /**
- * Push a single offline record to Supabase.
+ * Push a single offline record to the server.
  *
  * @returns {Promise<Object|undefined>} the server row, when the push went
  *   through a natural key and the server's id may differ from the local one
@@ -563,7 +563,7 @@ async function pushRow(tableName, row, planIds = new Map()) {
   }
 
   if (action === "create") {
-    const { error } = await supabase
+    const { error } = await db
       .from(tableName)
       .upsert(clean, { onConflict: "id" });
     // 23505 here is a unique violation on something other than `id`: the
@@ -574,7 +574,7 @@ async function pushRow(tableName, row, planIds = new Map()) {
     if (error) throw error;
   } else if (action === "update") {
     const { id, ...updates } = clean;
-    const { error } = await supabase
+    const { error } = await db
       .from(tableName)
       .update(updates)
       .eq("id", id);
@@ -582,20 +582,20 @@ async function pushRow(tableName, row, planIds = new Map()) {
   } else if (action === "delete") {
     if (tableName === "transactions") {
       // Soft-delete via RPC (mirrors service behavior)
-      const { error } = await supabase.rpc("soft_delete_transaction", {
+      const { error } = await db.rpc("soft_delete_transaction", {
         txn_id: clean.id,
       });
       if (error) throw error;
     } else if (tableName === "categories" || tableName === "accounts") {
       // Soft-deactivate
-      const { error } = await supabase
+      const { error } = await db
         .from(tableName)
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq("id", clean.id);
       if (error) throw error;
     } else {
       // Hard delete for other tables
-      const { error } = await supabase
+      const { error } = await db
         .from(tableName)
         .delete()
         .eq("id", clean.id);
@@ -605,7 +605,7 @@ async function pushRow(tableName, row, planIds = new Map()) {
 }
 
 /**
- * Paginated fetch of rows from a Supabase table for the current user.
+ * Paginated fetch of rows from a server table for the current user.
  *
  * @param {string} tableName
  * @param {string} select
@@ -628,7 +628,7 @@ async function fetchAll(
   let hasMore = true;
 
   while (hasMore) {
-    let query = supabase
+    let query = db
       .from(tableName)
       .select(select)
       .order("updated_at", { ascending: true })
