@@ -15,7 +15,7 @@ const importSource = readFileSync(new URL("../src/services/import.js", import.me
 // in order, one per awaited query; every insert payload is recorded.
 async function loadImport({ responses = [] } = {}) {
   const inserts = [];
-  const supabase = {
+  const api = {
     from() {
       let payload = null;
       const query = {
@@ -38,7 +38,7 @@ async function loadImport({ responses = [] } = {}) {
     },
   };
   const dependencies = {
-    "./supabase": { supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "owner" }) },
     "../utils/ids": { newId: () => randomUUID() },
     "../utils/csvParser": { normalizeDate, normalizeAmount },
   };

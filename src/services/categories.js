@@ -1,11 +1,11 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 
 /**
  * Fetch all active categories for the current user.
  * @returns {Promise<Array>} List of category objects
  */
 export async function getCategories() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("categories")
     .select("*")
     .eq("is_active", true)
@@ -28,7 +28,7 @@ export async function getCategories() {
  */
 export async function bulkUpdateSortOrder(items) {
   if (!Array.isArray(items) || items.length === 0) return;
-  const { error } = await supabase.rpc("bulk_update_category_sort_order", {
+  const { error } = await db.rpc("bulk_update_category_sort_order", {
     p_items: items.map(({ id, sort_order }) => ({ id, sort_order })),
   });
   if (error) throw error;
@@ -43,7 +43,7 @@ export async function createCategory({ name, type, color, id }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("categories")
     .insert({
       // Optional client-generated id so a retry of the same create is idempotent.
@@ -75,7 +75,7 @@ export async function updateCategory(id, { name, color, type }) {
   if (type !== undefined) updates.type = type;
   if (updates.sort_order === undefined) delete updates.sort_order; // ignore if not set
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("categories")
     .update(updates)
     .eq("id", id)
@@ -92,7 +92,7 @@ export async function updateCategory(id, { name, color, type }) {
  * @returns {Promise<void>}
  */
 export async function deleteCategory(id) {
-  const { error } = await supabase
+  const { error } = await db
     .from("categories")
     .update({ is_active: false })
     .eq("id", id);
@@ -101,7 +101,7 @@ export async function deleteCategory(id) {
 }
 
 export async function setCategoryArchived(id, archived) {
-  const { data, error } = await supabase.rpc("set_category_archived", {
+  const { data, error } = await db.rpc("set_category_archived", {
     p_category_id: id,
     p_archived: archived,
   }).single();
@@ -117,7 +117,7 @@ export async function setCategoryArchived(id, archived) {
  * @returns {Promise<any|null>} The preference value, or null if not set
  */
 export async function getUserPreference(key) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("user_preferences")
     .select("preference_value")
     .eq("preference_key", key)
@@ -137,7 +137,7 @@ export async function setUserPreference(key, value) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { error } = await supabase.from("user_preferences").upsert(
+  const { error } = await db.from("user_preferences").upsert(
     {
       user_id: user.id,
       preference_key: key,

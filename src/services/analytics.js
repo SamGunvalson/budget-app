@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { db } from "./backend";
 import {
   isTrueIncome,
   isSpendingCredit,
@@ -25,7 +25,7 @@ export async function getMonthlySpendingTrend({
   endYear,
   asOf,
 } = {}) {
-  const { data, error } = await supabase.rpc("get_monthly_spending_trend", {
+  const { data, error } = await db.rpc("get_monthly_spending_trend", {
     p_months: months,
     p_end_month: endMonth ?? null,
     p_end_year: endYear ?? null,
@@ -60,7 +60,7 @@ export async function getYearlySpendingTrend({
   endYear,
   asOf,
 } = {}) {
-  const { data, error } = await supabase.rpc("get_yearly_spending_trend", {
+  const { data, error } = await db.rpc("get_yearly_spending_trend", {
     p_years: years,
     p_end_month: endMonth ?? null,
     p_end_year: endYear ?? null,
@@ -78,7 +78,7 @@ export async function getYearlySpendingTrend({
 /**
  * Aggregate raw transactions into monthly spending totals.
  *
- * @param {Array} transactions – rows from Supabase
+ * @param {Array} transactions – rows from the server
  * @param {{ expensesOnly?: boolean }} opts
  * @returns {Array<{ key: string, label: string, year: number, month: number, spent: number, income: number, count: number }>}
  *   Sorted oldest → newest. `spent` and `income` are in cents.

@@ -1,5 +1,5 @@
 -- Run with psql -X -v ON_ERROR_STOP=1 as the owner of an initialized local DB.
--- Fixtures and mutations are rolled back; never run against a live Supabase DB.
+-- Fixtures and mutations are rolled back; never run against a live database.
 BEGIN;
 
 INSERT INTO auth.users (id, email, encrypted_password) VALUES

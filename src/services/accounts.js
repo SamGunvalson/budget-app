@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import { getUserPreference, setUserPreference } from "./categories";
 import { getTodayString } from "../utils/helpers";
 import { normalizeStatementCycle } from "../utils/accountRules";
@@ -73,7 +73,7 @@ export function getAccountBadgeColor(type) {
  * @returns {Promise<Array>}
  */
 export async function getAccounts() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("accounts")
     .select("*")
     .eq("is_active", true)
@@ -90,7 +90,7 @@ export async function getAccounts() {
  * @returns {Promise<Object>}
  */
 export async function getAccount(id) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("accounts")
     .select("*")
     .eq("id", id)
@@ -109,7 +109,7 @@ export async function createAccount({ name, type, starting_balance = 0, id, ...r
   const user = await getCurrentUser();
   const cycle = normalizeStatementCycle(rest, id);
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("accounts")
     .insert({
       // Optional client-generated id so a retry of the same create is idempotent.
@@ -146,7 +146,7 @@ export async function updateAccount(id, updates) {
   Object.assign(payload, normalizeStatementCycle(updates, id));
   payload.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("accounts")
     .update(payload)
     .eq("id", id)
@@ -166,7 +166,7 @@ export async function updateAccount(id, updates) {
 export async function deleteAccount(id) {
   const user = await getCurrentUser();
 
-  const { error } = await supabase
+  const { error } = await db
     .from("accounts")
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id)
@@ -197,7 +197,7 @@ export async function deleteAccount(id) {
  * }>>}
  */
 export async function getAccountBalances({ projectedToDate } = {}) {
-  const { data, error } = await supabase.rpc("get_account_balances", {
+  const { data, error } = await db.rpc("get_account_balances", {
     p_projected_to_date: projectedToDate ?? null,
   });
   if (error) throw error;
@@ -227,7 +227,7 @@ export async function getAccountBalances({ projectedToDate } = {}) {
  * @returns {Promise<{ history: Array, projectedFuture: Array }>}
  */
 export async function getNetWorthHistory({ projectedToDate } = {}) {
-  const { data, error } = await supabase.rpc("get_net_worth_history", {
+  const { data, error } = await db.rpc("get_net_worth_history", {
     p_projected_to_date: projectedToDate ?? null,
   });
   if (error) throw error;
@@ -252,7 +252,7 @@ export async function getMaxProjectedDate() {
   const todayStr = getTodayString();
 
   // Max date from recurring-projected transactions
-  const { data: projData, error: projErr } = await supabase
+  const { data: projData, error: projErr } = await db
     .from("transactions")
     .select("transaction_date")
     .eq("user_id", user.id)
@@ -263,7 +263,7 @@ export async function getMaxProjectedDate() {
   if (projErr) throw projErr;
 
   // Max date from future-dated confirmed (posted) transactions
-  const { data: postedData, error: postedErr } = await supabase
+  const { data: postedData, error: postedErr } = await db
     .from("transactions")
     .select("transaction_date")
     .eq("user_id", user.id)
@@ -350,7 +350,7 @@ export async function getAccountBalanceHistory({
   endDate,
 }) {
   if (!accountIds?.length) return [];
-  const { data, error } = await supabase.rpc("get_account_balance_history", {
+  const { data, error } = await db.rpc("get_account_balance_history", {
     p_account_ids: accountIds,
     p_start: startDate,
     p_end: endDate,
@@ -388,7 +388,7 @@ export async function getUpcomingTransactions({ accountIds, endDate }) {
   let from = 0;
   let hasMore = true;
   while (hasMore) {
-    let query = supabase
+    let query = db
       .from("transactions")
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .in("account_id", accountIds)
@@ -420,7 +420,7 @@ export async function getUpcomingTransactions({ accountIds, endDate }) {
  */
 export async function getCardPayments({ accountIds, startDate }) {
   if (!accountIds?.length || !startDate) return [];
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .select("id, account_id, amount, is_income, transfer_group_id, status, transaction_date")
     .in("account_id", accountIds)

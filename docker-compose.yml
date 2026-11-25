@@ -1,6 +1,6 @@
 # Fully self-hosted stack: Postgres + PostgREST + auth service + SPA/nginx.
 # Image-only deployment; no repository checkout or local SQL mounts required.
-# Usage: docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
+# Usage: docker compose --env-file .env.selfhost up -d --pull always
 services:
   db:
     image: thewarguy/budget-app-db:${BUDGET_IMAGE_TAG:-latest}
@@ -45,8 +45,6 @@ services:
 
   budget-app:
     image: thewarguy/budget-app:${BUDGET_IMAGE_TAG:-latest}
-    environment:
-      BACKEND_MODE: local
     ports:
       # Plain HTTP: terminate TLS in front (reverse proxy / Tailscale). Set APP_BIND=127.0.0.1 when a local proxy fronts it.
       - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8085}:8085"

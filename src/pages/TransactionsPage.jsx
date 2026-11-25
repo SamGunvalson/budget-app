@@ -49,7 +49,7 @@ import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
 import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
-import { getCurrentUser } from '../services/supabase';
+import { getCurrentUser } from '../services/backend';
 import SplitExpenseForm from '../components/splits/SplitExpenseForm';
 import {
   visibleSelection,
@@ -116,7 +116,7 @@ export default function TransactionsPage() {
 
   // setTransactions — proxy that writes to the active transactions query cache so
   // useTransactionManager's optimistic edits survive until the bridge invalidation
-  // refetches the real data from Dexie/Supabase.
+  // refetches the real data from Dexie/server.
   const setTransactions = useCallback((updater) => {
     const key = viewMode === 'yearly'
       ? ['transactions', 'year', year]

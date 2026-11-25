@@ -1,5 +1,5 @@
 /**
- * Sync queue — buffers offline mutations and replays them to Supabase
+ * Sync queue — buffers offline mutations and replays them to the server
  * when the device comes back online.
  *
  * Rather than patching every service function, the queue stores lightweight

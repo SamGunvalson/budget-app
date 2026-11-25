@@ -1,6 +1,6 @@
 # Copilot Instructions — Budget App
 
-A personal budget tracking PWA built with React 19 + Vite, with a selectable Supabase or self-hosted local PostgreSQL backend (PostgreSQL + RLS), and full offline support via Dexie.js (IndexedDB).
+A personal budget tracking PWA built with React 19 + Vite, with a self-hosted backend (PostgreSQL 16 + RLS, PostgREST, and a Fastify auth service in Docker Compose), and full offline support via Dexie.js (IndexedDB).
 
 ## Commands
 
@@ -33,7 +33,7 @@ existing paths unless their migration is explicitly in scope.
 
 Mutations may be called directly from components via the `*Offline` wrappers in `src/services/offlineAware.js` — no hook layer is required for writes. Each wrapper:
 
-1. Online: calls the underlying service through the selected backend, then updates Dexie.
+1. Online: calls the underlying service through the backend, then updates Dexie.
 2. Offline: writes to Dexie with `_offline` flags and enqueues the mutation for sync.
 
 Mirrored-table wrappers call `notifyTable(tableName)` internally to invalidate
@@ -43,7 +43,7 @@ do not assume the bridge subscribes to those tables.
 
 ### Offline sync
 
-`src/services/sync.js` pushes queued mutations to the selected backend on reconnect using a last-write-wins strategy. The sync queue lives in `src/utils/syncQueue.js`.
+`src/services/sync.js` pushes queued mutations to the backend on reconnect using a last-write-wins strategy. The sync queue lives in `src/utils/syncQueue.js`.
 
 ### Cache invalidation
 
@@ -55,7 +55,7 @@ new reads; non-mirrored tables need their existing explicit invalidation.
 
 ### Auth & RLS
 
-Auth state is managed by `src/contexts/AuthContext.jsx`. All client auth calls go through the adapter in `src/services/auth/`, selected by `src/services/backend.js`; do not call `supabase.auth` directly from components. Supabase Row-Level Security or the local Postgres compatibility shim scopes database access to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The backend client and mode are selected in `src/services/backend.js`; `src/services/supabase.js` retains Supabase client setup.
+Auth state is managed by `src/contexts/AuthContext.jsx`. All client auth calls go through `src/services/auth/` (backed by the auth service in `server/auth/`); do not call auth endpoints directly from components. PostgreSQL Row-Level Security, with the auth compatibility shim in `sql_scripts/local/`, scopes database access to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The PostgREST client (`db`) and server origin live in `src/services/backend.js`; services import `db` from there.
 
 ### Routing
 
@@ -71,7 +71,7 @@ All monetary values are stored and passed around as **integer cents**. Use the h
 - `toDollars(cents)` — convert for math (pass `{ raw: true }` to bypass safe-mode masking)
 - `formatCurrency(cents)` — format for display (applies safe-mode masking)
 
-Never store or compute with floats. Never pass dollar amounts to either backend.
+Never store or compute with floats. Never pass dollar amounts to the backend.
 
 ### Transaction classification
 
@@ -132,7 +132,7 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
   supplies the base and required feature/RPC/policy definitions.
 - **`sql_scripts/migrations/`** — historical upgrades/repairs whose effects are
   already represented in current setup; do not run them on fresh databases.
-- **`sql_scripts/local/`** — self-hosted Postgres compatibility shim, initialization order, and grants.
+- **`sql_scripts/local/`** — Postgres auth/role compatibility shim, initialization order (`apply_order.txt`), and grants.
 
 ## Database Change Workflow
 
@@ -141,14 +141,17 @@ Whenever you add, rename, or remove a column, table, function, or RLS policy, yo
 1. **`docs/DATA_MODEL.md`** — update the affected table definition, constraints, RLS note, and the version/date at the bottom of the file.
 
 2. **The relevant SQL script** — choose the right file:
-   - New table → add creation to the applicable base script and a migration in `sql_scripts/migrations/supabase_<feature>.sql` for existing databases
-   - New column on an existing table → add the column to the applicable base script so fresh installs include it, AND create a separate `ALTER TABLE` migration in `sql_scripts/migrations/supabase_<feature>.sql`
-   - RLS policy fix → create `sql_scripts/migrations/supabase_<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`), AND update base policies and `sql_scripts/supabase_rls_complete.sql` to match
+   - New table → add creation to the applicable base script and a migration in `sql_scripts/migrations/<feature>.sql` for existing databases
+   - New column on an existing table → add the column to the applicable base script so fresh installs include it, AND create a separate `ALTER TABLE` migration in `sql_scripts/migrations/<feature>.sql`
+   - RLS policy fix → create `sql_scripts/migrations/<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`), AND update base policies and `sql_scripts/supabase_rls_complete.sql` to match
    - New RPC function → add to the appropriate current feature script, preserve an upgrade path for existing databases, and document in `DATA_MODEL.md`
 
 3. **The service layer** — if a column or table name changed, update the corresponding file in `src/services/`.
 
-For any new table or function, keep self-hosted mode working: ensure its current
+Older SQL files keep their historical `supabase_` prefix; name new files without it
+and add each new migration to the list in `scripts/sql-layout.test.js`.
+
+For any new table or function, ensure its current
 shared setup script is represented in `sql_scripts/local/apply_order.txt` in
 dependency order. Use `sql_scripts/local/` only for local-specific compatibility
 SQL; do not duplicate shared migrations. Historical upgrades stay out of fresh
@@ -173,4 +176,4 @@ When adding, renaming, or removing any column, table, function, or RLS policy:
 3. ☐ Service layer updated (`src/services/` file for the affected table)
 4. ☐ RLS policies use `DROP POLICY IF EXISTS` + `CREATE POLICY` (no `IF NOT EXISTS`)
 5. ☐ Soft-delete tables (`transactions`, `split_expenses`): UPDATE policy `USING` includes `deleted_at IS NULL`; `WITH CHECK` does **not**
-6. ☐ New self-hosted migrations are manually applied with `psql` to existing database volumes
+6. ☐ New migrations are manually applied with `psql` to existing database volumes

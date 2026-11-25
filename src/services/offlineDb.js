@@ -2,14 +2,14 @@ import Dexie from "dexie";
 import { notifyTable } from "./cache";
 
 /**
- * Dexie (IndexedDB) database mirroring Supabase schema.
+ * Dexie (IndexedDB) database mirroring Postgres schema.
  *
- * Each table uses the same column names as Supabase.
+ * Each table uses the same column names as Postgres.
  * Only indexed/queryable fields are declared — Dexie stores all properties
  * regardless, but only declared fields can be used in .where() clauses.
  *
  * Key design decisions:
- * - `id` is the primary key for every table (matches Supabase UUIDs).
+ * - `id` is the primary key for every table (matches Postgres UUIDs).
  * - `_offline` flag marks records created/updated while offline (pending sync).
  * - `_action` tracks the operation type: 'create' | 'update' | 'delete'.
  * - Soft-delete pattern: transactions set `deleted_at` instead of removing rows.
@@ -18,7 +18,7 @@ import { notifyTable } from "./cache";
 export const db = new Dexie("BudgetAppOffline");
 
 db.version(2).stores({
-  // ── Core tables (mirror Supabase) ──
+  // ── Core tables (mirror Postgres) ──
   transactions: [
     "id",
     "user_id",
@@ -303,7 +303,7 @@ export async function cacheServerRows(tableName, rows) {
   });
 }
 
-// ── Helper: cache a full Supabase result set into a local table ──
+// ── Helper: cache a full server result set into a local table ──
 //
 // Replaces the table contents with `rows`, except that rows still waiting to
 // sync (`_offline === 1`) are kept as they are: a pending local row wins over

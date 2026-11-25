@@ -37,12 +37,11 @@ Paths now include `migrations/`.
 - Do not assume every script is transactional or safe to rerun after a partial
   failure. Read its SQL and stop on errors.
 
-Supabase: run the required script as the database owner in the SQL Editor.
-Self-hosted: use the updated database image, which bundles this directory:
+Use the updated database image, which bundles this directory:
 
 ```bash
 # Example repair only; choose the migration required by your release.
-docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost exec -T db \
+docker compose --env-file .env.selfhost exec -T db \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -f /sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql
 ```

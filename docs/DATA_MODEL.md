@@ -23,11 +23,11 @@ alone does not make a column non-nullable. `created_at` defaults to `now()`.
 
 ### Auth users (not a public `users` table)
 
-Public ownership foreign keys reference **`auth.users(id)`**. Supabase manages
-this table in Supabase mode. There is no app-defined public `users` table with
-currency/timezone columns; UI preferences live in `user_preferences`.
+Public ownership foreign keys reference **`auth.users(id)`**. There is no
+app-defined public `users` table with currency/timezone columns; UI preferences
+live in `user_preferences`.
 
-In local mode, the [compatibility shim](../sql_scripts/local/README.md) supplies:
+The [auth compatibility shim](../sql_scripts/local/README.md) supplies:
 
 | Table | Fields |
 | --- | --- |
@@ -83,7 +83,7 @@ transactions or category changes targeting an archived category, including
 stale queued writes. Edits retaining the original category are allowed.
 Historical filters retain archived categories. Saved budget allocations stay
 editable across the same year; budget copy/import may retain archived categories.
-See [archiving behavior](./SETUP_GUIDE.md#category-archiving-upgrade).
+See [archiving behavior](./SETUP_GUIDE.md#category-archiving).
 
 ### Table: `user_preferences`
 
@@ -430,13 +430,13 @@ See [contributor instructions](../.github/AGENTS.md) for read/write rules.
 
 Do not squash or delete incremental migrations because fresh installs contain
 some of their effects. Existing databases still need the applicable upgrades.
-The [setup guide](./SETUP_GUIDE.md#complete-a-fresh-supabase-installation) defines
-the full Supabase fresh-install sequence, also listed in the
-[SQL setup guide](../sql_scripts/README.md). Top-level SQL files participate in
-current setup; [`migrations/`](../sql_scripts/migrations/README.md) retains
-historical upgrades and repairs. Local fresh installs use
-[`local/apply_order.txt`](../sql_scripts/local/apply_order.txt), with local-only
-roles/auth first and grants last; historical repairs are excluded.
+Fresh installs use
+[`local/apply_order.txt`](../sql_scripts/local/apply_order.txt), with
+roles/auth first and grants last; historical repairs are excluded. Top-level SQL
+files participate in current setup (see the
+[SQL setup guide](../sql_scripts/README.md));
+[`migrations/`](../sql_scripts/migrations/README.md) retains historical upgrades
+and repairs. The `supabase_` filename prefix is historical.
 
 | Script | Role |
 | --- | --- |
@@ -475,6 +475,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.7
+**Document version**: 3.8
 
-**Last updated**: 2026-11-19
+**Last updated**: 2026-11-25

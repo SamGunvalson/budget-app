@@ -13,7 +13,7 @@ const imageTag = process.env.BUDGET_IMAGE_TAG || "selfhost-test";
 test("image-only stack initializes, authenticates, enforces RLS, and preserves data", { timeout: 300_000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), "budget-selfhost-"));
   const composeFile = join(directory, "compose.yml");
-  copyFileSync(new URL("../docker-compose.selfhost.yml", import.meta.url), composeFile);
+  copyFileSync(new URL("../docker-compose.yml", import.meta.url), composeFile);
   const env = {
     ...process.env,
     BUDGET_IMAGE_TAG: imageTag,
@@ -55,7 +55,7 @@ test("image-only stack initializes, authenticates, enforces RLS, and preserves d
     await waitForApi();
     assert.equal((await fetch(base)).status, 200);
     // Locations that declare add_header must re-include the security headers.
-    for (const path of ["/", "/index.html", "/sw.js", "/env-config.js"]) {
+    for (const path of ["/", "/index.html", "/sw.js"]) {
       const page = await fetch(`${base}${path}`);
       assert.equal(page.status, 200, path);
       assert.match(page.headers.get("content-security-policy") ?? "", /default-src 'self'/, path);

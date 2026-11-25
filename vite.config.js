@@ -72,40 +72,14 @@ export default defineConfig(({ mode }) => ({
           "index.html",
           "assets/index-*.{js,css}", // main entry bundle (includes skeletons)
           "assets/vendor-*.js", // react, react-dom, react-router
-          "assets/supabase-*.js", // auth needs this early
+          "assets/postgrest-*.js", // API client needed at boot
           "assets/utils-*.js", // date-fns, dexie (offline layer)
           "assets/TopBar-*.js", // app shell nav
           "**/*.{svg,png,ico,woff,woff2}",
         ],
-        // env-config.js holds runtime credentials (Supabase URL + anon key) and
-        // is templated by docker-entrypoint.sh on container start. It must
-        // never be precached or runtime-cached, otherwise an anon-key rotation
-        // would not propagate to clients with an active service worker.
-        globIgnores: ["**/env-config.js"],
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/rest\//, /^\/auth\//, /^\/env-config\.js$/],
+        navigateFallbackDenylist: [/^\/api/, /^\/rest\//, /^\/auth\//],
         runtimeCaching: [
-          {
-            // Always go to network for env-config.js; never cache it.
-            urlPattern: /\/env-config\.js$/i,
-            handler: "NetworkOnly",
-          },
-          {
-            // Phase 5: rarely-mutated reference tables (accounts, categories,
-            // user_preferences) are served stale-while-revalidate so the UI
-            // gets an instant response and the cache is refreshed in the
-            // background. Listed BEFORE the catch-all so it wins.
-            urlPattern:
-              /^https:\/\/.*\.supabase\.co\/rest\/v1\/(accounts|categories|user_preferences)\b/i,
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "supabase-reference-tables",
-              expiration: {
-                maxEntries: 30,
-                maxAgeSeconds: 60 * 60 * 24, // 1 day
-              },
-            },
-          },
           {
             // Cached REST responses are per-user; signOut purges both cache
             // names before another account can use them.
@@ -113,7 +87,7 @@ export default defineConfig(({ mode }) => ({
               sameOrigin && /^\/rest\/v1\/(accounts|categories|user_preferences)\b/.test(url.pathname),
             handler: "StaleWhileRevalidate",
             options: {
-              cacheName: "supabase-reference-tables",
+              cacheName: "reference-tables",
               expiration: {
                 maxEntries: 30,
                 maxAgeSeconds: 60 * 60 * 24, // 1 day
@@ -126,39 +100,16 @@ export default defineConfig(({ mode }) => ({
             handler: "NetworkOnly",
           },
           {
-            // Never cache Supabase auth endpoints — tokens must always come
-            // from the live server to avoid stale-session foot-guns.
-            urlPattern: /^https:\/\/.*\.supabase\.co\/auth\/v1\/.*/i,
-            handler: "NetworkOnly",
-          },
-          {
             // Cache same-origin local PostgREST API calls (network-first so
             // offline falls through to our Dexie layer naturally).
             urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/rest\/v1\/.*/.test(url.pathname),
             handler: "NetworkFirst",
             options: {
-              cacheName: "supabase-api",
+              cacheName: "api-rest",
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60, // 1 hour
               },
-              networkTimeoutSeconds: 1,
-            },
-          },
-          {
-            // Cache Supabase REST API calls (network-first so offline
-            // falls through to our Dexie layer naturally)
-            urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "supabase-api",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60, // 1 hour
-              },
-              // Phase 5: dropped from 3s -> 1s so flaky networks fall back to
-              // the cache (and our Dexie layer) without a long perceived
-              // hang on mobile.
               networkTimeoutSeconds: 1,
             },
           },
@@ -181,7 +132,7 @@ export default defineConfig(({ mode }) => ({
           vendor: ["react", "react-dom", "react-router-dom"],
           charts: ["recharts"],
           excel: ["exceljs"],
-          supabase: ["@supabase/supabase-js", "@supabase/postgrest-js"],
+          postgrest: ["@supabase/postgrest-js"],
           dnd: [
             "@dnd-kit/core",
             "@dnd-kit/sortable",
@@ -229,7 +180,6 @@ export default defineConfig(({ mode }) => ({
       "react-dom",
       "react-router-dom",
       "recharts",
-      "@supabase/supabase-js",
       "@supabase/postgrest-js",
     ],
     esbuildOptions: {

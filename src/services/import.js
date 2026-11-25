@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import { newId } from "../utils/ids";
 import { normalizeDate, normalizeAmount } from "../utils/csvParser";
 
@@ -413,14 +413,14 @@ export async function checkDuplicates(transactions) {
   const minDate = dates.sort()[0];
   const maxDate = dates.sort().reverse()[0];
 
-  // Paginate to avoid Supabase's 1000-row default limit.
+  // Paginate to avoid PostgREST's 1000-row max-rows limit.
   const PAGE_SIZE = 1000;
   let existing = [];
   let from = 0;
   let hasMore = true;
 
   while (hasMore) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("transactions")
       .select("id, amount, transaction_date, description")
       .is("deleted_at", null)
@@ -501,7 +501,7 @@ export function groupDuplicatesForReview(
 }
 
 /**
- * Bulk insert validated transactions into Supabase.
+ * Bulk insert validated transactions into the server.
  * Supports transfer pairing: if transferPairs Map is provided, paired rows
  * share a transfer_group_id.
  *
@@ -549,7 +549,7 @@ export async function bulkInsertTransactions(
     transfer_group_id: groupIdMap.get(tx._rowIndex) || null,
   }));
 
-  // Supabase supports bulk insert; insert in batches of 100 to avoid limits
+  // PostgREST supports bulk insert; insert in batches of 100 to avoid limits
   const BATCH_SIZE = 100;
   let inserted = 0;
   let failed = 0;
@@ -558,7 +558,7 @@ export async function bulkInsertTransactions(
   const batches = buildInsertBatches(rows, BATCH_SIZE);
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("transactions")
       .insert(batch)
       .select("id");

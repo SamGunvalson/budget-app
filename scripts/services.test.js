@@ -38,14 +38,14 @@ const QUERY_METHODS = [
 ];
 
 /**
- * A scripted Supabase stand-in. `respond(call)` answers each awaited query;
+ * A scripted PostgREST client stand-in. `respond(call)` answers each awaited query;
  * `rpc(name, args)` answers each RPC. Every call is recorded in `calls`.
  */
-function fakeSupabase({ respond, rpc = () => ({ error: null }) }) {
+function fakeApi({ respond, rpc = () => ({ error: null }) }) {
   const calls = [];
   return {
     calls,
-    supabase: {
+    api: {
       from(table) {
         const call = { table, steps: [] };
         calls.push(call);
@@ -93,7 +93,7 @@ async function loadTransactions({ failRpcFor = null, failCompanionLookup = false
   const arg = (call, method, column) =>
     call.steps.find((step) => step.method === method && step.args[0] === column)?.args[1];
 
-  const fake = fakeSupabase({
+  const fake = fakeApi({
     respond(call) {
       assert.equal(call.table, "transactions");
       const live = rows.filter((row) => !row.deleted_at);
@@ -133,7 +133,7 @@ async function loadTransactions({ failRpcFor = null, failCompanionLookup = false
     },
   });
   const transactions = await loadModule("../src/services/transactions.js", {
-    "./supabase": { supabase: fake.supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./backend": { db: fake.api, getCurrentUser: async () => ({ id: "owner" }) },
     "../utils/ids": { newId: () => "new-id" },
     "../utils/statementPayments": { ...statementPayments },
   });
@@ -217,7 +217,7 @@ async function loadExport(tables) {
       return { addRow: (row) => sheetRows.push(row) };
     }
   }
-  const fake = fakeSupabase({
+  const fake = fakeApi({
     respond(call) {
       const rows = tables[call.table];
       assert.ok(rows, `Unexpected table ${call.table}`);
@@ -246,7 +246,7 @@ async function loadExport(tables) {
     URL.revokeObjectURL = originals.revokeObjectURL;
   };
   const exporter = await loadModule("../src/services/export.js", {
-    "./supabase": { supabase: fake.supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./backend": { db: fake.api, getCurrentUser: async () => ({ id: "owner" }) },
     "../utils/helpers": { ...helpers },
     exceljs: { default: { Workbook } },
   });
@@ -345,9 +345,9 @@ test("SVC-9: full backup keeps inactive reference rows and includes partnerships
 });
 
 test("account statement cycle is normalized and sent on create and update", async () => {
-  const fake = fakeSupabase({ respond: () => ({ data: { id: "card" }, error: null }) });
+  const fake = fakeApi({ respond: () => ({ data: { id: "card" }, error: null }) });
   const accounts = await loadModule("../src/services/accounts.js", {
-    "./supabase": { supabase: fake.supabase, getCurrentUser: async () => ({ id: "owner" }) },
+    "./backend": { db: fake.api, getCurrentUser: async () => ({ id: "owner" }) },
     "./categories": { getUserPreference: async () => null, setUserPreference: async () => {} },
     "../utils/helpers": { ...helpers },
     "../utils/accountRules": { ...accountRules },

@@ -5,7 +5,7 @@
 
 # Budget App
 
-A personal budget tracking app built with React and Vite, using either Supabase or self-hosted PostgreSQL. It runs as a web PWA or a Capacitor Android app.
+A personal budget tracking app built with React and Vite, backed by a self-hosted PostgreSQL stack. It runs as a web PWA or a Capacitor Android app.
 
 ## Features
 
@@ -21,35 +21,31 @@ A personal budget tracking app built with React and Vite, using either Supabase 
 - Email/password authentication and per-user Row-Level Security
 - Dark/light themes and safe mode for masking financial displays
 
-### Backend modes
+### Backend
 
-- **Supabase:** Supabase Auth and PostgreSQL with RLS.
-- **Self-hosted local:** PostgreSQL 16, PostgREST, Fastify auth, and Nginx in Docker Compose, reusing the app's SQL through a local auth compatibility shim.
-
-Backend selection uses runtime `BACKEND_MODE` or development `VITE_BACKEND_MODE`. Local APIs use `/rest/v1` and `/auth/v1`. See the [setup guide](./docs/SETUP_GUIDE.md) for configuration and upgrades.
+PostgreSQL 16 with RLS, PostgREST, a Fastify auth service, and Nginx, run together with Docker Compose. Nginx serves the app and proxies `/rest/v1` (PostgREST) and `/auth/v1` (auth). See the [setup guide](./docs/SETUP_GUIDE.md) for configuration and upgrades.
 
 ## Quick starts
 
 ### Development
 
-Use Node.js 22.12+ (the dev container uses Node 22; CI uses Node 24).
+Use Node.js 22.12+ (the dev container uses Node 22; CI uses Node 24). Start the
+self-hosted stack (below) first; Vite proxies its API.
 
 ```bash
 npm ci
-cp .env.example .env
-# Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
-# Apply the fresh-install SQL sequence in the setup guide before signing in.
+cp .env.example .env   # DEV_API_PROXY_TARGET=http://localhost:8085
 npm run dev
 ```
 
-Open `http://localhost:5173`. For self-hosted development, Docker, and dev-container setup, use the [setup guide](./docs/SETUP_GUIDE.md).
+Open `http://localhost:5173`. For Docker and dev-container details, use the [setup guide](./docs/SETUP_GUIDE.md#vite-development-against-the-self-hosted-stack).
 
 ### Self-hosted deployment
 
 ```bash
 cp .env.selfhost.example .env.selfhost
 # Generate and set all required secrets as described in the setup guide.
-docker compose -f docker-compose.selfhost.yml --env-file .env.selfhost up -d --pull always
+docker compose --env-file .env.selfhost up -d --pull always
 ```
 
 The app serves HTTP on port 8085. Use a trusted encrypted network such as Tailscale, or a TLS reverse proxy. The stack pulls matching app/auth/database images; image updates **do not migrate an existing database volume**. See [self-hosted setup](./docs/SETUP_GUIDE.md#self-hosted-local-postgres).
@@ -60,7 +56,7 @@ The native project is already configured. Follow the [Android guide](./docs/andr
 
 ### Category archiving
 
-Use **Categories → Archive** and **Show archived → Restore**. Historical entries remain intact; new-entry choices exclude archived categories. See [archiving behavior and required database upgrade](./docs/SETUP_GUIDE.md#category-archiving-upgrade).
+Use **Categories → Archive** and **Show archived → Restore**. Historical entries remain intact; new-entry choices exclude archived categories. See [archiving behavior and required database upgrade](./docs/SETUP_GUIDE.md#category-archiving).
 
 ### Amount calculator
 
@@ -89,7 +85,7 @@ Auth and deployment tests require isolated PostgreSQL/Docker resources; see the 
 | [`src/`](./src/) | React pages/components, query hooks, contexts, backend adapters, offline services, shared helpers |
 | [`server/auth/`](./server/auth/) | Self-hosted authentication service and CLI |
 | [`sql_scripts/`](./sql_scripts/) | Base schema, incremental migrations, local initialization and RLS checks |
-| [`scripts/`](./scripts/) | Regression checks and Supabase-to-local migration utility |
+| [`scripts/`](./scripts/) | Regression and deployment smoke tests |
 | [`nginx/`](./nginx/) | API proxy, CORS, and security-header templates |
 | [`android/`](./android/) | Capacitor native project |
 | [`docs/`](./docs/) | Current guides and historical archive |

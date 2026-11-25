@@ -48,7 +48,7 @@ export default function useThresholds() {
     };
   }, []);
 
-  /** Save custom thresholds to Supabase + update local state. */
+  /** Save custom thresholds to the server + update local state. */
   const setThresholds = useCallback(async (next) => {
     setError("");
     try {

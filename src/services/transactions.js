@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import { newId } from "../utils/ids";
 import { amountLockedAfterEdit } from "../utils/statementPayments";
 
@@ -21,7 +21,7 @@ export async function getTransactions({ month, year, status } = {}) {
   let hasMore = true;
 
   while (hasMore) {
-    let query = supabase
+    let query = db
       .from("transactions")
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .is("deleted_at", null)
@@ -99,7 +99,7 @@ export async function createTransaction({
   // Optional client-generated id so a retry of the same create is idempotent.
   if (id) row.id = id;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert(row)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
@@ -145,7 +145,7 @@ export async function createAdjustment({
   if (status) row.status = status;
   if (id) row.id = id;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert(row)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
@@ -199,7 +199,7 @@ export async function createTransfer({
     transfer_group_id,
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert([
       { ...baseTx, ...legIds[0], account_id: from_account_id, is_income: false },
@@ -243,7 +243,7 @@ export async function createLinkedTransfer({
   const legIds = clientLegIds(id, companion_id);
 
   // Resolve the "Account Transfer" category for the companion leg
-  const { data: transferCats, error: catErr } = await supabase
+  const { data: transferCats, error: catErr } = await db
     .from("categories")
     .select("id")
     .eq("user_id", user.id)
@@ -272,7 +272,7 @@ export async function createLinkedTransfer({
     companion_amount != null && companion_amount !== amount
       ? companion_amount
       : amount;
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert([
       { ...sharedFields, ...legIds[0], account_id, category_id, is_income, amount },
@@ -314,7 +314,7 @@ export async function updateLinkedTransfer(
   },
 ) {
   // Find the transaction to get its transfer_group_id
-  const { data: tx, error: txErr } = await supabase
+  const { data: tx, error: txErr } = await db
     .from("transactions")
     .select("*")
     .eq("id", id)
@@ -324,7 +324,7 @@ export async function updateLinkedTransfer(
     throw new Error("Transaction is not part of a linked transfer.");
 
   // Find both legs
-  const { data: legs, error: legsErr } = await supabase
+  const { data: legs, error: legsErr } = await db
     .from("transactions")
     .select("*, categories(id, name, color, type)")
     .eq("transfer_group_id", tx.transfer_group_id)
@@ -349,7 +349,7 @@ export async function updateLinkedTransfer(
   };
 
   // Update main leg
-  const { data: updatedMain, error: mainErr } = await supabase
+  const { data: updatedMain, error: mainErr } = await db
     .from("transactions")
     .update({ ...sharedBase, amount, account_id, category_id, is_income })
     .eq("id", mainLeg.id)
@@ -365,7 +365,7 @@ export async function updateLinkedTransfer(
     companion_amount != null && companion_amount !== amount
       ? companion_amount
       : amount;
-  const { data: updatedCompanion, error: compErr } = await supabase
+  const { data: updatedCompanion, error: compErr } = await db
     .from("transactions")
     .update({ ...sharedBase, amount: companionAmt, account_id: linked_account_id, is_income: !is_income })
     .eq("id", companionLeg.id)
@@ -401,7 +401,7 @@ export async function updateTransaction(id, updates) {
   if (updates.status !== undefined) payload.status = updates.status;
   payload.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .update(payload)
     .eq("id", id)
@@ -431,7 +431,7 @@ export async function getTransactionsYTD({ year, throughMonth }) {
   let hasMore = true;
 
   while (hasMore) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("transactions")
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .is("deleted_at", null)
@@ -455,7 +455,7 @@ export async function getTransactionsYTD({ year, throughMonth }) {
 
 /**
  * Fetch all active transactions for a full year (Jan 1 – Dec 31).
- * Paginates through Supabase's 1000-row limit to ensure all rows are returned.
+ * Paginates through PostgREST's 1000-row max-rows limit to ensure all rows are returned.
  * @param {{ year: number }} params
  * @returns {Promise<Array>}
  */
@@ -469,7 +469,7 @@ export async function getTransactionsForYear({ year }) {
   let hasMore = true;
 
   while (hasMore) {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("transactions")
       .select("*, categories(id, name, color, type), accounts(id, name, type)")
       .is("deleted_at", null)
@@ -529,7 +529,7 @@ export async function createAsymmetricTransfer({
   };
   if (status) base.status = status;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert([
       { ...base, ...legIds[0], account_id: from_account_id, amount: from_amount, is_income: false },
@@ -563,7 +563,7 @@ export async function updateAsymmetricTransfer(
     category_id,
   },
 ) {
-  const { data: tx, error: txErr } = await supabase
+  const { data: tx, error: txErr } = await db
     .from("transactions")
     .select("*")
     .eq("id", id)
@@ -572,7 +572,7 @@ export async function updateAsymmetricTransfer(
   if (!tx.transfer_group_id)
     throw new Error("Transaction is not part of a transfer.");
 
-  const { data: legs, error: legsErr } = await supabase
+  const { data: legs, error: legsErr } = await db
     .from("transactions")
     .select("*")
     .eq("transfer_group_id", tx.transfer_group_id)
@@ -603,7 +603,7 @@ export async function updateAsymmetricTransfer(
     shared.amount_locked = true;
   }
 
-  const { data: updatedOut, error: outErr } = await supabase
+  const { data: updatedOut, error: outErr } = await db
     .from("transactions")
     .update({ ...shared, account_id: from_account_id, amount: from_amount })
     .eq("id", outgoingLeg.id)
@@ -612,7 +612,7 @@ export async function updateAsymmetricTransfer(
     .single();
   if (outErr) throw outErr;
 
-  const { data: updatedIn, error: inErr } = await supabase
+  const { data: updatedIn, error: inErr } = await db
     .from("transactions")
     .update({ ...shared, account_id: to_account_id, amount: to_amount })
     .eq("id", incomingLeg.id)
@@ -645,7 +645,7 @@ export async function updateTransfer(
   },
 ) {
   // Find the transaction to get its transfer_group_id
-  const { data: tx, error: txErr } = await supabase
+  const { data: tx, error: txErr } = await db
     .from("transactions")
     .select("*")
     .eq("id", id)
@@ -655,7 +655,7 @@ export async function updateTransfer(
     throw new Error("Transaction is not part of a transfer.");
 
   // Find both legs by transfer_group_id
-  const { data: legs, error: legsErr } = await supabase
+  const { data: legs, error: legsErr } = await db
     .from("transactions")
     .select("*")
     .eq("transfer_group_id", tx.transfer_group_id)
@@ -688,7 +688,7 @@ export async function updateTransfer(
   }
 
   // Update outgoing leg (from account)
-  const { data: updatedOut, error: outErr } = await supabase
+  const { data: updatedOut, error: outErr } = await db
     .from("transactions")
     .update({ ...shared, account_id: from_account_id })
     .eq("id", outgoingLeg.id)
@@ -698,7 +698,7 @@ export async function updateTransfer(
   if (outErr) throw outErr;
 
   // Update incoming leg (to account)
-  const { data: updatedIn, error: inErr } = await supabase
+  const { data: updatedIn, error: inErr } = await db
     .from("transactions")
     .update({ ...shared, account_id: to_account_id })
     .eq("id", incomingLeg.id)
@@ -720,7 +720,7 @@ export async function deleteTransaction(id) {
   const user = await getCurrentUser();
 
   // Check if this transaction has a companion (transfer or linked transfer)
-  const { data: tx, error: txErr } = await supabase
+  const { data: tx, error: txErr } = await db
     .from("transactions")
     .select("id, transfer_group_id")
     .eq("id", id)
@@ -730,7 +730,7 @@ export async function deleteTransaction(id) {
 
   if (txErr) {
     // Fallback: just delete the single transaction
-    const { error } = await supabase.rpc("soft_delete_transaction", {
+    const { error } = await db.rpc("soft_delete_transaction", {
       txn_id: id,
     });
     if (error) throw error;
@@ -741,7 +741,7 @@ export async function deleteTransaction(id) {
 
   if (tx.transfer_group_id) {
     // Find the companion leg
-    const { data: companions, error: lookupErr } = await supabase
+    const { data: companions, error: lookupErr } = await db
       .from("transactions")
       .select("id")
       .eq("transfer_group_id", tx.transfer_group_id)
@@ -754,7 +754,7 @@ export async function deleteTransaction(id) {
 
     if (companions?.length) {
       for (const comp of companions) {
-        const { error: compErr } = await supabase.rpc(
+        const { error: compErr } = await db.rpc(
           "soft_delete_transaction",
           { txn_id: comp.id },
         );
@@ -765,7 +765,7 @@ export async function deleteTransaction(id) {
   }
 
   // Delete the original transaction
-  const { error } = await supabase.rpc("soft_delete_transaction", {
+  const { error } = await db.rpc("soft_delete_transaction", {
     txn_id: id,
   });
   if (error) throw error;
@@ -803,7 +803,7 @@ export async function bulkUpdateTransactions(updates) {
     return out;
   });
 
-  const { data, error } = await supabase.rpc("bulk_update_transactions", {
+  const { data, error } = await db.rpc("bulk_update_transactions", {
     p_updates: cleaned,
   });
   if (error) throw error;
@@ -829,7 +829,7 @@ export async function bulkDeleteTransactions(ids) {
  * @returns {Promise<string[]>} Companion transaction IDs (empty if unpaired)
  */
 async function getUnpostedCompanionIds(id) {
-  const { data: tx, error: txErr } = await supabase
+  const { data: tx, error: txErr } = await db
     .from("transactions")
     .select("id, transfer_group_id")
     .eq("id", id)
@@ -838,7 +838,7 @@ async function getUnpostedCompanionIds(id) {
   if (txErr) throw txErr;
   if (!tx?.transfer_group_id) return [];
 
-  const { data: companions, error: compErr } = await supabase
+  const { data: companions, error: compErr } = await db
     .from("transactions")
     .select("id")
     .eq("transfer_group_id", tx.transfer_group_id)
@@ -862,7 +862,7 @@ async function confirmWithCompanions(id) {
 
   let companions = [];
   if (companionIds.length) {
-    const { data, error: compErr } = await supabase
+    const { data, error: compErr } = await db
       .from("transactions")
       .update({ status: "posted", updated_at: now })
       .in("id", companionIds)
@@ -872,7 +872,7 @@ async function confirmWithCompanions(id) {
     companions = data || [];
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .update({ status: "posted", updated_at: now })
     .eq("id", id)
@@ -893,7 +893,7 @@ async function confirmWithCompanions(id) {
 async function skipWithCompanions(id) {
   const companionIds = await getUnpostedCompanionIds(id);
   for (const txn_id of [...companionIds, id]) {
-    const { error } = await supabase.rpc("soft_delete_transaction", { txn_id });
+    const { error } = await db.rpc("soft_delete_transaction", { txn_id });
     if (error) throw error;
   }
   return [id, ...companionIds];
@@ -969,7 +969,7 @@ export async function bulkSkipTransactions(ids) {
  * @returns {Promise<number[]>} e.g. [2022, 2023, 2024, 2025, 2026, 2027]
  */
 export async function getTransactionYears() {
-  const { data, error } = await supabase.rpc("get_transaction_years");
+  const { data, error } = await db.rpc("get_transaction_years");
   if (error) throw error;
   return (data || []).map((y) => Number(y));
 }
@@ -979,7 +979,7 @@ export async function getTransactionYears() {
  * @returns {Promise<number>}
  */
 export async function getPendingReviewCount() {
-  const { count, error } = await supabase
+  const { count, error } = await db
     .from("transactions")
     .select("id", { count: "exact", head: true })
     .is("deleted_at", null)

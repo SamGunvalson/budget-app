@@ -1,4 +1,4 @@
-import { supabase, getCurrentUser } from "./supabase";
+import { db, getCurrentUser } from "./backend";
 import { newId } from "../utils/ids";
 import { format, addDays, startOfDay, isAfter } from "date-fns";
 import {
@@ -55,7 +55,7 @@ function statementFlag(value, { is_transfer, group_id, is_group_parent } = {}) {
  * @returns {Promise<Array>}
  */
 export async function getRecurringTemplates() {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .select(
       "*, categories(id, name, color, type), accounts!recurring_templates_account_id_fkey(id, name, type), to_accounts:accounts!recurring_templates_to_account_id_fkey(id, name, type, statement_close_day, payment_due_day, closed_at, is_active)",
@@ -70,7 +70,7 @@ export async function getRecurringTemplates() {
   const topLevel = [];
 
   for (const raw of data) {
-    // Flatten to_accounts join (Supabase returns it as an object or null)
+    // Flatten to_accounts join (PostgREST returns it as an object or null)
     raw.to_account = raw.to_accounts || null;
     delete raw.to_accounts;
     // Statement payments follow their card's due day, whatever is stored.
@@ -134,7 +134,7 @@ export async function createRecurringTemplate({
 }) {
   const user = await getCurrentUser();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .insert({
       user_id: user.id,
@@ -188,7 +188,7 @@ export async function createRecurringTemplate({
  */
 export async function createRecurringGroup(parentData, childrenData) {
   const parentPayload = { ...parentData, is_group_parent: true };
-  const { data: parentId, error } = await supabase.rpc(
+  const { data: parentId, error } = await db.rpc(
     "upsert_recurring_group",
     {
       p_parent_id: null,
@@ -266,7 +266,7 @@ export async function updateRecurringTemplate(id, updates) {
   if (updates.pays_statement_balance !== undefined)
     payload.pays_statement_balance = statementFlag(updates.pays_statement_balance, updates);
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .update(payload)
     .eq("id", id)
@@ -291,7 +291,7 @@ export async function updateRecurringTemplate(id, updates) {
  */
 export async function updateRecurringGroup(groupId, parentData, childrenData) {
   const parentPayload = { ...parentData, is_group_parent: true };
-  const { error } = await supabase.rpc("upsert_recurring_group", {
+  const { error } = await db.rpc("upsert_recurring_group", {
     p_parent_id: groupId,
     p_parent: parentPayload,
     p_children: childrenData || [],
@@ -309,7 +309,7 @@ export async function updateRecurringGroup(groupId, parentData, childrenData) {
  * @returns {Promise<Object|null>}
  */
 export async function getRecurringTemplateById(id) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .select(
       "id, description, amount, is_transfer, is_split, split_method, split_payer, split_partner_share_pct",
@@ -336,7 +336,7 @@ async function getTemplateFamilyIds(
   templateId,
   { includeSiblingsForChild = true } = {},
 ) {
-  const { data: template, error: tplErr } = await supabase
+  const { data: template, error: tplErr } = await db
     .from("recurring_templates")
     .select("id, group_id, is_group_parent")
     .eq("id", templateId)
@@ -349,7 +349,7 @@ async function getTemplateFamilyIds(
   if (template.group_id && !includeSiblingsForChild) return [template.id];
 
   const familyRootId = template.group_id || template.id;
-  const { data: children, error: childErr } = await supabase
+  const { data: children, error: childErr } = await db
     .from("recurring_templates")
     .select("id")
     .eq("group_id", familyRootId);
@@ -361,7 +361,7 @@ async function getTemplateFamilyIds(
 async function clearFutureProjectedPendingForTemplateIds(templateIds) {
   if (!templateIds.length) return 0;
   const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
-  const { data, error } = await supabase.rpc("soft_delete_recurring_projections", {
+  const { data, error } = await db.rpc("soft_delete_recurring_projections", {
     p_template_ids: templateIds,
     p_transaction_ids: null,
     p_from_date: todayStr,
@@ -372,7 +372,7 @@ async function clearFutureProjectedPendingForTemplateIds(templateIds) {
 
 async function resetProjectedThroughForTemplateIds(templateIds) {
   if (!templateIds.length) return;
-  const { error } = await supabase
+  const { error } = await db
     .from("recurring_templates")
     .update({ projected_through: null })
     .in("id", templateIds);
@@ -434,7 +434,7 @@ export async function deleteRecurringTemplate(id) {
   await clearFutureProjectedPendingForTemplateIds(familyIds);
 
   // Check if this is a group parent
-  const { data: template } = await supabase
+  const { data: template } = await db
     .from("recurring_templates")
     .select("is_group_parent")
     .eq("id", id)
@@ -442,7 +442,7 @@ export async function deleteRecurringTemplate(id) {
 
   if (template?.is_group_parent) {
     // Soft-delete all children
-    const { error: childErr } = await supabase
+    const { error: childErr } = await db
       .from("recurring_templates")
       .update({ is_active: false })
       .eq("group_id", id);
@@ -450,7 +450,7 @@ export async function deleteRecurringTemplate(id) {
   }
 
   // Soft-delete the template itself
-  const { error } = await supabase
+  const { error } = await db
     .from("recurring_templates")
     .update({ is_active: false })
     .eq("id", id);
@@ -495,7 +495,7 @@ export async function resumeRecurringTemplate(id) {
  * @returns {Promise<Array>}
  */
 export async function getTemplatesForAccount(accountId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("recurring_templates")
     .select(
       "id, description, account_id, to_account_id, is_paused, group_id, is_group_parent",
@@ -536,7 +536,7 @@ async function applyAsTransfer(user, template, dateStr, opts = {}) {
   if (opts.amount_locked) baseTx.amount_locked = true;
 
   const incomingAmount = template.to_amount != null ? Math.abs(template.to_amount) : Math.abs(template.amount);
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert([
       { ...baseTx, account_id: template.account_id, is_income: false },
@@ -572,7 +572,7 @@ async function applyAsTransaction(user, template, dateStr, opts = {}) {
   if (opts.recurring_occurrence_date)
     row.recurring_occurrence_date = opts.recurring_occurrence_date;
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert(row)
     .select("*, categories(id, name, color, type), accounts(id, name, type)")
@@ -595,7 +595,7 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
   const transfer_group_id = newId();
 
   // Resolve "Account Transfer" category for companion leg
-  const { data: transferCats, error: catErr } = await supabase
+  const { data: transferCats, error: catErr } = await db
     .from("categories")
     .select("id")
     .eq("user_id", user.id)
@@ -630,7 +630,7 @@ async function applyAsLinkedTransfer(user, template, dateStr, opts = {}) {
     template.to_amount != null
       ? Math.abs(template.to_amount)
       : Math.abs(template.amount);
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .insert([
       {
@@ -739,12 +739,12 @@ export async function applyRecurringTemplates(today) {
 
       // Update last_applied on parent and all children
       const latestDate = format(pending[pending.length - 1], "yyyy-MM-dd");
-      await supabase
+      await db
         .from("recurring_templates")
         .update({ last_applied: latestDate })
         .eq("id", template.id);
       for (const child of children) {
-        await supabase
+        await db
           .from("recurring_templates")
           .update({ last_applied: latestDate })
           .eq("id", child.id);
@@ -787,7 +787,7 @@ export async function applyRecurringTemplates(today) {
 
       // Update last_applied to the latest pending date
       const latestDate = pending[pending.length - 1];
-      const { error: updateErr } = await supabase
+      const { error: updateErr } = await db
         .from("recurring_templates")
         .update({ last_applied: format(latestDate, "yyyy-MM-dd") })
         .eq("id", template.id);
@@ -854,7 +854,7 @@ async function applyTemplateWithStatus(
   // template + scheduled occurrence before inserting. Using recurring_occurrence_date
   // (not transaction_date) correctly handles the case where a user moved the
   // transaction to a different actual date — the occurrence is still "taken".
-  const { data: existing, error: dupErr } = await supabase
+  const { data: existing, error: dupErr } = await db
     .from("transactions")
     .select("id")
     .eq("recurring_template_id", templateId)
@@ -955,7 +955,7 @@ export async function generateProjectedTransactions({
     // transaction_date so that user-rescheduled transactions still block re-generation
     // for the original occurrence. Fall back to transaction_date for legacy rows that
     // were created before recurring_occurrence_date existed (null → use transaction_date).
-    const { data: existingTx, error: existErr } = await supabase
+    const { data: existingTx, error: existErr } = await db
       .from("transactions")
       .select("recurring_template_id, transaction_date, recurring_occurrence_date")
       .is("deleted_at", null)
@@ -1014,7 +1014,7 @@ export async function generateProjectedTransactions({
           occurrences[occurrences.length - 1],
           "yyyy-MM-dd",
         );
-        await supabase
+        await db
           .from("recurring_templates")
           .update({ projected_through: latestDateStr })
           .eq("id", template.id);
@@ -1043,7 +1043,7 @@ export async function generateProjectedTransactions({
           occurrences[occurrences.length - 1],
           "yyyy-MM-dd",
         );
-        await supabase
+        await db
           .from("recurring_templates")
           .update({ projected_through: latestDateStr })
           .eq("id", template.id);
@@ -1113,7 +1113,7 @@ async function syncStatementPayments({ templates, user, today, windowEnd }) {
 async function syncTemplateStatementPayments({ template, card, user, todayStr, fromStr, windowEndStr }) {
   const [series, cardPaymentsRes, templateRowsRes] = await Promise.all([
     getAccountBalanceHistory({ accountIds: [card.id], startDate: fromStr, endDate: windowEndStr }),
-    supabase
+    db
       .from("transactions")
       .select("id, account_id, amount, is_income, status, transaction_date, transfer_group_id, recurring_template_id, recurring_occurrence_date, amount_locked")
       .eq("account_id", card.id)
@@ -1121,7 +1121,7 @@ async function syncTemplateStatementPayments({ template, card, user, todayStr, f
       .not("transfer_group_id", "is", null)
       .is("deleted_at", null)
       .gte("transaction_date", fromStr),
-    supabase
+    db
       .from("transactions")
       .select("id, account_id, amount, is_income, status, transaction_date, transfer_group_id, recurring_template_id, recurring_occurrence_date, amount_locked")
       .eq("recurring_template_id", template.id)
@@ -1149,7 +1149,7 @@ async function syncTemplateStatementPayments({ template, card, user, todayStr, f
 
   if (deletes.length) {
     const tomorrow = format(addDays(new Date(`${todayStr}T00:00:00`), 1), "yyyy-MM-dd");
-    const { error } = await supabase.rpc("soft_delete_recurring_projections", {
+    const { error } = await db.rpc("soft_delete_recurring_projections", {
       p_template_ids: [template.id],
       p_transaction_ids: deletes,
       p_from_date: tomorrow,
@@ -1159,7 +1159,7 @@ async function syncTemplateStatementPayments({ template, card, user, todayStr, f
 
   for (const u of updates) {
     // Skip rows the user locked since they were read.
-    const { error } = await supabase
+    const { error } = await db
       .from("transactions")
       .update({ amount: u.amount, status: u.status, updated_at: new Date().toISOString() })
       .in("id", u.ids)
@@ -1192,14 +1192,14 @@ async function syncTemplateStatementPayments({ template, card, user, todayStr, f
  * @returns {Promise<void>}
  */
 export async function recalculateStatementPayment(transactionId) {
-  const { data: tx, error } = await supabase
+  const { data: tx, error } = await db
     .from("transactions")
     .select("id, transfer_group_id")
     .eq("id", transactionId)
     .single();
   if (error) throw error;
 
-  let unlock = supabase
+  let unlock = db
     .from("transactions")
     .update({ amount_locked: false, updated_at: new Date().toISOString() });
   unlock = tx.transfer_group_id
@@ -1223,7 +1223,7 @@ export async function promoteProjectedToPending(todayOverride) {
   const threshold = addDays(today, 7);
   const thresholdStr = format(threshold, "yyyy-MM-dd");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("transactions")
     .update({ status: "pending", updated_at: new Date().toISOString() })
     .eq("status", "projected")
@@ -1246,7 +1246,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
   const todayStr = format(today, "yyyy-MM-dd");
 
   // Find pending transactions due today or earlier (fetch date for split expense)
-  const { data: pendingTxs, error: fetchErr } = await supabase
+  const { data: pendingTxs, error: fetchErr } = await db
     .from("transactions")
     .select("id, recurring_template_id, transaction_date, description")
     .eq("status", "pending")
@@ -1270,7 +1270,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
   const splitTemplateMap = new Map();
 
   if (templateIds.length > 0) {
-    const { data: templates, error: tplErr } = await supabase
+    const { data: templates, error: tplErr } = await db
       .from("recurring_templates")
       .select(
         "id, auto_confirm, is_transfer, is_split, split_method, split_payer, split_partner_share_pct, amount, description, category_id",
@@ -1295,7 +1295,7 @@ export async function autoConfirmDueTransactions(todayOverride) {
   if (toConfirm.length === 0) return 0;
 
   const confirmIds = toConfirm.map((tx) => tx.id);
-  const { data: confirmedTxs, error: updateErr } = await supabase
+  const { data: confirmedTxs, error: updateErr } = await db
     .from("transactions")
     .update({ status: "posted", updated_at: new Date().toISOString() })
     .in("id", confirmIds)
@@ -1489,7 +1489,7 @@ export async function cleanupOrphanedProjections({
   // Also include today and any past-due pending transactions as valid — we
   // only want to clean up future orphans, not today-or-past ones (those are
   // handled by the confirm/skip flow).
-  const { data: futureTxs, error: fetchErr } = await supabase
+  const { data: futureTxs, error: fetchErr } = await db
     .from("transactions")
     .select("id, recurring_template_id, recurring_occurrence_date, transaction_date")
     .in("status", ["projected", "pending"])
@@ -1507,7 +1507,7 @@ export async function cleanupOrphanedProjections({
 
   if (orphanIds.length === 0) return { cleaned: 0 };
 
-  const { data: cleaned, error: delErr } = await supabase.rpc(
+  const { data: cleaned, error: delErr } = await db.rpc(
     "soft_delete_recurring_projections",
     {
       p_template_ids: null,

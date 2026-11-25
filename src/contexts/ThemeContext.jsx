@@ -34,7 +34,7 @@ function rememberDark(dark) {
  *     means the default, dark). Must render below <AuthProvider>.
  *
  * Signing out keeps the current theme rather than forcing the default.
- * Toggling persists the choice to Supabase so it syncs across devices.
+ * Toggling persists the choice to the server so it syncs across devices.
  */
 export function ThemeProvider({ children }) {
   const userId = getSessionUserId(useContext(AuthContext).session);

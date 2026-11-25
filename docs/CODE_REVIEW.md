@@ -28,7 +28,7 @@ smoke test (now asserting CSP headers), and the RLS tests including the new
 `sql_scripts/local/tests/partnerships_rls.sql`.
 
 DB-1/DB-2 need `sql_scripts/migrations/supabase_partnership_hardening_rls.sql`
-applied by hand to existing Supabase projects and self-hosted volumes.
+applied by hand to existing database volumes.
 
 Open decisions for the owner:
 
@@ -651,7 +651,7 @@ Fix: `SET search_path = public, pg_temp` and qualify the table.
 
 **DB-8 — low — reported.** `supabase_category_archiving.sql:133`,
 `supabase_split_expenses.sql:192`, phase3/phase4 functions.
-Execute privileges differ between Supabase (anon keeps EXECUTE) and local.
+Execute privileges should be explicit rather than relying on defaults (Supabase support, where anon kept EXECUTE, was removed 2026-11-25).
 Fix: `REVOKE ... FROM PUBLIC, anon` and `GRANT ... TO authenticated` on each RPC.
 
 **DB-9 — low — reported, possibly intended.** `supabase_split_fix_rls.sql:44-53`,
@@ -778,6 +778,6 @@ calls by position. No tests cover expired tokens, concurrent refresh, headers
 or CSP.
 
 **◐ INF-15 (partial: only the add_header-in-if part (fixed with INF-1)) — low — reported.** `nginx.conf:56-71`, `docker-entrypoint.sh:35-37`.
-`add_header` inside `if` drops `no-store` on `/env-config.js` for native
-origins. The entrypoint `sed` breaks on `|`, `&` or `\` in `SUPABASE_URL`. The
-supabase-mode CSP hardcodes `*.supabase.co`. No `limit_req` on the proxies.
+The `/env-config.js`, entrypoint `sed`, and Supabase CSP parts are moot:
+those were removed with Supabase support (2026-11-25). Remaining: no
+`limit_req` on the proxies.

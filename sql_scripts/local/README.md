@@ -1,6 +1,7 @@
 # Local PostgreSQL compatibility shim
 
-Only for vanilla PostgreSQL 16 + PostgREST, **not Supabase**.
+Supplies the roles and `auth` schema that vanilla PostgreSQL 16 + PostgREST need
+to run the shared setup scripts.
 `apply_order.txt` is the canonical fresh-database order;
 it documents migrations already folded into the base scripts. The base scripts
 create tables without IF NOT EXISTS, so the full initializer is not re-runnable.
@@ -46,7 +47,7 @@ policy. The RPC uses explicit ownership checks under SECURITY DEFINER to permit
 soft deletes without widening access. The existing split policies are preserved.
 
 After initializing a disposable local database, run the transaction RLS
-regression checks as its owner (never against live Supabase):
+regression checks as its owner (never against a live database):
 
 ```bash
 psql -X -v ON_ERROR_STOP=1 -U postgres -d budget_test \
