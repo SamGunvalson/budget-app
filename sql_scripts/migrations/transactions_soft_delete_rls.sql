@@ -1,4 +1,4 @@
--- Run in the Supabase SQL Editor as the database owner.
+-- Run with psql as the database owner.
 -- Apply the RPC and policies atomically so soft deletes remain available.
 BEGIN;
 

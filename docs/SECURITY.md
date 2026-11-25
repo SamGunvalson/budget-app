@@ -9,7 +9,7 @@ This document describes the security invariants the app depends on. Any change t
 ### 1. PostgreSQL Row-Level Security (RLS) is the last line of defense
 
 Public financial tables have RLS enabled, scoped by owner or parent/partnership
-membership (see [complete policies](../sql_scripts/supabase_rls_complete.sql)
+membership (see [complete policies](../sql_scripts/rls_complete.sql)
 and [data-model contracts](./DATA_MODEL.md)). Not every table has a `user_id`
 column. PostgREST verifies the signed JWT and the `auth.uid()` compatibility
 helper supplies identity. Auth tables are isolated by local grants and must not
@@ -17,13 +17,13 @@ be exposed through PostgREST.
 
 **This must never be disabled or weakened.**
 
-Verify at any time by running the diagnostic query at the bottom of `supabase_rls_complete.sql` with `psql` as the database owner.
+Verify at any time by running the diagnostic query at the bottom of `rls_complete.sql` with `psql` as the database owner.
 
 Transaction SELECT/UPDATE policies must also require `deleted_at IS NULL` in
 USING, while UPDATE WITH CHECK checks ownership without that condition.
 A permissive transactions FOR ALL policy defeats the live-row filter even when
 the narrower policies exist. For existing databases, run
-[migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql)
+[migrations/transactions_soft_delete_rls.sql](../sql_scripts/migrations/transactions_soft_delete_rls.sql)
 as the database owner before reapplying the complete RLS script. It atomically
 replaces the legacy policy and installs the authenticated-only soft-delete RPC.
 The RPC uses SECURITY DEFINER with explicit ownership/live-row predicates and a
@@ -32,7 +32,7 @@ transaction policies (SELECT, INSERT, UPDATE, DELETE), no ALL or extra permissiv
 policies. This preserves existing owner-only hard deletes; it does not purge data.
 
 Recurring projection cleanup also uses an authenticated-only SECURITY DEFINER
-RPC, [installed by this upgrade](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql).
+RPC, [installed by this upgrade](../sql_scripts/migrations/recurring_projection_cleanup.sql).
 It requires an explicit ID scope and date cutoff, and checks ownership, live
 rows, recurring linkage, and projected/pending status in the UPDATE itself.
 It returns only a count, never hidden deleted rows. Do not replace this with

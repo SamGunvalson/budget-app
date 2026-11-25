@@ -12,8 +12,8 @@
 --      have to be a partner and transaction_id could point at any transaction.
 --      UPDATE could also re-point partnership_id / transaction_id.
 --
--- Effects are already included in supabase_split_expenses.sql and
--- supabase_rls_complete.sql for fresh installs. Do NOT run this on a fresh
+-- Effects are already included in split_expenses.sql and
+-- rls_complete.sql for fresh installs. Do NOT run this on a fresh
 -- database. Safe to re-run. Runs in one transaction.
 --
 -- If this script stops with "Users in more than one active partnership",

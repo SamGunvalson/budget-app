@@ -143,13 +143,12 @@ Whenever you add, rename, or remove a column, table, function, or RLS policy, yo
 2. **The relevant SQL script** — choose the right file:
    - New table → add creation to the applicable base script and a migration in `sql_scripts/migrations/<feature>.sql` for existing databases
    - New column on an existing table → add the column to the applicable base script so fresh installs include it, AND create a separate `ALTER TABLE` migration in `sql_scripts/migrations/<feature>.sql`
-   - RLS policy fix → create `sql_scripts/migrations/<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`), AND update base policies and `sql_scripts/supabase_rls_complete.sql` to match
+   - RLS policy fix → create `sql_scripts/migrations/<description>_rls.sql` using `DROP POLICY IF EXISTS` + `CREATE POLICY` (not `IF NOT EXISTS`), AND update base policies and `sql_scripts/rls_complete.sql` to match
    - New RPC function → add to the appropriate current feature script, preserve an upgrade path for existing databases, and document in `DATA_MODEL.md`
 
 3. **The service layer** — if a column or table name changed, update the corresponding file in `src/services/`.
 
-Older SQL files keep their historical `supabase_` prefix; name new files without it
-and add each new migration to the list in `scripts/sql-layout.test.js`.
+Add each new migration to the list in `scripts/sql-layout.test.js`.
 
 For any new table or function, ensure its current
 shared setup script is represented in `sql_scripts/local/apply_order.txt` in
@@ -165,7 +164,7 @@ on a fresh volume; apply upgrades manually to existing volumes with `psql`.
 - For tables with soft deletes (`deleted_at`), always split `USING` and `WITH CHECK` on UPDATE policies:
   - `USING`: include `deleted_at IS NULL` (can only update live rows)
   - `WITH CHECK`: do **not** include `deleted_at IS NULL` (must allow soft-delete writes that set the column)
-- Never use `IF NOT EXISTS` for policies in `supabase_rls_complete.sql` — use `DROP POLICY IF EXISTS` + `CREATE POLICY` so re-running the script fixes existing incorrect policies.
+- Never use `IF NOT EXISTS` for policies in `rls_complete.sql` — use `DROP POLICY IF EXISTS` + `CREATE POLICY` so re-running the script fixes existing incorrect policies.
 
 ## DB Change Checklist
 

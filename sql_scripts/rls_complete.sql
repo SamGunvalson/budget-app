@@ -1,9 +1,9 @@
 -- =============================================================================
 -- RLS Policy Audit & Enforcement Script
--- Run in the Supabase SQL Editor to verify and (re-)apply all Row-Level
+-- Run with psql as the database owner to verify and (re-)apply all Row-Level
 -- Security policies. Policies are dropped and recreated so re-running also
 -- corrects existing definitions. All replacements are applied atomically.
--- Existing databases must first apply migrations/supabase_transactions_soft_delete_rls.sql
+-- Existing databases must first apply migrations/transactions_soft_delete_rls.sql
 -- to ensure the soft-delete RPC exists before tightening transaction visibility.
 --
 -- Security invariant this script enforces:
@@ -46,7 +46,7 @@ CREATE POLICY "Users can delete their own transactions"
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- accounts  (policy already created by supabase_migration_accounts.sql —
+-- accounts  (policy already created by migration_accounts.sql —
 --            included here for completeness and idempotency)
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;

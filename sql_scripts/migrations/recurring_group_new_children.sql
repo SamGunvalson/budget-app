@@ -7,7 +7,7 @@
 --
 -- Replaces the function in place (same signature, so existing grants remain).
 -- Idempotent: safe to re-run. Run as the database owner.
--- Fresh installs get this from sql_scripts/supabase_phase4_mutations.sql.
+-- Fresh installs get this from sql_scripts/phase4_mutations.sql.
 -- =============================================================================
 
 BEGIN;

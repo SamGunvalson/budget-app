@@ -15,10 +15,11 @@ context, then work through the steps below in order. $ARGUMENTS
    column or RPC name.
 2. **Base script.** Change the current base or feature script so a fresh
    install gets the new shape.
-3. **Migration.** Add `sql_scripts/migrations/supabase_<feature>.sql` for
-   existing databases. Make it safe to re-run. For policies use
+3. **Migration.** Add `sql_scripts/migrations/<feature>.sql` for
+   existing databases and list it in `scripts/sql-layout.test.js`. Make it
+   safe to re-run. For policies use
    `DROP POLICY IF EXISTS` + `CREATE POLICY`, and mirror the change in
-   `sql_scripts/supabase_rls_complete.sql`.
+   `sql_scripts/rls_complete.sql`.
 4. **Self-hosted.** If a new base script was added, list it in
    `sql_scripts/local/apply_order.txt` in dependency order. Do not add
    historical migrations there.

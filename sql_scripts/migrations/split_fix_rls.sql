@@ -4,7 +4,7 @@
 -- Problem: The original WITH CHECK clause on the split_expenses UPDATE policy
 -- did not account for soft-delete writes. After setting deleted_at, the SELECT
 -- policy (which requires deleted_at IS NULL) blocks the updated row, causing
--- Supabase to surface a 42501 RLS error instead of a silent 0-row result.
+-- PostgREST to surface a 42501 RLS error instead of a silent 0-row result.
 --
 -- Some existing databases may also have overly strict split_expenses policies
 -- tied to partnership status. This migration re-applies UPDATE/DELETE policies
@@ -16,7 +16,7 @@
 -- deleted_at IS NULL on the *new* row because the whole point of the soft-
 -- delete is to set that column.
 --
--- Run this in the Supabase SQL Editor after supabase_split_expenses.sql.
+-- Run with psql as the database owner after split_expenses.sql.
 -- =============================================================================
 
 DROP POLICY IF EXISTS "Members can update split expenses" ON split_expenses;

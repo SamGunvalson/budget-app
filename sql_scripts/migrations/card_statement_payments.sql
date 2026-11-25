@@ -9,7 +9,7 @@
 --     generated statement payment so recalculation leaves it alone.
 --
 -- Safe to re-run. Run as the database owner before deploying the updated
--- frontend. Current setup equivalent: core base (supabase_schema_create.sql).
+-- frontend. Current setup equivalent: core base (schema_create.sql).
 -- =============================================================================
 BEGIN;
 

@@ -38,7 +38,7 @@ missing/empty claim settings. No API role can read passwords or refresh hashes.
 SECURITY DEFINER behavior.
 
 The legacy `98_local_fixes.sql` entrypoint delegates to the shared
-[`migrations/supabase_transactions_soft_delete_rls.sql`](../migrations/supabase_transactions_soft_delete_rls.sql)
+[`migrations/transactions_soft_delete_rls.sql`](../migrations/transactions_soft_delete_rls.sql)
 migration. It remains available for existing deployments but is excluded from
 `apply_order.txt`. The base schema includes its `soft_delete_transaction(txn_id uuid)`
 RPC and authenticated-only, per-operation transaction policies. The migration

@@ -2517,7 +2517,7 @@ async function queueBudgetItemOffline(itemData) {
 // ══════════════════════════════════════════════════════════════════════════════
 //
 // Each of these wraps a Postgres RPC (added in
-// sql_scripts/supabase_phase3_aggregations.sql).  The online path is a single
+// sql_scripts/phase3_aggregations.sql).  The online path is a single
 // round-trip; the offline fallback runs the same accounting rules over the
 // rows we already cache in IndexedDB so report screens keep working without a
 // network connection.

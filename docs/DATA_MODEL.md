@@ -381,7 +381,7 @@ UPDATE triggers. Archive/partner/soft-delete functions are documented with their
 category, spending-category credits reduce spend, and income-category debits
 reduce income. Transfers are excluded from budgeting totals. Reuse
 [classification helpers](../src/utils/helpers.js) and
-[aggregation SQL](../sql_scripts/supabase_phase3_aggregations.sql).
+[aggregation SQL](../sql_scripts/phase3_aggregations.sql).
 Services paginate backend reads rather than silently truncate at the default
 1,000-row PostgREST limit.
 
@@ -436,30 +436,30 @@ roles/auth first and grants last; historical repairs are excluded. Top-level SQL
 files participate in current setup (see the
 [SQL setup guide](../sql_scripts/README.md));
 [`migrations/`](../sql_scripts/migrations/README.md) retains historical upgrades
-and repairs. The `supabase_` filename prefix is historical.
+and repairs.
 
 | Script | Role |
 | --- | --- |
-| [supabase_schema_create.sql](../sql_scripts/supabase_schema_create.sql) | Non-rerunnable base CREATEs for seven core tables and soft-delete RPC |
-| [supabase_split_expenses.sql](../sql_scripts/supabase_split_expenses.sql) | Non-rerunnable partnership/split CREATEs and partner-email RPC; after core base |
-| [supabase_add_updated_at.sql](../sql_scripts/supabase_add_updated_at.sql) | Sync columns/triggers; required on fresh installs and unapplied existing databases |
-| [supabase_category_archiving.sql](../sql_scripts/supabase_category_archiving.sql) | Archive column/RPC/guards; after core base and updated-at migration |
-| [supabase_phase3_aggregations.sql](../sql_scripts/supabase_phase3_aggregations.sql) | Aggregation RPCs/helper/indexes; after required columns exist |
-| [supabase_phase4_mutations.sql](../sql_scripts/supabase_phase4_mutations.sql) | Batched writes and closed-account guard; follows aggregation installation |
-| [supabase_rls_complete.sql](../sql_scripts/supabase_rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
-| [migrations/supabase_recurring_occurrence_date.sql](../sql_scripts/migrations/supabase_recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
-| [migrations/supabase_transactions_soft_delete_rls.sql](../sql_scripts/migrations/supabase_transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
-| [migrations/supabase_recurring_projection_cleanup.sql](../sql_scripts/migrations/supabase_recurring_projection_cleanup.sql) | Installs owner-scoped recurring cleanup RPC; included in current phase-4 mutations |
-| [migrations/supabase_report_as_of.sql](../sql_scripts/migrations/supabase_report_as_of.sql) | Replaces the four report RPCs with `p_as_of` versions; included in current phase-3 aggregations |
-| [migrations/supabase_card_statement_payments.sql](../sql_scripts/migrations/supabase_card_statement_payments.sql) | Adds recurring `pays_statement_balance`/constraint and transaction `amount_locked`; folded into core base |
-| [migrations/supabase_accounts_closed.sql](../sql_scripts/migrations/supabase_accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
-| [migrations/supabase_asymmetric_transfer.sql](../sql_scripts/migrations/supabase_asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
-| [migrations/supabase_custom_interval.sql](../sql_scripts/migrations/supabase_custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
-| [migrations/supabase_split_recurring.sql](../sql_scripts/migrations/supabase_split_recurring.sql) | Adds recurring split columns/checks; folded into core base |
-| [migrations/supabase_partnership_seen.sql](../sql_scripts/migrations/supabase_partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
-| [migrations/supabase_split_dedup.sql](../sql_scripts/migrations/supabase_split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
-| [migrations/supabase_split_fix_rls.sql](../sql_scripts/migrations/supabase_split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
-| [migrations/supabase_partnership_hardening_rls.sql](../sql_scripts/migrations/supabase_partnership_hardening_rls.sql) | Pending-only partnership inserts, `partnerships_guard` trigger, one-active-partnership indexes, split payer/transaction checks; folded into split base and complete RLS |
+| [schema_create.sql](../sql_scripts/schema_create.sql) | Non-rerunnable base CREATEs for seven core tables and soft-delete RPC |
+| [split_expenses.sql](../sql_scripts/split_expenses.sql) | Non-rerunnable partnership/split CREATEs and partner-email RPC; after core base |
+| [add_updated_at.sql](../sql_scripts/add_updated_at.sql) | Sync columns/triggers; required on fresh installs and unapplied existing databases |
+| [category_archiving.sql](../sql_scripts/category_archiving.sql) | Archive column/RPC/guards; after core base and updated-at migration |
+| [phase3_aggregations.sql](../sql_scripts/phase3_aggregations.sql) | Aggregation RPCs/helper/indexes; after required columns exist |
+| [phase4_mutations.sql](../sql_scripts/phase4_mutations.sql) | Batched writes and closed-account guard; follows aggregation installation |
+| [rls_complete.sql](../sql_scripts/rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
+| [migrations/recurring_occurrence_date.sql](../sql_scripts/migrations/recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
+| [migrations/transactions_soft_delete_rls.sql](../sql_scripts/migrations/transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
+| [migrations/recurring_projection_cleanup.sql](../sql_scripts/migrations/recurring_projection_cleanup.sql) | Installs owner-scoped recurring cleanup RPC; included in current phase-4 mutations |
+| [migrations/report_as_of.sql](../sql_scripts/migrations/report_as_of.sql) | Replaces the four report RPCs with `p_as_of` versions; included in current phase-3 aggregations |
+| [migrations/card_statement_payments.sql](../sql_scripts/migrations/card_statement_payments.sql) | Adds recurring `pays_statement_balance`/constraint and transaction `amount_locked`; folded into core base |
+| [migrations/accounts_closed.sql](../sql_scripts/migrations/accounts_closed.sql) | Adds account `closed_at` and recurring `is_paused`; folded into core base |
+| [migrations/asymmetric_transfer.sql](../sql_scripts/migrations/asymmetric_transfer.sql) | Adds recurring `to_amount`/constraint; folded into core base |
+| [migrations/custom_interval.sql](../sql_scripts/migrations/custom_interval.sql) | Adds custom schedule columns/checks; folded into core base |
+| [migrations/split_recurring.sql](../sql_scripts/migrations/split_recurring.sql) | Adds recurring split columns/checks; folded into core base |
+| [migrations/partnership_seen.sql](../sql_scripts/migrations/partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
+| [migrations/split_dedup.sql](../sql_scripts/migrations/split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
+| [migrations/split_fix_rls.sql](../sql_scripts/migrations/split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
+| [migrations/partnership_hardening_rls.sql](../sql_scripts/migrations/partnership_hardening_rls.sql) | Pending-only partnership inserts, `partnerships_guard` trigger, one-active-partnership indexes, split payer/transaction checks; folded into split base and complete RLS |
 
 The [local SQL README](../sql_scripts/local/README.md) documents local roles,
 auth helpers, default grants, initialization, and the legacy local-fix entrypoint
@@ -475,6 +475,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.8
+**Document version**: 3.9
 
 **Last updated**: 2026-11-25

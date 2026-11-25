@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Split Expenses — Schema Creation Script
--- Run this in the Supabase SQL Editor AFTER the main schema script
--- (supabase_schema_create.sql) to add partnership and split expense tables.
+-- Run AFTER the main schema script
+-- (schema_create.sql) to add partnership and split expense tables.
 --
 -- Prerequisites:
 --   • Main schema already created (auth.users, transactions table exists)
