@@ -1,5 +1,5 @@
 import Dexie from "dexie";
-import { notifyTable } from "./cache";
+import { bumpCacheEpoch, notifyTable } from "./cache";
 
 /**
  * Dexie (IndexedDB) database mirroring Postgres schema.
@@ -166,17 +166,25 @@ export async function clearRpcCache() {
 
 // ── Helper: wipe all offline data (e.g. on sign-out) ──
 export async function clearAllOfflineData() {
-  await Promise.all([
-    db.transactions.clear(),
-    db.categories.clear(),
-    db.budget_plans.clear(),
-    db.budget_items.clear(),
-    db.accounts.clear(),
-    db.user_preferences.clear(),
-    db.recurring_templates.clear(),
-    db.sync_meta.clear(),
-    db.rpc_cache.clear(),
-  ]);
+  // Fetches already in flight belong to the account being cleared out.
+  bumpCacheEpoch();
+  _ownerUserId = null;
+  const stores = [
+    db.transactions,
+    db.categories,
+    db.budget_plans,
+    db.budget_items,
+    db.accounts,
+    db.user_preferences,
+    db.recurring_templates,
+    db.sync_meta,
+    db.rpc_cache,
+  ];
+  // One transaction: an interrupted wipe leaves everything, owner record
+  // included, as it was, so the next claim wipes again.
+  await db.transaction("rw", ...stores, async () => {
+    await Promise.all(stores.map((store) => store.clear()));
+  });
   // Every pending row is gone, so the cached counter is stale. Reset it so
   // the next user does not inherit the previous user's count. Zero (rather
   // than "uninitialised") is exact for empty tables and avoids a rescan.
@@ -213,25 +221,11 @@ const USER_SCOPED_TABLES = [
  * @returns {Promise<boolean>} true when the previous mirror was wiped
  */
 export async function claimOfflineDataFor(userId, serverOrigin = null) {
+  if (!userId) throw new Error("claimOfflineDataFor needs a user id");
   const owner = await db.sync_meta.get(OWNER_META_KEY);
-  let foreign;
-  if (owner) {
-    foreign = owner.user_id !== userId || owner.server_origin !== serverOrigin;
-  } else {
-    // Mirror written before owners were recorded: wipe it if any row was
-    // written for another user. Server changes already wiped it then.
-    foreign = false;
-    for (const name of USER_SCOPED_TABLES) {
-      const other = await db
-        .table(name)
-        .filter((row) => row.user_id != null && row.user_id !== userId)
-        .first();
-      if (other) {
-        foreign = true;
-        break;
-      }
-    }
-  }
+  const foreign = owner
+    ? owner.user_id !== userId || owner.server_origin !== serverOrigin
+    : !(await legacyMirrorBelongsTo(userId));
   if (foreign) await clearAllOfflineData();
   if (foreign || !owner) {
     await db.sync_meta.put({
@@ -240,7 +234,51 @@ export async function claimOfflineDataFor(userId, serverOrigin = null) {
       server_origin: serverOrigin,
     });
   }
+  _ownerUserId = userId;
   return foreign;
+}
+
+// A mirror written before owners were recorded (server changes wiped it
+// then). It may be kept only when nothing in it belongs to another user and
+// any queued offline edits can be attributed to `userId`. Offline creates
+// are stored with `user_id: null` and are filled in with the signed-in user
+// at push time, so a queue without a single row proving the mirror is this
+// user's could upload someone else's edits under this account.
+async function legacyMirrorBelongsTo(userId) {
+  let provenOwner = false;
+  let unattributedPending = false;
+  for (const name of USER_SCOPED_TABLES) {
+    const table = db.table(name);
+    if (await table.filter((r) => r.user_id != null && r.user_id !== userId).first()) {
+      return false;
+    }
+    if (!provenOwner && (await table.filter((r) => r.user_id === userId).first())) {
+      provenOwner = true;
+    }
+    if (!unattributedPending && (await table.filter((r) => r.user_id == null && r._offline === 1).first())) {
+      unattributedPending = true;
+    }
+  }
+  if (!unattributedPending) {
+    // budget_items carry no user_id; their pending rows count as well.
+    unattributedPending = !!(await db.budget_items.where("_offline").equals(1).first());
+  }
+  return provenOwner || !unattributedPending;
+}
+
+// The user the mirror was last claimed for in this page, or null.
+let _ownerUserId = null;
+
+/** Whether the mirror is currently claimed for `userId`. */
+export function isOfflineOwner(userId) {
+  return userId != null && _ownerUserId === userId;
+}
+
+// Server rows written for another account (a response that arrived after
+// the mirror changed hands) are dropped rather than mirrored.
+function ownedRows(rows) {
+  if (_ownerUserId == null) return rows;
+  return rows.filter((r) => r.user_id == null || r.user_id === _ownerUserId);
 }
 
 // ── Local write log ──
@@ -347,7 +385,7 @@ function planServerWrite(tableName, rows, local) {
 // The one way server rows are written over existing local rows outside a
 // full pull; see `planServerWrite` for what is kept.
 export async function cacheServerRows(tableName, rows) {
-  const written = rows.filter(Boolean);
+  const written = ownedRows(rows.filter(Boolean));
   if (!written.length) return;
   const table = db.table(tableName);
   await db.transaction("rw", table, async () => {
@@ -375,7 +413,7 @@ export async function cacheTable(tableName, rows, { lastSynced } = {}) {
   const table = db.table(tableName);
   await db.transaction("rw", table, db.sync_meta, async () => {
     const pending = await table.where("_offline").equals(1).toArray();
-    const { toPut } = planServerWrite(tableName, rows, pending);
+    const { toPut } = planServerWrite(tableName, ownedRows(rows), pending);
     const next = toPut.concat(pending);
     await table.clear();
     if (next.length) {

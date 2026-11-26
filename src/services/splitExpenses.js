@@ -51,30 +51,49 @@ export function computeShares(
  * @returns {Promise<Array>} List of split expenses, newest first
  */
 export async function getSplitExpenses(partnershipId) {
-  return fetchAllPages((from, to) =>
-    db
-      .from("split_expenses")
-      .select("*")
-      .eq("partnership_id", partnershipId)
-      .is("deleted_at", null)
-      .order("expense_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      // Unique tiebreaker so pages neither skip nor repeat rows.
-      .order("id", { ascending: true })
-      .range(from, to),
+  const rows = await fetchAllPages((afterId) =>
+    afterQuery(
+      db
+        .from("split_expenses")
+        .select("*")
+        .eq("partnership_id", partnershipId)
+        .is("deleted_at", null),
+      afterId,
+    ),
+  );
+  // Newest first; ties broken by id so the order is stable.
+  return rows.sort(
+    (a, b) =>
+      compareDesc(a.expense_date, b.expense_date) ||
+      compareDesc(a.created_at, b.created_at) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
 }
 
+const compareDesc = (a, b) => (a === b ? 0 : (a ?? "") < (b ?? "") ? 1 : -1);
+
 // PostgREST caps every response at db-max-rows (1000 in docker-compose.yml),
-// silently truncating larger results. Page until a short page comes back.
+// silently truncating larger results, so reads are paged. Pages are keyed on
+// `id` (keyset), not offsets: a partner adding or deleting an expense while
+// the pages are read cannot shift rows between pages, so no expense is
+// counted twice or skipped.
 const PAGE_SIZE = 1000;
+
+function afterQuery(query, afterId) {
+  const ordered = query.order("id", { ascending: true }).limit(PAGE_SIZE);
+  return afterId == null ? ordered : ordered.gt("id", afterId);
+}
+
 async function fetchAllPages(buildQuery) {
   let all = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+  let afterId = null;
+  for (;;) {
+    const { data, error } = await buildQuery(afterId);
     if (error) throw error;
-    all = all.concat(data ?? []);
-    if (!data || data.length < PAGE_SIZE) return all;
+    const page = data ?? [];
+    all = all.concat(page);
+    if (page.length < PAGE_SIZE) return all;
+    afterId = page[page.length - 1].id;
   }
 }
 
@@ -298,15 +317,16 @@ export async function getSplitByTransaction(transactionId) {
  * @returns {Promise<Set<string>>} Set of transaction IDs that are split
  */
 export async function getSplitTransactionIds(partnershipId) {
-  const data = await fetchAllPages((from, to) =>
-    db
-      .from("split_expenses")
-      .select("id, transaction_id")
-      .eq("partnership_id", partnershipId)
-      .is("deleted_at", null)
-      .not("transaction_id", "is", null)
-      .order("id", { ascending: true })
-      .range(from, to),
+  const data = await fetchAllPages((afterId) =>
+    afterQuery(
+      db
+        .from("split_expenses")
+        .select("id, transaction_id")
+        .eq("partnership_id", partnershipId)
+        .is("deleted_at", null)
+        .not("transaction_id", "is", null),
+      afterId,
+    ),
   );
   return new Set(data.map((d) => d.transaction_id));
 }

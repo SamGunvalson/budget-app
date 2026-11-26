@@ -426,10 +426,19 @@ Empty incremental pulls do not advance it. Transaction pulls also call
 `get_deleted_transaction_ids` with the same cutoff, because RLS hides
 soft-deleted rows from the incremental SELECT.
 
+A deletion-only incremental pull keeps the previous watermark (deleted ids carry
+no server timestamp to cap it).
+
 Before a session is exposed to the app, `AuthContext` calls
 `claimOfflineDataFor(userId, serverOrigin)`: a mirror owned by another user or
-server, including its pending edits, is wiped. The same user signing back in
-after an expired session keeps their mirror and queued edits. Conflicts use last-write-wins
+server, including its pending edits, is wiped in one Dexie transaction. A mirror
+from before owner records is kept only if no row belongs to another user and
+any queued edits can be attributed (offline creates carry `user_id: null`). If
+the check and a wipe both fail, the session is signed out instead of exposed.
+The same user signing back in after an expired session keeps their mirror and
+queued edits. Each wipe starts a new cache epoch: fetches begun earlier are
+neither cached nor shared with the new account's reads, sync pushes/pulls stop,
+and sync only runs while the mirror is claimed for the signed-in user. Conflicts use last-write-wins
 (server `updated_at` versus local `_offlineAt`). Active/deleted flags allow
 local removal reconciliation subject to backend row visibility.
 

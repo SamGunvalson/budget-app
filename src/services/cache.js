@@ -105,6 +105,24 @@ function endRevalidate() {
 // rather than starting a second identical server request.
 const inflight = new Map(); // key → Promise
 
+// ── Mirror epoch ──
+// Bumped whenever the offline mirror is wiped for another account (see
+// `clearAllOfflineData`). A fetch started under an earlier epoch was made for
+// the previous account: its result must not be cached, returned to a reader
+// of the new account, or shared with one through de-duplication.
+let _epoch = 0;
+
+/** The current mirror epoch; compare before writing fetched data locally. */
+export function getCacheEpoch() {
+  return _epoch;
+}
+
+/** Start a new epoch: earlier in-flight fetches can no longer be joined. */
+export function bumpCacheEpoch() {
+  _epoch++;
+  inflight.clear();
+}
+
 // ── The SWR read helper ──
 
 /**
@@ -145,6 +163,7 @@ export async function swrRead({
   isEmpty = defaultIsEmpty,
   online = typeof navigator !== "undefined" ? navigator.onLine : true,
 }) {
+  const epoch = _epoch;
   // Always start with the cache — this is the latency win.
   let cached;
   try {
@@ -178,7 +197,11 @@ export async function swrRead({
       const { data: fresh, fetchStartedAt } = await dedupedFetch(
         key,
         fetchFresh,
+        epoch,
       );
+      // Fetched for an account that is no longer signed in: answer from the
+      // mirror as it is now, never with that account's response.
+      if (_epoch !== epoch) return readCache().catch(() => null);
       // Write back to cache (best-effort) and notify.
       try {
         await writeCache(fresh, { fetchStartedAt });
@@ -199,8 +222,9 @@ export async function swrRead({
 
   // Warm cache → return immediately, revalidate in background.
   beginRevalidate();
-  dedupedFetch(key, fetchFresh)
+  dedupedFetch(key, fetchFresh, epoch)
     .then(async ({ data: fresh, fetchStartedAt }) => {
+      if (_epoch !== epoch) return; // previous account's response
       try {
         await writeCache(fresh, { fetchStartedAt });
       } catch (err) {
@@ -305,16 +329,19 @@ function canonicalJson(value) {
 // `Date.now()` just before the request was issued (the original request's,
 // when piggy-backing), so `writeCache` can tell which local rows the response
 // could not have known about.
-function dedupedFetch(key, fetchFresh) {
-  const existing = inflight.get(key);
+function dedupedFetch(key, fetchFresh, epoch) {
+  // Keyed by epoch too, so a read for the new account never joins a request
+  // still in flight for the previous one.
+  const slot = `${epoch}:${key}`;
+  const existing = inflight.get(slot);
   if (existing) return existing;
   const fetchStartedAt = Date.now();
   const promise = Promise.resolve()
     .then(fetchFresh)
     .then((data) => ({ data, fetchStartedAt }))
     .finally(() => {
-      inflight.delete(key);
+      if (inflight.get(slot) === promise) inflight.delete(slot);
     });
-  inflight.set(key, promise);
+  inflight.set(slot, promise);
   return promise;
 }

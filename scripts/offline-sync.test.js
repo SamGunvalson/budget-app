@@ -20,6 +20,7 @@ const sources = {
   categories: read("../src/services/categories.js"),
   budgets: read("../src/services/budgets.js"),
   cache: read("../src/services/cache.js"),
+  splitExpenses: read("../src/services/splitExpenses.js"),
   ids: read("../src/utils/ids.js"),
 };
 
@@ -198,12 +199,16 @@ async function load(source, dependencies) {
 
 async function loadOfflineDb() {
   const notified = [];
+  const epochBumps = [];
   const offlineDb = await load(sources.offlineDb, {
     dexie: { default: FakeDexie },
     "../utils/ids": { ...(await load(sources.ids, {})) },
-    "./cache": { notifyTable: (name) => notified.push(name) },
+    "./cache": {
+      notifyTable: (name) => notified.push(name),
+      bumpCacheEpoch: () => epochBumps.push(1),
+    },
   });
-  return { offlineDb, db: offlineDb.db, notified };
+  return { offlineDb, db: offlineDb.db, notified, epochBumps };
 }
 
 // `services` supplies backend stubs keyed by module ("./transactions",
@@ -227,7 +232,7 @@ async function loadOfflineAware({ services = {}, flush = async () => {}, base, s
   const scheduled = [];
   const cache = realCache
     ? { ...(await load(sources.cache, {})) }
-    : { notifyTable: () => {}, swrRead: unexpected("./cache", "swrRead") };
+    : { notifyTable: () => {}, swrRead: unexpected("./cache", "swrRead"), getCacheEpoch: () => 0 };
   const offlineAware = await load(sources.offlineAware, {
     "./offlineDb": { ...offlineDb },
     "../utils/syncQueue": { ...syncQueue },
@@ -261,7 +266,9 @@ async function settle(until = () => false) {
 // `modules` (real offlineDb / syncQueue namespaces) to run against the fake
 // Dexie instead; `onCall` runs before each backend call resolves.
 // `respond(call)` may return the backend's `{ data, error }` for a call.
-async function loadSync({ pending = {}, user = { id: "user-1" }, modules = {}, onCall, respond } = {}) {
+// `owner` stands in for the mirror's claimed user (see claimOfflineDataFor);
+// by default the mirror is claimed for whoever is signed in.
+async function loadSync({ pending = {}, user = { id: "user-1" }, modules = {}, onCall, respond, owner, epoch = () => 0 } = {}) {
   const calls = [];
   const synced = [];
   const result = {
@@ -296,14 +303,17 @@ async function loadSync({ pending = {}, user = { id: "user-1" }, modules = {}, o
   };
   const sync = await load(sources.sync, {
     "./backend": { db: api, getCurrentUser: async () => user },
-    "./offlineDb": modules.offlineDb || {
-      markSynced: async (table, id) => {
-        synced.push(`${table}/${id}`);
-        return true;
-      },
+    "./offlineDb": {
+      ...(modules.offlineDb || {
+        markSynced: async (table, id) => {
+          synced.push(`${table}/${id}`);
+          return true;
+        },
+      }),
+      isOfflineOwner: (id) => id != null && id === (owner === undefined ? user?.id : owner),
     },
     "../utils/syncQueue": modules.syncQueue || { drainAll: async () => pending },
-    "./cache": { notifyTable: () => {} },
+    "./cache": { notifyTable: () => {}, getCacheEpoch: epoch },
     "../hooks/useDataSaver": { isDataSaver: () => false },
   });
   return { sync, calls, synced };
@@ -409,9 +419,10 @@ test("OFF-1: a create with no signed-in user stays pending instead of being push
   });
   await sync.requestSync({ skipPull: true });
 
+  // Sync does not start without a user whose mirror this is; the row is
+  // left queued. (buildPushPayload's own refusal is tested above.)
   assert.deepEqual(calls, []);
   assert.deepEqual(synced, []);
-  assert.match(sync.getSyncState().error, /no signed-in user/);
 });
 
 // ── OFF-6: full pull keeps pending rows ──
@@ -2114,7 +2125,7 @@ test("OFF-12: a push in which nothing gets through is not retried on a timer", a
 
 // The real sync engine over the fake Dexie with a backend that serves pulls.
 // `serve(table, since)` returns the rows for one pull request.
-async function loadSyncForPull(serve, { deletedIds = async () => [] } = {}) {
+async function loadSyncForPull(serve, { deletedIds = async () => [], epoch = { value: 0 } } = {}) {
   const base = await loadLocalStore();
   const requests = [];
   const api = {
@@ -2144,9 +2155,9 @@ async function loadSyncForPull(serve, { deletedIds = async () => [] } = {}) {
   };
   const sync = await load(sources.sync, {
     "./backend": { db: api, getCurrentUser: async () => ({ id: "user-1" }) },
-    "./offlineDb": { ...base.offlineDb },
+    "./offlineDb": { ...base.offlineDb, isOfflineOwner: (id) => id === "user-1" },
     "../utils/syncQueue": { ...base.syncQueue },
-    "./cache": { notifyTable: (name) => base.notified.push(name) },
+    "./cache": { notifyTable: (name) => base.notified.push(name), getCacheEpoch: () => epoch.value },
     "../hooks/useDataSaver": { isDataSaver: () => false },
   });
   return { ...base, sync, requests };
@@ -2879,4 +2890,176 @@ test("the deletion feed never removes a row with a pending local edit", async ()
   await db.transactions.update("t1", { _offline: 1, _action: "update" });
   await sync.pullAll();
   assert.ok(await db.transactions.get("t1"));
+});
+
+// ── Review follow-ups: ownership must be proven, wipes are epochs ──
+
+test("claimOfflineDataFor wipes a legacy queue whose owner cannot be established", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  // Offline creates are stored without a user_id; nothing shows whose they are.
+  await db.transactions.put({ id: "t-x", user_id: null, _offline: 1, _action: "create" });
+  assert.equal(await offlineDb.claimOfflineDataFor("user-b", "https://s"), true);
+  assert.equal(await db.transactions.count(), 0);
+});
+
+test("claimOfflineDataFor keeps a legacy queue when the mirror is provably the user's", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  await db.accounts.put({ id: "acct-b", user_id: "user-b" });
+  await db.transactions.put({ id: "t-x", user_id: null, _offline: 1, _action: "create" });
+  assert.equal(await offlineDb.claimOfflineDataFor("user-b", "https://s"), false);
+  assert.equal(await db.transactions.count(), 1);
+  assert.equal(offlineDb.isOfflineOwner("user-b"), true);
+  assert.equal(offlineDb.isOfflineOwner("user-a"), false);
+});
+
+test("a wipe starts a new cache epoch and forgets the owner", async () => {
+  const { offlineDb, epochBumps } = await loadOfflineDb();
+  await offlineDb.claimOfflineDataFor("user-a", "https://s");
+  await offlineDb.claimOfflineDataFor("user-b", "https://s");
+  assert.equal(epochBumps.length, 1);
+  assert.equal(offlineDb.isOfflineOwner("user-b"), true);
+  await offlineDb.clearAllOfflineData();
+  assert.equal(offlineDb.isOfflineOwner("user-b"), false);
+});
+
+test("server rows for another account are not mirrored after a claim", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  await offlineDb.claimOfflineDataFor("user-b", "https://s");
+  await offlineDb.cacheServerRows("accounts", [
+    { id: "acct-a", user_id: "user-a" },
+    { id: "acct-b", user_id: "user-b" },
+  ]);
+  await offlineDb.cacheTable("categories", [{ id: "cat-a", user_id: "user-a" }]);
+  assert.deepEqual((await db.accounts.toArray()).map((r) => r.id), ["acct-b"]);
+  assert.equal(await db.categories.count(), 0);
+});
+
+test("sync neither pushes nor pulls into a mirror claimed for someone else", async () => {
+  setOnline(true);
+  const { sync, calls, synced } = await loadSync({
+    owner: "user-a",
+    pending: { transactions: [{ id: "t1", user_id: null, amount: 1, _offline: 1, _action: "create" }] },
+  });
+  await sync.requestSync();
+  assert.deepEqual(calls, []);
+  assert.deepEqual(synced, []);
+});
+
+test("a push stops when the account changes part-way through", async () => {
+  setOnline(true);
+  let epoch = 0;
+  const { sync, calls } = await loadSync({
+    epoch: () => epoch,
+    pending: {
+      transactions: [
+        { id: "t1", user_id: "user-1", amount: 1, _offline: 1, _action: "update" },
+        { id: "t2", user_id: "user-1", amount: 2, _offline: 1, _action: "update" },
+      ],
+    },
+    onCall: () => {
+      epoch = 1; // the mirror is wiped for another account mid-push
+    },
+  });
+  await sync.requestSync({ skipPull: true });
+  assert.deepEqual(calls.map((c) => c.value), ["t1"]);
+});
+
+test("a pull that finishes after the account changed is not cached", async () => {
+  setOnline(true);
+  const epoch = { value: 0 };
+  const { sync, db } = await loadSyncForPull(
+    async (table) => {
+      if (table !== "accounts") return [];
+      epoch.value = 1; // wiped while this response was in flight
+      return [{ id: "a1", user_id: "user-1", is_active: true, updated_at: iso(Date.now() - MINUTE) }];
+    },
+    { epoch },
+  );
+  await sync.pullAll({ full: true });
+  assert.equal(await db.accounts.count(), 0);
+});
+
+test("a deletion-only pull keeps the previous watermark", async () => {
+  setOnline(true);
+  const t0 = Date.now() - 30 * MINUTE;
+  const deleted = [];
+  const server = [{ id: "t1", deleted_at: null, updated_at: iso(t0) }];
+  const { sync, offlineDb, db } = await loadSyncForPull(
+    (table) => (table === "transactions" ? server : []),
+    { deletedIds: async () => deleted },
+  );
+  await sync.pullAll({ full: true });
+  const watermark = await offlineDb.getTableLastSynced("transactions");
+  // Deleted elsewhere: the SELECT returns nothing, only the feed reports it.
+  server.length = 0;
+  deleted.push("t1");
+  await sync.pullAll();
+  assert.equal(await db.transactions.get("t1"), undefined);
+  assert.equal(await offlineDb.getTableLastSynced("transactions"), watermark);
+});
+
+test("swrRead neither caches nor shares a fetch from before a wipe", async () => {
+  setOnline(true);
+  const cache = await load(sources.cache, {});
+  const written = [];
+  let release;
+  const oldFetch = new Promise((resolve) => (release = resolve));
+  const oldRead = cache.swrRead({
+    key: "accounts:all",
+    readCache: async () => [],
+    fetchFresh: () => oldFetch,
+    writeCache: async (data) => written.push(["old", data]),
+  });
+  cache.bumpCacheEpoch(); // account switch while the first read is in flight
+  const newRead = cache.swrRead({
+    key: "accounts:all",
+    readCache: async () => [],
+    fetchFresh: async () => [{ id: "b" }],
+    writeCache: async (data) => written.push(["new", data]),
+  });
+  release([{ id: "a" }]);
+  assert.deepEqual(await newRead, [{ id: "b" }]);
+  assert.deepEqual(await oldRead, []);
+  assert.deepEqual(written, [["new", [{ id: "b" }]]]);
+});
+
+test("split expenses page by id, so concurrent inserts cannot duplicate a row", async () => {
+  const PAGE = 1000;
+  const rows = Array.from({ length: PAGE + 1 }, (_, i) => ({
+    id: `id-${String(i).padStart(5, "0")}`,
+    paid_by_user_id: "me",
+    partner_share: 1,
+    is_settlement: false,
+    expense_date: "2026-01-01",
+    created_at: "2026-01-01T00:00:00Z",
+  }));
+  const queries = [];
+  const api = {
+    from() {
+      const q = { afterId: null };
+      const query = {
+        gt(column, value) {
+          q.afterId = value;
+          return query;
+        },
+        then(resolve, reject) {
+          queries.push(q.afterId);
+          const page = rows.filter((r) => q.afterId == null || r.id > q.afterId).slice(0, PAGE);
+          // A partner adds an expense that sorts first, between page reads.
+          if (queries.length === 1) rows.unshift({ ...rows[0], id: "id-" });
+          return Promise.resolve({ data: page, error: null }).then(resolve, reject);
+        },
+      };
+      for (const m of ["select", "eq", "is", "not", "order", "limit"]) query[m] = () => query;
+      return query;
+    },
+  };
+  const split = await load(sources.splitExpenses, {
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "me" }) },
+  });
+  const list = await split.getSplitExpenses("p1");
+  assert.equal(list.length, PAGE + 1);
+  assert.equal(new Set(list.map((r) => r.id)).size, PAGE + 1);
+  assert.equal(split.computeBalance(list, "me"), PAGE + 1);
+  assert.deepEqual(queries, [null, "id-00999"]);
 });

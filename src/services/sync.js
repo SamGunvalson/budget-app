@@ -32,9 +32,10 @@ import {
   dropUnchangedRows,
   getTableLastSynced,
   getTableRowCount,
+  isOfflineOwner,
 } from "./offlineDb";
 import { drainAll } from "../utils/syncQueue";
-import { notifyTable } from "./cache";
+import { getCacheEpoch, notifyTable } from "./cache";
 import { isDataSaver } from "../hooks/useDataSaver";
 
 // ── Sync state (observable) ──
@@ -217,10 +218,12 @@ export async function pullAll({ full = false } = {}) {
 
   try {
     const user = await getCurrentUser();
-    if (!user) return;
+    // Only pull into a mirror that has been claimed for this user.
+    if (!user || !isOfflineOwner(user.id)) return;
+    const epoch = getCacheEpoch();
 
     await Promise.all(
-      SYNC_TABLES.map((t) => pullTableIncremental(t, { full })),
+      SYNC_TABLES.map((t) => pullTableIncremental(t, { full, epoch })),
     );
 
     console.log("[sync] Pull complete");
@@ -285,7 +288,7 @@ export function pullSince(lastSynced, now) {
  * Pull a single table incrementally. Falls back to a full pull when the
  * local cache is empty (cold) or `full` is set.
  */
-async function pullTableIncremental(tableConfig, { full = false } = {}) {
+async function pullTableIncremental(tableConfig, { full = false, epoch = getCacheEpoch() } = {}) {
   const { name, select, softDeleteField, activeFilter, deletedIdsRpc } = tableConfig;
   const lastSynced = full ? null : await getTableLastSynced(name);
   const localCount = await getTableRowCount(name);
@@ -298,6 +301,8 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
       activeFilter,
       includeDeleted: false,
     });
+    // The mirror changed hands while fetching: these rows are not its owner's.
+    if (getCacheEpoch() !== epoch) return;
     await cacheTable(name, rows, {
       lastSynced: computeWatermark(fetchStartedAt, rows),
     });
@@ -342,9 +347,13 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
     removedIds,
   );
 
+  if (getCacheEpoch() !== epoch) return;
   await cacheTableIncremental(name, newRows, {
     removedIds: newRemovedIds,
-    lastSynced: computeWatermark(fetchStartedAt, changed),
+    // Deletion ids carry no server timestamp. With no changed rows to cap it,
+    // a watermark from this device's clock could run ahead of the server and
+    // skip rows, so a deletion-only pull keeps the previous watermark.
+    lastSynced: changed.length ? computeWatermark(fetchStartedAt, changed) : lastSynced,
   });
   if (newRows.length || newRemovedIds.length) notifyTable(name);
 }
@@ -354,6 +363,16 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
 async function _doSync({ skipPull = false } = {}) {
   if (_syncing) return;
   if (!navigator.onLine) return;
+  // Queued edits are pushed as the signed-in user, so the mirror holding them
+  // must have been claimed for that user (see claimOfflineDataFor).
+  let user;
+  try {
+    user = await getCurrentUser();
+  } catch {
+    return;
+  }
+  if (!user || !isOfflineOwner(user.id) || _syncing) return;
+  const epoch = getCacheEpoch();
 
   _syncing = true;
   _lastError = null;
@@ -397,6 +416,8 @@ async function _doSync({ skipPull = false } = {}) {
       const changedDuringPush = new Set();
       for (const [tableName, rows] of ops) {
         for (const row of rows) {
+          // Account switched mid-push: the rest of this queue is gone.
+          if (getCacheEpoch() !== epoch) break;
           try {
             const serverRow = await pushRow(tableName, row, planIds);
             let cleared;

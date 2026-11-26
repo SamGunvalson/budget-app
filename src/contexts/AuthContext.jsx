@@ -24,8 +24,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { getServerOrigin, isBackendReady } from '../services/backend';
-import { claimOfflineDataFor } from '../services/offlineDb';
-import { getSession, onAuthStateChange } from '../services/auth';
+import { claimOfflineDataFor, clearAllOfflineData } from '../services/offlineDb';
+import { getSession, onAuthStateChange, signOut as signOutAdapter } from '../services/auth';
 import { requestSync, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import AuthContext, { classifySessionChange, getSessionUserId } from './authContextValue';
@@ -82,23 +82,36 @@ export function AuthProvider({ children, enabled = true }) {
     // previous user's cached rows under the new session.
     let applying = Promise.resolve();
 
+    // Resolves to the session that may be exposed: `next`, or null when the
+    // mirror could not be made safe for its user.
     const claimMirror = async (next) => {
       const nextUserId = getSessionUserId(next);
-      if (!nextUserId || nextUserId === lastUserId) return;
+      if (!nextUserId || nextUserId === lastUserId) return next;
       try {
         await claimOfflineDataFor(nextUserId, getServerOrigin() ?? null);
+        return next;
       } catch (error) {
-        // IndexedDB unavailable: nothing could have been cached either.
         console.error('AuthProvider: unable to check offline data owner', error);
       }
+      // Ownership unknown: the mirror may hold another account's rows and
+      // queued edits. Empty it (all or nothing), or refuse the session.
+      try {
+        await clearAllOfflineData();
+        await claimOfflineDataFor(nextUserId, getServerOrigin() ?? null);
+        return next;
+      } catch (error) {
+        console.error('AuthProvider: unable to clear offline data; signing out', error);
+      }
+      try { await signOutAdapter(); } catch { /* credentials are dropped locally regardless */ }
+      return null;
     };
 
     const applySession = (next) => {
       applying = applying.then(async () => {
-        await claimMirror(next);
+        const allowed = await claimMirror(next);
         if (!mounted) return;
-        noteSessionIdentity(next);
-        setSession(next);
+        noteSessionIdentity(allowed);
+        setSession(allowed);
         setIsChecking(false);
       });
     };
