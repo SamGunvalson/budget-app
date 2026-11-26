@@ -184,7 +184,7 @@ export default function CashflowChart({
       {/* Header row */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
             Balance Over Time
           </p>
           <div className="hidden flex-wrap items-center gap-3 sm:flex">
@@ -218,7 +218,7 @@ export default function CashflowChart({
               onClick={() => onRangeChange?.(opt.key)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 range === opt.key
-                  ? 'bg-teal-500 text-white shadow-sm shadow-teal-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >

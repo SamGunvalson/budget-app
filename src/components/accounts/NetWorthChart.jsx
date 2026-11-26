@@ -162,7 +162,7 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
       {/* Header row */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
             Net Worth Over Time
           </p>
           {filteredProjected.length > 0 && (

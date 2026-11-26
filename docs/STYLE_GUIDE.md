@@ -571,6 +571,28 @@ overview mockup:
   Tapping a month opens the same edit modal as the table. Edit Layout mode
   still uses the table.
 
+### Summary (hero) cards
+
+A page's headline number lives in a **forest summary card**: `rounded-2xl
+bg-forest p-6 sm:p-7 text-[#fbfcf2] shadow-lg shadow-stone-900/10`.
+
+- Eyebrow: `text-[11px] font-semibold uppercase tracking-[0.12em] text-[#d8e9d8]`.
+- Number: `font-display text-5xl sm:text-6xl font-normal leading-none`.
+- Supporting text: `text-sm text-[#daeadc]`. Positive accents are `#b8d9ac`;
+  negative or over accents are `#f5b887`. Links on forest are gold `#e7c985`.
+- Optional **tick bar**: a 16px bar with a repeating-gradient mask
+  (`repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)`)
+  over a two-color linear gradient, with a small legend below.
+- Charts go in their own white panel below the card, not inside it.
+- When the state is a warning (e.g. cash below cushion), use the red alert
+  card instead of forest.
+
+Used by: Budgets (left in plan), Accounts (net worth), Accounts → Cashflow
+(lowest cash). Keep one forest card per screen.
+
+**Section labels** above panels and lists use
+`px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300`.
+
 ### Alert/Message Components
 
 **Success Message**:

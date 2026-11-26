@@ -490,7 +490,7 @@ export default function AccountsPage() {
           <>
             {/* Account selector chips */}
             <div className="mb-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+              <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
                 Chart Accounts
               </p>
               <div className="flex flex-wrap gap-2">
@@ -503,8 +503,8 @@ export default function AccountsPage() {
                       onClick={() => handleCashflowAccountToggle(acct.id)}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                         isSelected
-                          ? 'bg-teal-500 text-white shadow-sm shadow-teal-200/50'
-                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-teal-300 hover:text-teal-700 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
+                          ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-stone-400 hover:text-stone-800 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
                       }`}
                     >
                       {maskAccountName(acct.name)}

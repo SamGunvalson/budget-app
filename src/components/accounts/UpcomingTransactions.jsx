@@ -48,7 +48,7 @@ export default function UpcomingTransactions({ transactions = [], onViewTransact
   if (!transactions.length) {
     return (
       <div className="mt-6">
-        <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
           Upcoming Transactions
         </p>
         <p className="py-6 text-center text-sm text-stone-400 dark:text-stone-500">
@@ -60,7 +60,7 @@ export default function UpcomingTransactions({ transactions = [], onViewTransact
 
   return (
     <div className="mt-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3">
+      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
         Upcoming Transactions
       </p>
 
