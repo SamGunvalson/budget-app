@@ -61,7 +61,7 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
               onClick={() => setFilter(value)}
               className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all ${
                 filter === value
-                  ? 'bg-amber-500 text-stone-950 shadow-sm'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >

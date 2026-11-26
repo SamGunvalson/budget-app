@@ -284,20 +284,7 @@ export default function ReportsPage() {
         {/* Header row */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="animate-fade-in">
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
-              {activeView === 'calendar'
-                ? 'Transaction Calendar'
-                : activeView === 'annualActuals'
-                  ? 'Annual Actuals'
-                  : activeView === 'trends'
-                    ? 'Spending Trends'
-                    : activeView === 'planVsActual'
-                      ? 'Plan vs Actual'
-                      : viewMode === 'monthly'
-                        ? 'Monthly Summary'
-                        : 'YTD Summary'}
-            </h1>
-            <p className="mt-1 text-base text-stone-500 dark:text-stone-400">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
               {activeView === 'calendar'
                 ? `${getMonthName(month)} ${year} daily view`
                 : activeView === 'annualActuals'
@@ -312,6 +299,19 @@ export default function ReportsPage() {
                         ? `${getMonthName(month)} ${year} overview`
                         : `Jan \u2013 ${getMonthName(month)} ${year} overview`}
             </p>
+            <h1 className="font-display text-3xl font-medium leading-tight tracking-tight text-stone-900 sm:text-4xl dark:text-stone-100">
+              {activeView === 'calendar'
+                ? 'Transaction Calendar'
+                : activeView === 'annualActuals'
+                  ? 'Annual Actuals'
+                  : activeView === 'trends'
+                    ? 'Spending Trends'
+                    : activeView === 'planVsActual'
+                      ? 'Plan vs Actual'
+                      : viewMode === 'monthly'
+                        ? 'Monthly Summary'
+                        : 'YTD Summary'}
+            </h1>
             {pendingReviewCount > 0 && (
               <Link
                 to="/app/transactions?status=pending"

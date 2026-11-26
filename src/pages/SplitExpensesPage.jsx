@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import useAuth from '../hooks/useAuth';
 import { usePartnership, useSplitExpenses } from '../hooks/queries';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import usePageActions from '../hooks/usePageActions';
 import PartnerSetup from '../components/splits/PartnerSetup';
 import BalanceSummary from '../components/splits/BalanceSummary';
@@ -175,14 +176,7 @@ export default function SplitExpensesPage() {
       <div className="min-h-screen app-bg">
         <TopBar pageName="Split Expenses" />
         <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-          <div className="animate-fade-in mb-8">
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
-              Split Expenses
-            </h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Track shared expenses and settle up with your partner.
-            </p>
-          </div>
+          <PageHeader eyebrow="Shared expenses" title="Splits" description="Track shared expenses and settle up with your partner." />
           {error && (
             <div className="animate-fade-in mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
               <span className="mr-1.5">⚠</span>{error}
@@ -199,15 +193,11 @@ export default function SplitExpensesPage() {
     <div className="min-h-screen app-bg">
       <TopBar pageName="Split Expenses" />
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        <div className="animate-fade-in mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
-              Split Expenses
-            </h1>
-            <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
-              Splitting with <span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span>
-            </p>
-          </div>
+        <PageHeader
+          eyebrow="Shared expenses"
+          title="Splits"
+          description={<>Splitting with <span className="font-medium text-stone-700 dark:text-stone-300">{partnerEmail}</span></>}
+        >
           <button
             onClick={() => setShowAddForm(true)}
             className="inline-flex items-center gap-2 rounded-xl bg-amber-500 mobile:hidden px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-500/20 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98]"
@@ -217,7 +207,7 @@ export default function SplitExpensesPage() {
             </svg>
             Add Expense
           </button>
-        </div>
+        </PageHeader>
 
         {error && (
           <div className="animate-fade-in mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">

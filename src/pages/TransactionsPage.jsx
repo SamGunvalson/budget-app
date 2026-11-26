@@ -12,6 +12,7 @@ import UpcomingRecurring from '../components/reports/UpcomingRecurring';
 import Modal, { ConfirmDeleteModal } from '../components/common/Modal';
 import AmountInput from '../components/common/AmountInput';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import useTransactionManager from '../hooks/useTransactionManager';
 import {
   createTransactionOffline as createTransaction,
@@ -43,7 +44,7 @@ import {
   PROJECTION_WINDOW_DAYS,
 } from '../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
-import { toCents, getTodayString } from '../utils/helpers';
+import { toCents, getTodayString, formatMonthYearLabel } from '../utils/helpers';
 import { getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
@@ -759,13 +760,7 @@ export default function TransactionsPage() {
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Transactions</h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Track your income and expenses.
-            </p>
-          </div>
+        <PageHeader className="mb-6" eyebrow={reviewPending ? 'Pending review' : showYear ? String(year) : formatMonthYearLabel(month, year)} title="Transactions">
           <div className="flex shrink-0 gap-2 sm:gap-3 mobile:hidden">
             <button
               type="button"
@@ -805,7 +800,7 @@ export default function TransactionsPage() {
               <span>New Transaction</span>
             </button>
           </div>
-        </div>
+        </PageHeader>
 
         {/* Recurring panel */}
         {showRecurringPanel && (
@@ -862,7 +857,7 @@ export default function TransactionsPage() {
                   onClick={() => setViewMode(mode)}
                   className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                     viewMode === mode
-                      ? 'bg-amber-500 text-stone-950 shadow-sm'
+                      ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                       : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
                   }`}
                 >

@@ -463,3 +463,7 @@ export function parseBudgetCSV(csvText) {
 
   return { rows, error: errors.length ? errors.join("\n") : null };
 }
+
+/** "November 2026" for a 1-based month (page header eyebrows). */
+export const formatMonthYearLabel = (month, year) =>
+  new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });

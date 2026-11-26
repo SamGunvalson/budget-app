@@ -225,7 +225,7 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
               onClick={() => setFilter(f)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
                 filter === f
-                  ? 'bg-amber-500 text-stone-950 shadow-sm'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
               }`}
             >

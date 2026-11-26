@@ -92,7 +92,7 @@ export default function TransactionFilters({
             onClick={() => onViewModeChange('monthly')}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
               viewMode === 'monthly'
-                ? 'bg-amber-500 text-stone-950 shadow-sm'
+                ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                 : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
@@ -103,7 +103,7 @@ export default function TransactionFilters({
             onClick={() => onViewModeChange('yearly')}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
               viewMode === 'yearly'
-                ? 'bg-amber-500 text-stone-950 shadow-sm'
+                ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                 : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
@@ -220,7 +220,7 @@ export default function TransactionFilters({
               onClick={() => onFiltersChange({ ...filters, type: opt.value })}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                 filters.type === opt.value
-                  ? 'bg-amber-500 text-stone-950 shadow-sm'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
               }`}
             >

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import CategoryForm from '../components/budgets/CategoryForm';
 import CategoryList from '../components/budgets/CategoryList';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import Modal from '../components/common/Modal';
 import {
   createCategoryOffline as createCategory,
@@ -112,15 +113,7 @@ function CategoriesPage() {
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
-              Categories
-            </h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Organise your categories. Archive unused ones without losing their history.
-            </p>
-          </div>
+        <PageHeader eyebrow="Budget setup" title="Categories" description="Archive unused categories without losing their history.">
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
@@ -131,7 +124,7 @@ function CategoriesPage() {
             </svg>
             New Category
           </button>
-        </div>
+        </PageHeader>
 
         <label className="mb-6 flex items-center gap-2 text-sm text-stone-700 dark:text-stone-300">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />

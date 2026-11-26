@@ -133,7 +133,7 @@ export default function ColumnMapper({ headers, rows, initialMapping, onMappingC
             type="button"
             onClick={() => setSplitMode(false)}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-              !splitMode ? 'bg-amber-500 text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
+              !splitMode ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
             }`}
           >
             Single Column
@@ -142,7 +142,7 @@ export default function ColumnMapper({ headers, rows, initialMapping, onMappingC
             type="button"
             onClick={() => setSplitMode(true)}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
-              splitMode ? 'bg-amber-500 text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
+              splitMode ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
             }`}
           >
             Payments &amp; Deposits

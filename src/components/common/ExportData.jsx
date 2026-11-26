@@ -4,6 +4,7 @@ import {
   exportBudgetCSV,
   exportFullBackupJSON,
 } from '../../services/export';
+import { buttonClasses } from '../../utils/buttonClasses';
 
 const EXPORT_OPTIONS = [
   {
@@ -134,7 +135,7 @@ export default function ExportData() {
               type="button"
               disabled={isActive}
               onClick={() => handleExport(opt.id)}
-              className="rounded-xl bg-amber-500 hover:bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:shadow-lg hover:shadow-amber-200/60 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:shadow-amber-900/30 dark:hover:shadow-amber-900/40 dark:focus:ring-offset-stone-800"
+              className={buttonClasses({ variant: 'secondary', size: 'sm' })}
             >
               {isActive ? (
                 <span className="flex items-center gap-1.5">

@@ -13,6 +13,7 @@ import CashflowSummary from '../components/accounts/CashflowSummary';
 import CashflowAccountSetup from '../components/accounts/CashflowAccountSetup';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import usePageActions from '../hooks/usePageActions';
 import useSessionState from '../hooks/useSessionState';
 import {
@@ -359,13 +360,7 @@ export default function AccountsPage() {
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Accounts</h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Track your accounts and monitor your net worth.
-            </p>
-          </div>
+        <PageHeader eyebrow="Net worth & cashflow" title="Accounts">
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
@@ -403,7 +398,7 @@ export default function AccountsPage() {
               </div>
             )}
           </div>
-        </div>
+        </PageHeader>
 
         {/* Error banner */}
         {loadError && (
@@ -424,7 +419,7 @@ export default function AccountsPage() {
               onClick={() => setActiveSection(tab.key)}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 activeSection === tab.key
-                  ? 'bg-amber-500 text-stone-950 shadow-sm shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >

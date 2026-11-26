@@ -183,7 +183,7 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
               onClick={() => setRange(opt.key)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 range === opt.key
-                  ? 'bg-amber-500 text-stone-950 shadow-sm shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >

@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { newId } from '../utils/ids';
 import { Link } from 'react-router-dom';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import ExportData from '../components/common/ExportData';
 import ImportCSV from '../components/transactions/ImportCSV';
 import BudgetImportModal from '../components/budgets/BudgetImportModal';
@@ -19,6 +20,7 @@ import {
 } from '../services/quickTransactions';
 import { getPartnership } from '../services/partnerships';
 import { updatePassword } from '../services/auth';
+import { buttonClasses } from '../utils/buttonClasses';
 
 export default function SettingsPage() {
   const {
@@ -283,12 +285,7 @@ export default function SettingsPage() {
 
       {/* Content */}
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        <div className="animate-fade-in mb-8">
-          <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Settings</h1>
-          <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-            Customise appearance, budget alerts, and app preferences.
-          </p>
-        </div>
+        <PageHeader eyebrow="Preferences" title="Settings" />
 
         <section className="animate-fade-in-up mb-6 rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
           <h2 className="mb-1 text-lg font-semibold text-stone-900 dark:text-stone-100">Change password</h2>
@@ -337,7 +334,7 @@ export default function SettingsPage() {
               </p>
             )}
             <div className="sm:col-span-3">
-              <button type="submit" disabled={isChangingPassword} className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-colors hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:shadow-amber-900/30">
+              <button type="submit" disabled={isChangingPassword} className={buttonClasses({ variant: 'secondary', size: 'md' })}>
                 {isChangingPassword ? 'Updating…' : 'Update password'}
               </button>
             </div>
@@ -616,7 +613,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleQuickSave}
                 disabled={quickSaving}
-                className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 shadow-sm hover:bg-amber-600 disabled:opacity-50"
+                className={buttonClasses({ variant: 'secondary', size: 'sm' })}
               >
                 {quickForm.id ? 'Update template' : 'Add template'}
               </button>
@@ -778,7 +775,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handleSave}
                 disabled={isSaving}
-                className="rounded-xl bg-amber-500 hover:bg-amber-600 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:shadow-lg hover:shadow-amber-200/60 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className={buttonClasses({ variant: 'secondary', size: 'md' })}
               >
                 {isSaving ? 'Saving…' : 'Save thresholds'}
               </button>
@@ -803,7 +800,7 @@ export default function SettingsPage() {
           <p className="mb-5 text-sm text-stone-500 dark:text-stone-400">Create and manage your spending categories.</p>
           <Link
             to="/app/categories"
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/60 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:focus:ring-offset-stone-800"
+            className={buttonClasses({ variant: 'secondary', size: 'sm' })}
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
@@ -837,7 +834,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/60 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className={buttonClasses({ variant: 'secondary', size: 'md' })}
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -847,7 +844,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => setShowBudgetImportModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/60 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className={buttonClasses({ variant: 'secondary', size: 'md' })}
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />

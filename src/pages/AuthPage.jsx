@@ -154,7 +154,7 @@ function AuthPage() {
               onClick={() => setMode('login')}
               className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
                 mode === 'login'
-                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >
@@ -165,7 +165,7 @@ function AuthPage() {
               onClick={() => setMode('signup')}
               className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
                 mode === 'signup'
-                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >

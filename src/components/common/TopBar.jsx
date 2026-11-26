@@ -9,6 +9,8 @@ import useSplitNotifications from '../../hooks/useSplitNotifications';
 import { getPartnership, getPartnerEmail } from '../../services/partnerships';
 
 const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
+const MENU_HOVER = 'hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-700 dark:hover:bg-stone-700/50';
+const MENU_ACTIVE = 'border-stone-300 bg-stone-100 text-stone-800 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100';
 // Pages reachable on mobile only through the top-bar menu (not in the bottom tab bar).
 const menuPages = PAGE_REGISTRY.filter((p) => p.link && !p.tabActive);
 
@@ -65,9 +67,9 @@ function MobileAccountMenu({ pathname, onSignOut, isSigningOut }) {
                 key={page.id}
                 to={page.link}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex items-center gap-3 border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navHover} ${page.navFocus} ${
+                className={`flex items-center gap-3 border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navHover ?? MENU_HOVER} ${page.navFocus ?? 'focus-visible:ring-amber-500'} ${
                   isActive
-                    ? page.navActive
+                    ? (page.navActive ?? MENU_ACTIVE)
                     : 'border-transparent text-stone-600 dark:text-stone-300'
                 }`}
               >
@@ -148,35 +150,13 @@ export default function TopBar() {
   );
 
   return (
-    <nav className="safe-area-pt sticky top-0 z-30 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
+    <nav className="safe-area-pt sticky top-0 z-30 border-b border-stone-200/60 bg-panel/85 backdrop-blur-md dark:border-stone-700/60">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Left: logo */}
         <div className="flex items-center gap-3">
           <Link to="/app/transactions" aria-label="Budget App transactions" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             {logo}
           </Link>
-        </div>
-
-        {/* Center: full nav on desktop (mobile uses the bottom tab bar) */}
-        <div className="hidden items-center gap-1.5 desktop:flex">
-          {navPages.map((page) => {
-            const isActive = pathname === page.link;
-            return (
-              <Link
-                key={page.id}
-                to={page.link}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900 ${page.navHover} ${page.navFocus} ${
-                  isActive
-                    ? page.navActive
-                    : 'border-stone-200/60 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300'
-                }`}
-              >
-                {page.iconSmall}
-                {page.label}
-              </Link>
-            );
-          })}
         </div>
 
         {/* Right: split bell + sync status + sign out (desktop) or menu (mobile) */}
@@ -202,6 +182,30 @@ export default function TopBar() {
             {isSigningOut ? 'Signing out…' : 'Sign out'}
           </button>
           <MobileAccountMenu key={pathname} pathname={pathname} onSignOut={handleSignOut} isSigningOut={isSigningOut} />
+        </div>
+      </div>
+
+      {/* Desktop page tabs (mobile uses the bottom tab bar) */}
+      <div className="hidden border-t border-stone-200/60 desktop:block dark:border-stone-700/60">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto px-4 sm:px-6">
+          {navPages.map((page) => {
+            const isActive = pathname === page.link;
+            return (
+              <Link
+                key={page.id}
+                to={page.link}
+                aria-current={isActive ? 'page' : undefined}
+                className={`-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navFocus} ${
+                  isActive
+                    ? `${page.tabUnderline} font-semibold text-stone-900 dark:text-stone-100`
+                    : 'border-transparent font-medium text-stone-500 hover:border-stone-300 hover:text-stone-800 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-200'
+                }`}
+              >
+                {page.iconSmall}
+                {page.label}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </nav>);

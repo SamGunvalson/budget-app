@@ -58,11 +58,12 @@ modifiers work (`bg-forest/10`).
 
 Navigation uses the destination icon's color, not the global primary amber:
 Transactions = amber, Splits = pink, Accounts = blue, Reports = violet,
-Budgets = teal, Settings = stone. Active backgrounds, borders, text, hover
-states, keyboard focus rings, and mobile page dots share these accents.
-Keep the complete Tailwind classes in `src/constants/pages.jsx` so desktop
-and mobile navigation stay consistent and Tailwind generates every variant.
-Primary CTAs still use amber.
+Budgets = teal, Settings = stone. Icons are always in their accent color. The
+desktop active tab has an accent underline (`tabUnderline`). The mobile
+active tab uses accent text plus a tinted pill (`tabActive`, `tabPill`).
+Focus rings use `navFocus`. Keep the complete Tailwind classes in
+`src/constants/pages.jsx` so Tailwind generates every variant. Primary CTAs
+still use amber.
 
 ### Annual Actuals Highlights
 
@@ -294,36 +295,42 @@ export default function MyPage() {
 
 ### Buttons
 
-**Primary Button** (main call-to-action):
+Use `Button` (`src/components/common/Button.jsx`), or `buttonClasses()` from
+`src/utils/buttonClasses.js` for links and other elements that look like
+buttons:
 
 ```jsx
-<button className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]">
-  Add Transaction
-</button>
+<Button variant="primary" onClick={save}>Save changes</Button>
+<Button variant="secondary" size="sm">Download</Button>
+<Link to="/app/categories" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>Go to Categories</Link>
 ```
 
-**Secondary Button** (less prominent action):
+| Variant | Look | Use for |
+| --- | --- | --- |
+| `primary` | Gold fill, dark text | **The one main action on a screen** (Add transaction, Save changes in a form, Sign in) |
+| `secondary` | Panel fill, hairline border | Everything else: downloads, imports, per-card form submits, navigation-like actions |
+| `ghost` | Text only, tint on hover | Low-emphasis inline actions, toolbar icons |
+| `danger` | Red fill, white text | Destructive confirms (Delete) |
 
-```jsx
-<button className="rounded-lg border border-stone-200 bg-white px-6 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
-  Cancel
-</button>
-```
+Sizes: `md` (default, `px-5 py-2.5`) and `sm` (`px-3.5 py-2`).
 
-**Danger Button** (destructive action):
+**Gold budget rule:** a screen gets at most one gold button, plus the one in
+an open modal. Pages made of independent settings cards (Settings) use
+`secondary` for every card action. If two actions compete for gold, the less
+common one becomes `secondary`.
 
-```jsx
-<button className="rounded-xl bg-red-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-200/50 transition-all hover:bg-red-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 active:scale-[0.98]">
-  Delete
-</button>
-```
+**Segmented controls** (Monthly / Yearly, Overview / Cashflow, 1Y / 3Y, filter
+chips): the selected segment is **ink**, not gold:
+`bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900`.
+Unselected segments use `text-stone-500 hover:text-stone-700`. Exception: the
+Reports view tabs and their Monthly/YTD toggle keep their per-view colors (see
+the matrix below).
 
 **Button States**:
 
-- **Disabled**: `opacity-50 cursor-not-allowed shadow-none`
-- **Loading**: Show spinner inside button
-- **Small variant**: Use `px-4 py-1.5 text-sm` instead of `px-6 py-2.5`
-- **Press feedback**: `active:scale-[0.98]`
+- **Disabled**: `opacity-50 cursor-not-allowed` (built into `Button`)
+- **Loading**: Change the label (e.g. "Saving…") or show a spinner inside the button
+- **Press feedback**: `active:scale-[0.98]` (built into `Button`)
 
 #### Reports Page — Tab & Sub-Button Color Matrix
 
@@ -545,60 +552,55 @@ When adding new sub-controls inside a Reports section, reference this table to p
 
 ### Page Layout
 
-**Standard page structure** (sub-pages):
-
-Every authenticated sub-page must follow this exact navigation pattern: a clickable "Budget App" logo+text linking back to the home page (`/app`), a vertical divider, the current page name, and a Sign Out button on the right.
+Every authenticated page renders `TopBar`, then a centered content column that
+starts with `PageHeader`:
 
 ```jsx
+import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
+import { formatMonthYearLabel } from '../utils/helpers';
+
 <div className="app-bg min-h-screen">
-  {/* Navigation */}
-  <nav className="sticky top-0 z-10 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md">
-    <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-      <div className="flex items-center gap-3">
-        <Link
-          to="/app"
-          className="flex items-center gap-3 transition-opacity hover:opacity-80"
-        >
-          <BrandMark /> {/* src/components/common/BrandMark.jsx — forest tile, gold bars */}
-          <span className="font-display text-xl font-semibold tracking-tight text-stone-900">Budget App</span>
-        </Link>
-        {/* Vertical divider + page name breadcrumb */}
-        <span className="hidden h-4 w-px bg-stone-300 dark:bg-stone-600 sm:block" />
-        <span className="hidden text-sm font-medium text-stone-500 dark:text-stone-400 sm:block">
-          Page Name
-        </span>
-      </div>
-      {/* Sign out button — always on the right */}
-      <button className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md ...">
-        Sign out
-      </button>
-    </div>
-  </nav>
-
-  {/* Main content */}
-  <div className="max-w-6xl mx-auto px-4 py-8 sm:px-6">
-    {/* Page heading */}
-    <h1 className="font-display text-3xl font-medium tracking-tight text-stone-900 mb-8">
-      Page Title
-    </h1>
-
-    {/* Content grid/sections */}
-
-    {/* Footer spacing */}
-    <div className="mt-12" />
+  <TopBar />
+  <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <PageHeader eyebrow={formatMonthYearLabel(month, year)} title="Transactions">
+      {/* Desktop-only header actions; mirror them with usePageActions for mobile */}
+      <Button variant="primary" className="mobile:hidden">New Transaction</Button>
+    </PageHeader>
+    {/* content */}
   </div>
 </div>
 ```
 
+**`PageHeader`** (`src/components/common/PageHeader.jsx`):
+
+- `eyebrow`: short context in small uppercase above the title. Use the
+  period being viewed ("November 2026", "2026", "Pending review") or the
+  page's domain ("Preferences", "Net worth & cashflow").
+- `title`: serif, `text-3xl sm:text-4xl`. Keep it short; it is the page name.
+- `description` (optional): one line of genuinely useful context (a partner's
+  email, an archive hint). Don't use generic taglines like "Track your income
+  and expenses."
+- `children`: right-aligned actions. Default bottom margin is `mb-8`; pass
+  `className` to change it.
+
+The Reports page keeps a custom header because its controls are complex. It
+uses the same eyebrow and title classes.
+
+**`TopBar`** (desktop layout): a brand row (BrandMark + serif "Budget App"
+wordmark, split-notification bell, sync status, Sign out). Below it is a row of
+**underline tabs**: the icon in the accent color, the label in stone, and the
+active tab is bold ink with a 2px accent underline. In mobile layout the tab
+row is replaced by the bottom tab bar.
+
 #### Navigation rules
 
-| Rule                         | Detail                                                                                                                                                                  |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Mobile navigation**        | In mobile layout the top bar shows only the logo, status, and a "⋯" menu. Page links are in the bottom tab bar. See *Mobile layout* above. |
-| **Back navigation**          | Clicking "Budget App" in the nav bar returns to the home page. **Do not** add separate "← Back" buttons.                                    |
-| **Breadcrumb label**         | Every sub-page displays a vertical divider (`\|`) followed by the page name after "Budget App" (e.g. `Budget App \| Accounts`). Hidden on small screens via `sm:block`. |
-| **Home exception**           | The home page renders "Budget App" as plain text (not a `<Link>`) since the user is already there. No breadcrumb label is shown.                        |
-| **Auth page**                | No navigation bar — only the logo badge and sign-in form.                                                                                                               |
+| Rule | Detail |
+| --- | --- |
+| **Mobile navigation** | In mobile layout the top bar shows only the logo, status, and a "⋯" menu (Categories, Settings, Sign out). Page links are in the bottom tab bar. See *Mobile layout* below. |
+| **Desktop navigation** | Underline tabs under the brand row. No page-name breadcrumb; the active tab and the `PageHeader` title identify the page. |
+| **Back navigation** | Clicking "Budget App" returns to Transactions. **Do not** add separate "← Back" buttons. |
+| **Auth page** | No navigation bar — only the brand mark, wordmark and sign-in form. |
 
 ### Mobile layout (bottom tab bar)
 
@@ -840,6 +842,6 @@ Before considering a component "done":
 
 ---
 
-**Style Guide Version**: 4.0 (Forest & Gold)
+**Style Guide Version**: 4.1 (Forest & Gold)
 **Design Inspiration**: quiet premium finance — forest/sage neutrals, gold accents, serif display
 **Last Updated**: November 26, 2026

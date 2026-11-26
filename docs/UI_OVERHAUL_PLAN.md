@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phase 1 done · Phase 2 done (pending device testing) · 2026-11-26
+Status: Phases 1–3 done (Phase 2 pending device testing) · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 

@@ -125,6 +125,7 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
 - Palette **Forest & Gold** (tokens in `src/index.css`): `stone-*` is re-tinted to sage/forest neutrals and `amber-*` to gold. Keep using those scales, or the semantic tokens (`paper`, `panel`, `ink`, `soft`, `line`, `tint`, `forest`, `gold`, `income`, `warn`). **teal/emerald** income/success, **violet** analytics, **red** errors/expenses, **orange** warnings (never amber).
 - Text on gold (`bg-amber-500`) is `text-stone-950`, never `text-white`. No gradient buttons.
 - Page roots use `app-bg min-h-screen`. Page H1s use `font-display font-medium` (bundled Newsreader serif); do not use the serif for body text.
+- Page titles go through `PageHeader` (eyebrow + serif title). Buttons use `Button` / `buttonClasses()`: at most one gold `primary` per screen; the selected segment in a segmented control is ink, not gold.
 - Use `border-stone-200/60` (translucent) for borders — not solid grays.
 
 ### File naming
