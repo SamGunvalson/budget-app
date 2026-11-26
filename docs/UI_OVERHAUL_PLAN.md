@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phases 1–3 done · Phase 4 in progress (Transactions done) · 2026-11-26
+Status: Phases 1–3 done · Phase 4 in progress (Transactions, Budgets done) · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -173,7 +173,7 @@ Order these by how often each page is used:
    - **Pending rows on mobile** currently show only a faint "···" under the
      payee, which is easy to miss. Show a visible "Pending" chip, or a separate
      Pending section, with clear review actions.
-2. **Budgets:** category rows with a thin progress track, "$X left" or an
+2. **Budgets** ✅: category rows with a thin progress track, "$X left" or an
    orange "$X over" chip, and "$used of $plan". `AnnualBudgetTable` needs a
    dedicated mobile view (cards per category) instead of horizontal scrolling.
 3. **Accounts:** hairline lists; forest hero card for net worth / available

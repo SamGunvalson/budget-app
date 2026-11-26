@@ -6,7 +6,10 @@ import {
   useBudgetItems,
   useBudgetPlan,
   useCategories,
+  usePlanVsActual,
 } from '../../hooks/queries';
+import useThresholds from '../../hooks/useThresholds';
+import { getCurrentMonthYear } from '../../utils/helpers';
 import {
   createBudgetPlanOffline,
   updateBudgetPlanOffline,
@@ -17,28 +20,13 @@ import {
 } from '../../utils/helpers';
 import useMonthYear from '../../hooks/useMonthYear';
 import { categoriesForBudget } from '../../utils/categoryArchive';
+import { buttonClasses } from '../../utils/buttonClasses';
 
-const TYPE_HEADER_STYLES = {
-  income: {
-    bg: 'bg-emerald-50 dark:bg-emerald-900/30',
-    text: 'text-emerald-800 dark:text-emerald-300',
-    border: 'border-emerald-200/60 dark:border-emerald-700/60',
-  },
-  needs: {
-    bg: 'bg-red-50 dark:bg-red-900/30',
-    text: 'text-red-800 dark:text-red-300',
-    border: 'border-red-200/60 dark:border-red-700/60',
-  },
-  wants: {
-    bg: 'bg-pink-50 dark:bg-pink-900/30',
-    text: 'text-pink-800 dark:text-pink-300',
-    border: 'border-pink-200/60 dark:border-pink-700/60',
-  },
-  savings: {
-    bg: 'bg-teal-50 dark:bg-teal-900/30',
-    text: 'text-teal-800 dark:text-teal-300',
-    border: 'border-teal-200/60 dark:border-teal-700/60',
-  },
+const TYPE_DOTS = {
+  income: 'bg-emerald-500',
+  needs: 'bg-red-500',
+  wants: 'bg-pink-500',
+  savings: 'bg-teal-500',
 };
 
 /**
@@ -66,6 +54,12 @@ export default function BudgetForm() {
   // Which month and which query results the form state was last seeded from.
   const [seeded, setSeeded] = useState({ key: null, plan: null, items: null });
 
+  // This month's actual spending/income per category (for progress bars).
+  const pvaQuery = usePlanVsActual(month, year);
+  const actualByCategory = new Map((pvaQuery.data?.categories ?? []).map((c) => [c.categoryId, c.actual]));
+  const hasActuals = pvaQuery.isSuccess;
+  const { thresholds } = useThresholds();
+
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -82,6 +76,14 @@ export default function BudgetForm() {
     .filter(([id]) => !incomeCategoryIds.has(id) && !transferCategoryIds.has(id))
     .reduce((sum, [, cents]) => sum + (cents || 0), 0);
   const remaining = totalIncomeCents - totalAllocated;
+  const spentThisMonth = Object.entries(allocations)
+    .filter(([id]) => !incomeCategoryIds.has(id) && !transferCategoryIds.has(id))
+    .reduce((sum, [id]) => sum + Math.max(actualByCategory.get(id) ?? 0, 0), 0);
+  const receivedThisMonth = [...incomeCategoryIds].reduce((sum, id) => sum + Math.max(actualByCategory.get(id) ?? 0, 0), 0);
+  const leftInPlan = totalAllocated - spentThisMonth;
+  const usedPct = totalAllocated > 0 ? Math.round((spentThisMonth / totalAllocated) * 100) : 0;
+  const now = getCurrentMonthYear();
+  const isCurrentMonth = now.month === month && now.year === year;
   const isDirty = Object.keys({ ...allocations, ...savedAllocations })
     .some((id) => (allocations[id] || 0) !== (savedAllocations[id] || 0));
 
@@ -190,6 +192,8 @@ export default function BudgetForm() {
     savings: { label: 'Savings', desc: 'Goals & investments' },
     income: { label: 'Income', desc: 'Revenue sources' },
   };
+  const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
+  const showSaveBar = isDirty || isSaving || !!error || !plan;
 
   // ---------- render ----------
   if (isLoading || annualBudgetQuery.isLoading) {
@@ -214,68 +218,131 @@ export default function BudgetForm() {
         </div>
       )}
 
+      {/* Month summary */}
+      {plan && totalAllocated > 0 && (
+        <section
+          aria-label="Month summary"
+          className="flex flex-col justify-between gap-6 rounded-2xl bg-forest p-6 text-[#fbfcf2] shadow-lg shadow-stone-900/10 sm:p-7"
+        >
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#d8e9d8]">
+              {leftInPlan >= 0 ? 'Left in your spending plan' : 'Over your spending plan'}
+            </p>
+            <p className="mt-1.5 font-display text-5xl font-normal leading-none tracking-tight sm:text-6xl">
+              {money(Math.abs(leftInPlan))}
+            </p>
+            <p className="mt-2 text-sm text-[#daeadc]">
+              {money(spentThisMonth)} spent of {money(totalAllocated)} budgeted
+            </p>
+          </div>
+          <div>
+            <div
+              aria-hidden="true"
+              className="h-4"
+              style={{
+                background: `linear-gradient(to right, ${leftInPlan >= 0 ? '#b8d9ac' : '#f5b887'} 0 ${Math.min(usedPct, 100)}%, #477365 ${Math.min(usedPct, 100)}% 100%)`,
+                maskImage: 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)',
+                WebkitMaskImage: 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)',
+              }}
+            />
+            <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-[#ecf4e9]">
+              <span>{usedPct}% used{isCurrentMonth ? ' so far' : ''}</span>
+              <span>{money(receivedThisMonth)} of {money(totalIncomeCents)} income received</span>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Category allocations by type – income first */}
       {['income', 'needs', 'wants', 'savings'].map((type) => {
         const cats = grouped[type];
         if (!cats || cats.length === 0) return null;
         const { label, desc } = typeLabels[type];
-        const headerStyle = TYPE_HEADER_STYLES[type];
+        const groupPlanned = cats.reduce((sum, c) => sum + (allocations[c.id] || 0), 0);
+        const groupActual = cats.reduce((sum, c) => sum + Math.max(actualByCategory.get(c.id) ?? 0, 0), 0);
 
         return (
-          <div key={type}>
-            <div className={`mb-3 -mx-4 px-4 py-2.5 rounded-xl ${headerStyle.bg} border ${headerStyle.border}`}>
-              <h3 className={`text-sm font-bold uppercase tracking-wider ${headerStyle.text}`}>{label}</h3>
-              <p className="text-xs text-stone-500 mt-0.5 dark:text-stone-400">{desc}</p>
+          <section key={type} aria-labelledby={`budget-group-${type}`}>
+            <div className="mb-2 flex items-end justify-between gap-3 px-1">
+              <div>
+                <h3 id={`budget-group-${type}`} className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
+                  <span aria-hidden="true" className={`h-2 w-2 rounded-full ${TYPE_DOTS[type]}`} />
+                  {label}
+                </h3>
+                <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{desc}</p>
+              </div>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                {hasActuals && <>{money(groupActual)} {type === 'income' ? 'received' : 'spent'} of </>}
+                <span className="font-semibold text-stone-700 dark:text-stone-200">{money(groupPlanned)}</span>
+              </p>
             </div>
-            <div className="space-y-2">
+            <div className="divide-y divide-stone-200/60 overflow-hidden rounded-2xl border border-stone-200/60 bg-white shadow-sm dark:divide-stone-700/60 dark:border-stone-700/60 dark:bg-stone-800">
               {cats.map((cat) => (
                 <BudgetItemInput
                   key={cat.id}
                   category={cat}
                   plannedAmount={allocations[cat.id] || 0}
+                  actual={hasActuals ? (actualByCategory.get(cat.id) ?? 0) : null}
+                  thresholds={thresholds}
                   onChange={(cents) => handleAllocationChange(cat.id, cents)}
                   disabled={isSaving}
                 />
               ))}
             </div>
-          </div>
+          </section>
         );
       })}
 
-      {/* Summary bar */}
-      <div className="rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Total Income</p>
-            <p className="mt-1 text-xl font-bold text-stone-900 dark:text-stone-100">{formatCurrency(totalIncomeCents, 'USD', { hideCents: true })}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Total Allocated</p>
-            <p className="mt-1 text-xl font-bold text-stone-900 dark:text-stone-100">{formatCurrency(totalAllocated, 'USD', { hideCents: true })}</p>
-          </div>
+      {/* Plan totals */}
+      <div className="grid grid-cols-3 gap-4 rounded-2xl border border-stone-200/60 bg-white p-5 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">Planned income</p>
+          <p className="mt-1 text-lg font-bold text-stone-900 sm:text-xl dark:text-stone-100">{money(totalIncomeCents)}</p>
         </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">Allocated</p>
+          <p className="mt-1 text-lg font-bold text-stone-900 sm:text-xl dark:text-stone-100">{money(totalAllocated)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">To allocate</p>
+          <p className={`mt-1 text-lg font-bold sm:text-xl ${remaining >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+            {formatCurrency(remaining, 'USD', { hideCents: true })}
+          </p>
+        </div>
+        {success && !showSaveBar && (
+          <p role="status" className="col-span-3 text-sm text-emerald-700 dark:text-emerald-400">{success}</p>
+        )}
       </div>
 
-      <div className="sticky bottom-[env(safe-area-inset-bottom,0px)] z-10 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-lg sm:bottom-3 dark:border-stone-700 dark:bg-stone-800">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-stone-600 dark:text-stone-300">Remaining to allocate</p>
-            <p className={`text-xl font-bold tabular-nums ${remaining >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-              {formatCurrency(remaining)}
-            </p>
+      {/* Unsaved-changes bar: floats above the mobile tab bar / page bottom */}
+      {showSaveBar && (
+        <div
+          className="sticky z-10 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-md dark:border-stone-700 dark:bg-stone-800/95"
+          style={{ bottom: 'calc(var(--bottom-chrome, 0px) + 12px)' }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-stone-600 dark:text-stone-300">
+                {plan ? 'Unsaved changes' : 'New budget'}
+              </p>
+              <p className={`text-lg font-bold tabular-nums ${remaining >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+                {formatCurrency(remaining)}
+                <span className="ml-1 text-xs font-medium text-stone-500 dark:text-stone-400">to allocate</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className={buttonClasses({ variant: 'primary', className: 'shrink-0' })}
+            >
+              {isSaving ? 'Saving…' : plan ? 'Save changes' : 'Create budget'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="shrink-0 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-stone-950 shadow-sm hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-amber-500 disabled:opacity-50"
-          >
-            {isSaving ? 'Saving…' : plan ? 'Save changes' : 'Create budget'}
-          </button>
+          {error && <p role="alert" className="mt-1 text-sm text-red-700 dark:text-red-400">{error}</p>}
+          {success && <p role="status" className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{success}</p>}
         </div>
-        {error && <p role="alert" className="mt-1 text-sm text-red-700 dark:text-red-400">{error}</p>}
-        {success && <p role="status" className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{success}</p>}
-      </div>
+      )}
     </div>
   );
 }

@@ -1,24 +1,11 @@
 import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import AmountInput from '../common/AmountInput';
+import CategoryWell from '../common/CategoryWell';
 import { centsToInput } from '../../utils/calculator';
 import { formatCurrency, formatDate, toCents, maskAccountName } from '../../utils/helpers';
 import { getAccountBadgeColor } from '../../services/accounts';
 import { isValidInlineEdit } from '../../utils/transactionFormRules';
-
-/** Rounded square tinted with the category color, showing its initial. */
-function CategoryWell({ category }) {
-  const color = category?.color || '#949f95';
-  return (
-    <span
-      aria-hidden="true"
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold"
-      style={{ backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`, color }}
-    >
-      {(category?.name || '?').trim().charAt(0).toUpperCase()}
-    </span>
-  );
-}
 
 const STATUS_CHIP_TONES = {
   pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',

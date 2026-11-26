@@ -35,6 +35,8 @@ import useMonthYear from '../../hooks/useMonthYear';
 import { useAnnualBudgetData, useCategories, useUserPreference } from '../../hooks/queries';
 import CategoryForm from './CategoryForm';
 import Modal from '../common/Modal';
+import CategoryWell from '../common/CategoryWell';
+import useLayoutMode from '../../hooks/useLayoutMode';
 import AmountInput from '../common/AmountInput';
 import { centsToInput } from '../../utils/calculator';
 
@@ -75,6 +77,72 @@ const TYPE_STYLES = {
     headerBorder: 'border-teal-200/60 dark:border-teal-700/60',
   },
 };
+
+// -- Mobile layout: one card per category with a 4×3 month grid --
+function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, onMobileEdit, getMonthIncome, getMonthExpenses }) {
+  const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
+  const yearIncome = MONTHS.reduce((sum, m) => sum + getMonthIncome(m), 0);
+  const yearExpenses = MONTHS.reduce((sum, m) => sum + getMonthExpenses(m), 0);
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 rounded-2xl border border-stone-200/60 bg-white p-4 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">Planned income</p>
+          <p className="mt-1 text-lg font-bold text-stone-900 dark:text-stone-100">{money(yearIncome)}</p>
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">Planned spending</p>
+          <p className="mt-1 text-lg font-bold text-stone-900 dark:text-stone-100">{money(yearExpenses)}</p>
+        </div>
+      </div>
+      {typeOrder.map((type) => {
+        const cats = visibleGrouped[type];
+        if (!cats || cats.length === 0) return null;
+        return (
+          <section key={type} aria-label={TYPE_STYLES[type].label}>
+            <h3 className={`mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${TYPE_STYLES[type].headerText}`}>
+              {TYPE_STYLES[type].label}
+            </h3>
+            <div className="space-y-3">
+              {cats.map((cat) => {
+                const total = MONTHS.reduce((sum, m) => sum + (monthData[m]?.allocations[cat.id] || 0), 0);
+                return (
+                  <div key={cat.id} className="rounded-2xl border border-stone-200/60 bg-white p-4 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+                    <div className="mb-3 flex items-center gap-3">
+                      <CategoryWell category={cat} className="h-8 w-8 text-xs" />
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-900 dark:text-stone-100">{categoryLabel(cat)}</p>
+                      <p className="text-sm font-semibold text-stone-700 dark:text-stone-200">{money(total)}<span className="text-xs font-normal text-stone-500 dark:text-stone-400"> /yr</span></p>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {MONTHS.map((m) => {
+                        const cents = monthData[m]?.allocations[cat.id] || 0;
+                        const exactDollars = cents ? toDollars(cents, { raw: true }).toFixed(2) : '';
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => onMobileEdit(m, cat.id, exactDollars)}
+                            aria-label={`${cat.name}, ${SHORT_MONTHS[m - 1]}: ${cents ? money(cents) : 'not set'}. Edit`}
+                            className="flex min-h-11 flex-col items-start justify-center rounded-lg border border-stone-200/70 bg-stone-50/60 px-2 py-1 text-left transition-colors hover:border-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-stone-700 dark:bg-stone-900/40"
+                          >
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{SHORT_MONTHS[m - 1]}</span>
+                            <span className={`text-xs font-semibold ${cents ? 'text-stone-900 dark:text-stone-100' : 'text-stone-300 dark:text-stone-600'}`}>
+                              {cents ? money(cents) : '—'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
 
 // -- Sortable category row (used in edit mode) --
 function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onCellChange, onEditCategory, onMobileEdit, onBulkFill, annualTotal }) {
@@ -380,6 +448,7 @@ export default function AnnualBudgetTable() {
   const [copyOverwrite, setCopyOverwrite] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
+  const isMobileLayout = useLayoutMode() === 'mobile';
   const [mobileEditCell, setMobileEditCell] = useState({ open: false, categoryId: null, month: null, value: '' });
   const [bulkFillCell, setBulkFillCell] = useState({ open: false, categoryId: null, categoryName: '', categoryColor: null, value: '', overwriteExisting: true });
 
@@ -772,7 +841,17 @@ export default function AnnualBudgetTable() {
         </div>
       )}
 
-      {/* Scrollable table with sticky header */}
+      {isMobileLayout && !isEditMode ? (
+        <AnnualBudgetCards
+          typeOrder={typeOrder}
+          visibleGrouped={visibleGrouped}
+          monthData={monthData}
+          onMobileEdit={openMobileEdit}
+          getMonthIncome={getMonthIncome}
+          getMonthExpenses={getMonthExpenses}
+        />
+      ) : (
+      /* Scrollable table with sticky header */
       <div className="overflow-y-auto overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" style={{ maxHeight: 'calc(100vh - 260px)' }}>
         <DndContext
           sensors={sensors}
@@ -886,6 +965,7 @@ export default function AnnualBudgetTable() {
           </table>
         </DndContext>
       </div>
+      )}
 
       {/* Save button */}
       <div className="flex justify-end">

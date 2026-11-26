@@ -540,6 +540,37 @@ rows** when the list is narrower than 900px:
 - **Status switch:** "All / Pending (n)" above the filters (`?status=pending`),
   with the selected segment in ink.
 
+### Budget rows and progress
+
+The monthly Budgets view (`BudgetForm` + `BudgetItemInput`) follows the
+overview mockup:
+
+- **Summary card:** a forest card (`bg-forest`, text `#fbfcf2`) with an eyebrow
+  ("Left in / Over your spending plan"), a big serif amount, "$X spent of $Y
+  budgeted", and a **tick progress bar** (a repeating-gradient mask: sage
+  `#b8d9ac` fill, or peach `#f5b887` when over). Shown once a plan exists.
+- **Groups:** an eyebrow heading with the type's colored dot (income emerald,
+  needs red, wants pink, savings teal), a description, and "$spent of $planned"
+  on the right. Rows sit in one panel with hairline dividers, not separate
+  cards.
+- **Row:** `CategoryWell`, name, "$X spent of $Y" (or "received" for income),
+  and the amount input. Below it, a 6px track and a status on the right:
+  - under plan: plain "$X left"
+  - at or over the warning threshold: orange track; over plan gets an orange
+    "$X over" chip
+  - at or over the danger threshold: red track and a red chip
+  - income: an emerald track, then "$X to go", "Received" or "+$X extra"
+  - spending with no plan: an "Unbudgeted" chip
+
+  Thresholds come from `useThresholds()`, and actuals from
+  `usePlanVsActual(month, year)`.
+- **Save bar:** sticky, floats at `bottom: calc(var(--bottom-chrome) + 12px)`,
+  and only appears with unsaved changes (or for a new month). Otherwise the
+  totals card shows planned income, allocated, and "To allocate".
+- **Annual view on mobile:** one card per category with a 4×3 month grid.
+  Tapping a month opens the same edit modal as the table. Edit Layout mode
+  still uses the table.
+
 ### Alert/Message Components
 
 **Success Message**:
