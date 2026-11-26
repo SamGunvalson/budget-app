@@ -16,6 +16,7 @@ import { formatCurrency, getMonthName, isSettledTransaction } from '../../utils/
 import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 
 /**
  * Main "Plan vs Actual" comparison view.
@@ -164,7 +165,7 @@ export default function PlanVsActual({
           transactions={catTx}
           categories={allCategories}
           categoryName={catData?.categoryName || 'Unknown'}
-          categoryColor={catData?.categoryColor || '#A8A29E'}
+          categoryColor={catData?.categoryColor || CATEGORY_FALLBACK_COLOR}
           onClose={() => setExpandedCategoryId(null)}
           onDataChanged={() => {
             // Invalidate the PvA query so the panel rebuilds after edits.
@@ -309,11 +310,11 @@ export default function PlanVsActual({
               <div className="mb-1 sm:mb-3 flex items-center gap-3">
                 <div
                   className={`hidden sm:flex h-10 w-10 items-center justify-center rounded-xl ${
-                    isOverBudget ? 'bg-red-100' : 'bg-amber-100'
+                    isOverBudget ? 'bg-red-100' : 'bg-orange-100'
                   }`}
                 >
                   <svg
-                    className={`h-5 w-5 ${isOverBudget ? 'text-red-600' : 'text-amber-600'}`}
+                    className={`h-5 w-5 ${isOverBudget ? 'text-red-600' : 'text-orange-600'}`}
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth={2}
@@ -333,7 +334,7 @@ export default function PlanVsActual({
               </div>
               <p
                 className={`text-xl sm:text-3xl font-bold ${
-                  isOverBudget ? 'text-red-600' : 'text-amber-600'
+                  isOverBudget ? 'text-red-600' : 'text-orange-600'
                 }`}
               >
                 {formatCurrency(totalActual, 'USD', { hideCents: true })}

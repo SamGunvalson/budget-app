@@ -721,7 +721,7 @@ export default function AnnualBudgetTable() {
           onClick={() => setIsEditMode((prev) => !prev)}
           className={`hidden sm:flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
             isEditMode
-              ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50 hover:bg-amber-600 dark:shadow-amber-900/30'
+              ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50 hover:bg-amber-600 dark:shadow-amber-900/30'
               : 'border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
           }`}
         >
@@ -893,7 +893,7 @@ export default function AnnualBudgetTable() {
           type="button"
           onClick={handleSaveAll}
           disabled={isSaving}
-          className="rounded-xl bg-amber-500 px-8 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-amber-500 px-8 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSaving ? 'Saving all months...' : 'Save All Months'}
         </button>
@@ -953,7 +953,7 @@ export default function AnnualBudgetTable() {
                 type="button"
                 onClick={handleCopyFromPriorYear}
                 disabled={isCopying}
-                className="flex items-center gap-2 rounded-xl bg-amber-500 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
+                className="flex items-center gap-2 rounded-xl bg-amber-500 px-6 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:opacity-60"
               >
                 {isCopying && (
                   <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -1014,7 +1014,7 @@ export default function AnnualBudgetTable() {
                 <button
                   type="button"
                   onClick={handleMobileSave}
-                  className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                  className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
                 >
                   Save
                 </button>
@@ -1092,7 +1092,7 @@ export default function AnnualBudgetTable() {
               <button
                 type="button"
                 onClick={handleBulkFillSave}
-                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
               >
                 Apply to All Months
               </button>

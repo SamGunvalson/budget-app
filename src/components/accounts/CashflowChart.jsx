@@ -14,6 +14,7 @@ import {
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar, maskAccountName } from '../../utils/helpers';
 import { isLiabilityAccount } from '../../services/accounts';
 import { CASHFLOW_RANGE_OPTIONS } from '../../hooks/useCashflowScenario';
+import { CHART_AXIS, CHART_GRID, CHART_MUTED } from '../../constants/chartColors';
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
 const ACCOUNT_COLORS = [
@@ -27,7 +28,7 @@ const ACCOUNT_COLORS = [
   '#ca8a04', // yellow-600
 ];
 const CASH_COLOR = '#d97706'; // amber-600
-const BASELINE_COLOR = '#a8a29e'; // stone-400
+const BASELINE_COLOR = CHART_MUTED; // stone-400
 
 const SHORT_MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -238,18 +239,18 @@ export default function CashflowChart({
       ) : (
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" className="dark:stroke-stone-700" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} className="dark:stroke-stone-700" />
             <XAxis
               dataKey="date"
               tickFormatter={tickFormatter}
-              tick={{ fill: '#78716c', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               interval={tickInterval}
             />
             <YAxis
               tickFormatter={formatPreMaskedAxisDollar}
-              tick={{ fill: '#78716c', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={72}
@@ -262,10 +263,10 @@ export default function CashflowChart({
 
             <ReferenceLine
               x={todayStr}
-              stroke="#a8a29e"
+              stroke={CHART_MUTED}
               strokeDasharray="3 3"
               strokeWidth={1.5}
-              label={{ value: 'Today', position: 'insideTopRight', fontSize: 10, fill: '#a8a29e' }}
+              label={{ value: 'Today', position: 'insideTopRight', fontSize: 10, fill: CHART_MUTED }}
             />
             {showCash && cushion > 0 && (
               <ReferenceLine

@@ -140,7 +140,7 @@ export default function SplitExpensesPage() {
   // Partnership not loaded yet
   if (partnershipLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+      <div className="min-h-screen app-bg">
         <TopBar pageName="Split Expenses" />
         <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
           <div className="flex items-center justify-center py-20">
@@ -154,11 +154,11 @@ export default function SplitExpensesPage() {
   // No partnership — show setup
   if (!partnership) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+      <div className="min-h-screen app-bg">
         <TopBar pageName="Split Expenses" />
         <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
           <div className="animate-fade-in mb-8">
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
               Split Expenses
             </h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
@@ -178,12 +178,12 @@ export default function SplitExpensesPage() {
 
   // Active partnership — full UI
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Split Expenses" />
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="animate-fade-in mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
               Split Expenses
             </h1>
             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
@@ -192,7 +192,7 @@ export default function SplitExpensesPage() {
           </div>
           <button
             onClick={() => setShowAddForm(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-500/20 transition-all hover:from-amber-600 hover:to-amber-700 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98]"
+            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-500/20 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98]"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

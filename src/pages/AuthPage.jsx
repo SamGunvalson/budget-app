@@ -4,6 +4,7 @@ import LoginForm from '../components/common/LoginForm';
 import SignupForm from '../components/common/SignupForm';
 import { getSession, onAuthStateChange } from '../services/auth';
 import { getConnectionErrorMessage, isLikelyConnectionError } from '../utils/connectionErrors';
+import BrandMark from '../components/common/BrandMark';
 
 const features = [
   {
@@ -98,7 +99,7 @@ function AuthPage() {
 
   if (isChecking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-50 via-amber-50/30 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+      <div className="flex min-h-screen items-center justify-center app-bg">
         <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-4 shadow-lg shadow-stone-200/50 dark:bg-stone-800 dark:shadow-stone-900/50">
           <span className="h-5 w-5 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
           <span className="text-sm font-medium text-stone-600 dark:text-stone-300">Loading...</span>
@@ -108,17 +109,15 @@ function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/30 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         {/* Intro Section */}
         <div className="animate-fade-in mx-auto mb-8 max-w-md text-center">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-amber-100/80 px-4 py-1.5 text-sm font-semibold text-amber-700">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+          <div className="mb-4 inline-flex items-center gap-2.5 font-display text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+            <BrandMark className="h-8 w-8" />
             Budget App
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-stone-900 sm:text-4xl dark:text-stone-100">
+          <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 sm:text-4xl dark:text-stone-100">
             Take control of your money
           </h1>
           <p className="mt-3 text-base text-stone-500 dark:text-stone-400">
@@ -155,7 +154,7 @@ function AuthPage() {
               onClick={() => setMode('login')}
               className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
                 mode === 'login'
-                  ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >
@@ -166,7 +165,7 @@ function AuthPage() {
               onClick={() => setMode('signup')}
               className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
                 mode === 'signup'
-                  ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >

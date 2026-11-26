@@ -32,6 +32,7 @@ import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
 import IncludePendingToggle from '../components/reports/IncludePendingToggle';
+import { CATEGORY_FALLBACK_COLOR } from '../constants/chartColors';
 
 // Skeleton placeholder shown while a lazy chart chunk is downloading.
 function ChartFallback() {
@@ -123,7 +124,7 @@ export default function ReportsPage() {
 
       const catId = t.category_id || 'uncategorized';
       const catName = t.categories?.name || 'Uncategorized';
-      const catColor = t.categories?.color || '#A8A29E';
+      const catColor = t.categories?.color || CATEGORY_FALLBACK_COLOR;
 
       if (isTrueIncome(t)) {
         ytdInc += t.amount;
@@ -261,7 +262,7 @@ export default function ReportsPage() {
           transactions={txs}
           categories={categories}
           categoryName={categoryName}
-          categoryColor={entry?.color || '#A8A29E'}
+          categoryColor={entry?.color || CATEGORY_FALLBACK_COLOR}
           onClose={() => setExpandedChart(null)}
           onDataChanged={() => {
             // allTransactions state is already updated by setAllTransactions
@@ -275,7 +276,7 @@ export default function ReportsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Reports" />
 
       {/* Content */}
@@ -283,7 +284,7 @@ export default function ReportsPage() {
         {/* Header row */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="animate-fade-in">
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
               {activeView === 'calendar'
                 ? 'Transaction Calendar'
                 : activeView === 'annualActuals'
@@ -370,7 +371,7 @@ export default function ReportsPage() {
                     onClick={() => setViewMode('monthly')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'monthly'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >
@@ -381,7 +382,7 @@ export default function ReportsPage() {
                     onClick={() => setViewMode('ytd')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'ytd'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >

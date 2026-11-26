@@ -172,7 +172,7 @@ export default function CategoryComparison({
                     !isIncome && alert?.level === 'danger'
                       ? 'border-l-2 border-l-red-400'
                       : !isIncome && alert?.level === 'warning'
-                        ? 'border-l-2 border-l-amber-400'
+                        ? 'border-l-2 border-l-orange-400'
                         : 'border-l-2 border-l-transparent';
 
                   return (
@@ -244,7 +244,7 @@ export default function CategoryComparison({
                                 : alert?.level === 'danger'
                                   ? 'text-red-600'
                                   : alert?.level === 'warning'
-                                    ? 'text-amber-600'
+                                    ? 'text-orange-600'
                                     : alert?.level === 'underBudget'
                                       ? 'text-emerald-600'
                                       : 'text-stone-700 dark:text-stone-300'

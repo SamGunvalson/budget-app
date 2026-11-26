@@ -106,7 +106,7 @@ function CategoriesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Categories" />
 
       {/* Main content */}
@@ -114,7 +114,7 @@ function CategoriesPage() {
         {/* Page header */}
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">
               Categories
             </h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
@@ -124,7 +124,7 @@ function CategoriesPage() {
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+            className="flex flex-shrink-0 items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -204,7 +204,7 @@ function CategoriesPage() {
           {mutationError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{mutationError}</p>}
           <div className="flex justify-end gap-3">
             <button type="button" disabled={archiveBusy} onClick={() => setArchivingCategory(null)} className="rounded-xl border border-stone-200/60 px-4 py-2 text-stone-600 dark:border-stone-700/60 dark:text-stone-300">Cancel</button>
-            <button type="button" disabled={archiveBusy} onClick={() => handleArchiveChange(archivingCategory)} className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white disabled:opacity-50">
+            <button type="button" disabled={archiveBusy} onClick={() => handleArchiveChange(archivingCategory)} className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-stone-950 disabled:opacity-50">
               {archiveBusy ? 'Saving…' : archivingCategory.is_archived ? 'Restore' : 'Archive'}
             </button>
           </div>

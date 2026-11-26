@@ -714,7 +714,7 @@ export default function TransactionsPage() {
 
   // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-linear-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Transactions" />
 
       {/* Main content */}
@@ -722,7 +722,7 @@ export default function TransactionsPage() {
         {/* Page header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Transactions</h1>
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Transactions</h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
               Track your income and expenses.
             </p>

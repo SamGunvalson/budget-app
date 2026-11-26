@@ -2622,7 +2622,7 @@ async function computePlanVsActualFromCache({
       map[catId] = {
         categoryId: catId,
         categoryName: cat?.name || "Unknown",
-        categoryColor: cat?.color || "#A8A29E",
+        categoryColor: cat?.color || "#949f95",
         categoryType: cat?.type || "expense",
         sortOrder: cat?.sort_order ?? 999,
         planned: 0,

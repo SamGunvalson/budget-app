@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { MonthYearProvider } from './contexts/MonthYearContext';
 import { queryClient } from './services/queryClient';
 import { initQueryBridge } from './services/queryBridge';
+import '@fontsource-variable/newsreader/wght.css';
 import './index.css';
 import App from './App.jsx';
 

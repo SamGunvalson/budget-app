@@ -91,7 +91,7 @@ export default function CashflowSummary({ summary, hasItems, unsetCards = [], on
                     onKeyDown={(e) => { if (e.key === 'Enter') saveCushion(); if (e.key === 'Escape') setEditingCushion(false); }}
                     className="w-24 rounded-lg border border-stone-200/80 bg-white px-2 py-1 text-right text-sm text-stone-800 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 dark:border-stone-700/60 dark:bg-stone-800 dark:text-stone-200"
                   />
-                  <button type="button" onClick={saveCushion} className="rounded-md bg-amber-500 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-600">Save</button>
+                  <button type="button" onClick={saveCushion} className="rounded-md bg-amber-500 px-2 py-1 text-xs font-semibold text-stone-950 hover:bg-amber-600">Save</button>
                 </span>
               ) : (
                 <button

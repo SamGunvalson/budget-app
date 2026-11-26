@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { formatCurrency, maskAccountName } from '../../utils/helpers';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 
 const SHORT_MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -81,7 +82,7 @@ export default function UpcomingTransactions({ transactions = [], onViewTransact
                   {/* Category color dot */}
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: tx.categories?.color || '#a8a29e' }}
+                    style={{ backgroundColor: tx.categories?.color || CATEGORY_FALLBACK_COLOR }}
                   />
 
                   {/* Date + description */}

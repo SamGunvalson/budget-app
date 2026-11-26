@@ -14,6 +14,7 @@ import { formatCurrency, isTrueIncome, isSpendingCredit, isIncomeDebit } from '.
 import { getRecurringTemplates } from '../../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../../utils/transactionGrouping';
 import Modal from '../common/Modal';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 
 const CHIP_LIMIT = 3;
 
@@ -220,7 +221,7 @@ export default function CalendarView({ month, year }) {
               <span
                 className={`mb-0.5 self-end text-xs font-medium leading-none ${
                   isCurrentDay
-                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white'
+                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-stone-950'
                     : inMonth
                       ? 'text-stone-700 dark:text-stone-300'
                       : 'text-stone-300 dark:text-stone-600'
@@ -234,7 +235,7 @@ export default function CalendarView({ month, year }) {
                 if (item.type === 'group') {
                   const groupNet = item.netAmount;
                   const isPositive = groupNet >= 0;
-                  const catColor = item.categoryColor || '#A8A29E';
+                  const catColor = item.categoryColor || CATEGORY_FALLBACK_COLOR;
                   return (
                     <button
                       key={`group-${item.groupKey}-${i}`}
@@ -258,7 +259,7 @@ export default function CalendarView({ month, year }) {
 
                 const t = item.transaction;
                 const type = classifyTx(t);
-                const catColor = t.categories?.color || '#A8A29E';
+                const catColor = t.categories?.color || CATEGORY_FALLBACK_COLOR;
                 const label = t.description || t.payee || 'Transaction';
                 const statusDashed = t.status === 'projected' || t.status === 'pending';
 
@@ -364,7 +365,7 @@ export default function CalendarView({ month, year }) {
                         <div className="ml-4 mt-1 space-y-1 border-l-2 border-violet-200 pl-3 dark:border-violet-800">
                           {item.children.map((t) => {
                             const type = classifyTx(t);
-                            const catColor = t.categories?.color || '#A8A29E';
+                            const catColor = t.categories?.color || CATEGORY_FALLBACK_COLOR;
                             return (
                               <div
                                 key={t.id}
@@ -397,7 +398,7 @@ export default function CalendarView({ month, year }) {
                 // Standalone transaction
                 const t = item.transaction;
                 const type = classifyTx(t);
-                const catColor = t.categories?.color || '#A8A29E';
+                const catColor = t.categories?.color || CATEGORY_FALLBACK_COLOR;
                 return (
                   <div
                     key={t.id}

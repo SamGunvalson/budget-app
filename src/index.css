@@ -1,8 +1,102 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Forest & Gold theme ───────────────────────────────────────────────
+ * The built-in `stone` scale is re-tinted to sage/forest neutrals and
+ * `amber` is warmed to gold, so existing utility classes pick up the new
+ * palette without markup changes. New code should prefer the semantic
+ * tokens below (bg-paper, text-ink, border-line, bg-forest, bg-gold …).
+ * See docs/STYLE_GUIDE.md → Color Palette.
+ */
+@theme {
+  --color-stone-50: #f8f7f2;
+  --color-stone-100: #eef0e8;
+  --color-stone-200: #dbdfd4;
+  --color-stone-300: #c3cabd;
+  --color-stone-400: #949f95;
+  --color-stone-500: #647167;
+  --color-stone-600: #4f5e54;
+  --color-stone-700: #3a453d;
+  --color-stone-800: #232b25;
+  --color-stone-900: #1a211c;
+  --color-stone-950: #121714;
+
+  --color-amber-50: #fefaee;
+  --color-amber-100: #fcf1d6;
+  --color-amber-200: #fae6b4;
+  --color-amber-300: #f7d688;
+  --color-amber-400: #f4c662;
+  --color-amber-500: #eeb444;
+  --color-amber-600: #c48a24;
+  --color-amber-700: #8f5f16;
+  --color-amber-800: #6f4a14;
+  --color-amber-900: #573a12;
+  --color-amber-950: #33220a;
+
+  --font-display: "Newsreader Variable", "Iowan Old Style", Baskerville, Georgia, serif;
+
+  --animate-slide-up-mobile: slide-up-mobile 0.25s ease-out;
+  @keyframes slide-up-mobile {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+}
+
 :root {
   --safe-area-top: env(safe-area-inset-top, 0px);
+
+  --app-paper: #f8f7f2;
+  --app-panel: #fffefa;
+  --app-ink: #1f322a;
+  --app-soft: #56665c;
+  --app-line: #dbdfd4;
+  --app-tint: #e4ece0;
+  --app-forest: #164b3c;
+  --app-gold: #e7c985;
+  --app-income: #256449;
+  --app-warn: #904119;
+  --app-warn-bg: #fae9d8;
+}
+
+.dark {
+  --app-paper: #171c19;
+  --app-panel: #202722;
+  --app-ink: #f1f3ea;
+  --app-soft: #b5c3b7;
+  --app-line: #3a453d;
+  --app-tint: #313f33;
+  --app-forest: #164739;
+  --app-income: #a7dbaf;
+  --app-warn: #f5b887;
+  --app-warn-bg: #49362c;
+}
+
+@theme inline {
+  --color-paper: var(--app-paper);
+  --color-panel: var(--app-panel);
+  --color-ink: var(--app-ink);
+  --color-soft: var(--app-soft);
+  --color-line: var(--app-line);
+  --color-tint: var(--app-tint);
+  --color-forest: var(--app-forest);
+  --color-gold: var(--app-gold);
+  --color-income: var(--app-income);
+  --color-warn: var(--app-warn);
+  --color-warn-bg: var(--app-warn-bg);
+}
+
+/* Page background for every full-screen layout. */
+@utility app-bg {
+  background-color: var(--app-paper);
+  background-image: radial-gradient(
+    120% 60% at 50% 0%,
+    color-mix(in oklab, var(--app-forest) 7%, transparent),
+    transparent 70%
+  );
+}
+
+body {
+  font-variant-numeric: tabular-nums;
 }
 
 .safe-area-pt {

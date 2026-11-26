@@ -1,21 +1,50 @@
 # Style Guide: Budget App
 
-A warm, modern design system for consistent and approachable UI across the budget app.
+**Forest & Gold**: a calm, premium design system for the budget app.
 
-**Design Philosophy**: Professional yet approachable, inspired by Wealthfront. Warm earth tones (amber, teal, stone), generous whitespace, elevated surfaces with shadows, subtle gradients, and smooth transitions.
+**Design Philosophy**: Quiet and premium. Sage/forest neutrals on warm "paper"
+surfaces, gold for primary actions, serif display titles, generous whitespace,
+hairline dividers, and restrained shadows. Each page keeps its own accent color.
+Reference mockups: `mockups/mobile-transactions.html` and
+`mockups/monthly-overview.html`. The rollout is tracked in
+[UI_OVERHAUL_PLAN.md](./UI_OVERHAUL_PLAN.md).
 
 ---
 
 ## Color Palette
 
-All colors use Tailwind CSS utilities. Use **stone** (warm gray) for neutrals, **amber** for primary actions, and **teal/emerald** for success/growth.
+All colors use Tailwind CSS utilities. The theme lives in `src/index.css`:
+
+- The built-in **`stone`** scale is re-tinted to sage/forest neutrals, and
+  **`amber`** is re-tinted to gold, through `@theme`. Existing `stone-*` and
+  `amber-*` classes therefore render in the Forest & Gold palette. Do not swap
+  them for `gray`, `slate`, `zinc`, or `neutral`.
+- **Semantic tokens** switch automatically with `.dark`. Prefer them in new code:
+
+| Token (utility suffix) | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `paper` | `#f8f7f2` | `#171c19` | Page background (see `app-bg`) |
+| `panel` | `#fffefa` | `#202722` | Cards, bars, docks |
+| `ink` | `#1f322a` | `#f1f3ea` | Primary text, inverse button fill |
+| `soft` | `#56665c` | `#b5c3b7` | Secondary text, labels |
+| `line` | `#dbdfd4` | `#3a453d` | Borders, hairline dividers |
+| `tint` | `#e4ece0` | `#313f33` | Secondary buttons, segmented controls, icon wells |
+| `forest` | `#164b3c` | `#164739` | Hero cards, brand mark |
+| `gold` | `#e7c985` | `#e7c985` | Brand mark bars, gold accents on forest |
+| `income` | `#256449` | `#a7dbaf` | Positive amounts |
+| `warn` / `warn-bg` | `#904119` / `#fae9d8` | `#f5b887` / `#49362c` | Over-budget text and chip |
+
+Usage: `bg-paper`, `text-ink`, `border-line`, `bg-forest`, and so on. Opacity
+modifiers work (`bg-forest/10`).
 
 ### Primary Colors
 
-- **Primary Amber**: `text-amber-500`, `bg-amber-500`, `border-amber-500`
+- **Primary Gold** (`amber` scale): `bg-amber-500` (`#eeb444`), hover `hover:bg-amber-600`
   - Use for: Primary buttons, active states, important CTAs, focus rings
-  - Hover: `hover:bg-amber-600`
-  - RGB: `#F59E0B`
+  - **Text on gold is always dark**: `text-stone-950`. Never `text-white`,
+    which fails contrast on gold.
+  - Gold text on light backgrounds uses `text-amber-700` or darker.
+  - No gradients on buttons; use a flat `bg-amber-500`.
 
 - **Success Teal/Emerald**: `text-teal-500`, `bg-emerald-500`
   - Use for: Positive changes, income, growth indicators, feature icons
@@ -39,7 +68,7 @@ Primary CTAs still use amber.
 
 Monthly expense cells compare actual cents with the category's allocation in
 `useAnnualBudgetData(year)[month].allocations[categoryId]`. Use the saved budget
-thresholds: emerald below the under-budget threshold, amber at/above warning,
+thresholds: emerald below the under-budget threshold, orange at/above warning,
 red at/above danger, and neutral between under-budget and warning. Use
 `bg-*-100` / `dark:bg-*-900/40` with `text-*-800` / `dark:text-*-300`
 for readable status colors in both themes.
@@ -55,8 +84,10 @@ The legend must distinguish unbudgeted spending from the normal threshold range.
   - Use for: Errors, failed transactions, negative balances
   - Text on error bg: `text-red-700`
 
-- **Warning Amber**: `text-amber-600`, `bg-amber-50`
-  - Use for: Caution states, warnings
+- **Warning Orange**: `text-orange-600`, `bg-orange-50`, `border-orange-200`
+  (or the semantic `text-warn` / `bg-warn-bg`)
+  - Use for: Caution states, warnings, budget-threshold "warning", over-budget chips
+  - Do **not** use amber/gold for warnings; gold is reserved for primary actions.
 
 ### Semantic Colors (Categories)
 
@@ -76,8 +107,9 @@ The legend must distinguish unbudgeted spending from the normal threshold range.
 
 ### Neutral Scale (Warm Stone)
 
-- **Page Background**: `bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100`
-- **Card Background**: `bg-white`
+- **Page Background**: `app-bg` (paper color with a faint forest glow at the
+  top; switches with dark mode by itself)
+- **Card Background**: `bg-white` (or `bg-panel` in new code)
 - **Borders**: `border-stone-200/60` (translucent for softer look)
 - **Text Primary**: `text-stone-900`
 - **Text Secondary**: `text-stone-600`
@@ -93,19 +125,23 @@ Establish clear hierarchy with weight and size variations.
 
 ### Font Stack
 
-```css
-font-family:
-  -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
-  "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-```
-
-_(Tailwind default - no custom font needed)_
+- **Body/UI**: Tailwind's default system sans stack (no change).
+- **Display** (`font-display`): **Newsreader** variable serif, bundled through
+  `@fontsource-variable/newsreader` (imported in `src/main.jsx`, precached by
+  the PWA, and identical on Android). Fallbacks: Iowan Old Style, Baskerville,
+  Georgia.
+  - Use it for page H1s, the wordmark, and large hero money figures only.
+    Never use it for body text, labels, or tables.
+  - Use weight 400–600 (`font-medium` for titles). Serif type looks heavy at
+    `font-bold`.
+- **Numbers**: `tabular-nums` is set on `<body>`, so amounts line up in columns.
+- **Eyebrow** (small label above a title): `text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500`.
 
 ### Type Scale
 
 | Usage               | Tailwind Class           | Weight | Size | Line Height |
 | ------------------- | ------------------------ | ------ | ---- | ----------- |
-| **Page Title**      | `text-3xl font-bold`     | 700    | 30px | 1.333       |
+| **Page Title**      | `font-display text-3xl font-medium tracking-tight` | 500 | 30px | 1.333 |
 | **Section Heading** | `text-2xl font-semibold` | 600    | 24px | 1.333       |
 | **Subsection**      | `text-lg font-semibold`  | 600    | 18px | 1.333       |
 | **Body Text**       | `text-base font-normal`  | 400    | 16px | 1.5         |
@@ -117,7 +153,7 @@ _(Tailwind default - no custom font needed)_
 **Page Title**:
 
 ```jsx
-<h1 className="text-3xl font-bold tracking-tight text-stone-900">
+<h1 className="font-display text-3xl font-medium tracking-tight text-stone-900 dark:text-stone-100">
   Budget Overview
 </h1>
 ```
@@ -175,7 +211,7 @@ Use Tailwind's spacing scale consistently. **Balanced approach**: not too spacio
 ```jsx
 <div className="max-w-4xl mx-auto px-4">
   {/* Page title */}
-  <h1 className="text-3xl font-bold tracking-tight text-stone-900 mb-8">
+  <h1 className="font-display text-3xl font-medium tracking-tight text-stone-900 mb-8">
     Reports
   </h1>
 
@@ -261,7 +297,7 @@ export default function MyPage() {
 **Primary Button** (main call-to-action):
 
 ```jsx
-<button className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]">
+<button className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]">
   Add Transaction
 </button>
 ```
@@ -372,7 +408,7 @@ When adding new sub-controls inside a Reports section, reference this table to p
 
   {/* Form actions */}
   <div className="flex gap-3 pt-4">
-    <button className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600">
+    <button className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600">
       Save
     </button>
     <button className="flex-1 rounded-lg border border-stone-200 bg-white px-6 py-2 text-sm font-medium text-stone-600 transition-all hover:bg-stone-50">
@@ -514,7 +550,7 @@ When adding new sub-controls inside a Reports section, reference this table to p
 Every authenticated sub-page must follow this exact navigation pattern: a clickable "Budget App" logo+text linking back to the home page (`/app`), a vertical divider, the current page name, and a Sign Out button on the right.
 
 ```jsx
-<div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100">
+<div className="app-bg min-h-screen">
   {/* Navigation */}
   <nav className="sticky top-0 z-10 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md">
     <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -523,10 +559,8 @@ Every authenticated sub-page must follow this exact navigation pattern: a clicka
           to="/app"
           className="flex items-center gap-3 transition-opacity hover:opacity-80"
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-md shadow-amber-200/50">
-            {/* $ Logo icon */}
-          </div>
-          <span className="text-lg font-bold text-stone-900">Budget App</span>
+          <BrandMark /> {/* src/components/common/BrandMark.jsx — forest tile, gold bars */}
+          <span className="font-display text-xl font-semibold tracking-tight text-stone-900">Budget App</span>
         </Link>
         {/* Vertical divider + page name breadcrumb */}
         <span className="hidden h-4 w-px bg-stone-300 dark:bg-stone-600 sm:block" />
@@ -544,7 +578,7 @@ Every authenticated sub-page must follow this exact navigation pattern: a clicka
   {/* Main content */}
   <div className="max-w-6xl mx-auto px-4 py-8 sm:px-6">
     {/* Page heading */}
-    <h1 className="text-3xl font-bold tracking-tight text-stone-900 mb-8">
+    <h1 className="font-display text-3xl font-medium tracking-tight text-stone-900 mb-8">
       Page Title
     </h1>
 
@@ -685,7 +719,7 @@ Use Tailwind CSS. Reference existing components in src/components/
 
 ## Dark Mode
 
-The app supports dark mode with **dark as the default**. The `.dark` class is toggled on `<html>` via `ThemeContext`. Users can switch between light and dark in **Settings → Appearance**.
+The app supports dark mode with **dark as the default**. In dark mode, the re-tinted `stone` scale gives green-black surfaces (`stone-800` `#232b25`, `stone-900` `#1a211c`, `stone-950` `#121714`). The `.dark` class is toggled on `<html>` via `ThemeContext`. Users can switch between light and dark in **Settings → Appearance**.
 
 ### How It Works
 
@@ -708,7 +742,7 @@ When adding `dark:` variants, follow this mapping consistently:
 | `bg-stone-50/50` (inputs)                                    | `dark:bg-stone-700/50`                                              |
 | `bg-stone-50` (section bg)                                   | `dark:bg-stone-700/30` or `dark:bg-stone-900`                       |
 | `bg-stone-100` (icon wrappers)                               | `dark:bg-stone-700`                                                 |
-| Page gradient `from-stone-50 via-amber-50/20 to-stone-100`   | `dark:from-stone-950 dark:via-stone-900 dark:to-stone-950`          |
+| Page background `app-bg`                                     | none needed (switches with `.dark`)                                 |
 | `text-stone-900`                                             | `dark:text-stone-100`                                               |
 | `text-stone-800`                                             | `dark:text-stone-200`                                               |
 | `text-stone-700`                                             | `dark:text-stone-300`                                               |
@@ -760,7 +794,7 @@ Before considering a component "done":
 - [ ] Inputs have rounded-xl, subtle background, amber focus rings
 - [ ] Cards use rounded-2xl, shadow-md, and hover lift
 - [ ] Error/success messages use rounded-xl with appropriate colors
-- [ ] Page uses gradient background (`from-stone-50 via-amber-50/20 to-stone-100`)
+- [ ] Page root uses `app-bg min-h-screen`
 - [ ] Entrance animations applied (animate-fade-in-up)
 - [ ] Mobile responsive (use `md:` and `lg:` breakpoints)
 - [ ] Consistent with existing components
@@ -769,6 +803,6 @@ Before considering a component "done":
 
 ---
 
-**Style Guide Version**: 3.0
-**Design Inspiration**: Wealthfront — warm earth tones, elevated surfaces
-**Last Updated**: February 27, 2026
+**Style Guide Version**: 4.0 (Forest & Gold)
+**Design Inspiration**: quiet premium finance — forest/sage neutrals, gold accents, serif display
+**Last Updated**: November 26, 2026

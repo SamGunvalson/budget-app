@@ -337,7 +337,7 @@ export default function AccountsPage() {
 
   // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Accounts" />
 
       {/* Main content */}
@@ -345,7 +345,7 @@ export default function AccountsPage() {
         {/* Page header */}
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Accounts</h1>
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Accounts</h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
               Track your accounts and monitor your net worth.
             </p>
@@ -354,7 +354,7 @@ export default function AccountsPage() {
             <button
               type="button"
               onClick={() => setShowManagerModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -408,7 +408,7 @@ export default function AccountsPage() {
               onClick={() => setActiveSection(tab.key)}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 activeSection === tab.key
-                  ? 'bg-amber-500 text-white shadow-sm shadow-amber-200/50'
+                  ? 'bg-amber-500 text-stone-950 shadow-sm shadow-amber-200/50'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >
@@ -436,17 +436,17 @@ export default function AccountsPage() {
 
             {/* Negative asset balance warning */}
             {!isLoading && hasNegativeAssets && (
-              <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
-                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 dark:border-orange-800 dark:bg-orange-950">
+                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
                 <div>
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                  <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
                     {negativeAssets.length === 1
                       ? `"${maskAccountName(negativeAssets[0].name)}" has a negative balance`
                       : `${negativeAssets.length} asset accounts have negative balances`}
                   </p>
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1 text-xs text-orange-700 dark:text-orange-400">
                     Asset accounts with negative balances may indicate that imported transactions have income/expense reversed.
                     Review the transactions on {negativeAssets.length === 1 ? 'this account' : 'these accounts'} and consider re-importing with corrected column mapping.
                   </p>

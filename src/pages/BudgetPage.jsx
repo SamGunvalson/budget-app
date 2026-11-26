@@ -10,7 +10,7 @@ export default function BudgetPage() {
   useEffect(() => { document.title = 'Budget App | Budgets'; }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Budgets" />
 
       {/* Content */}
@@ -18,7 +18,7 @@ export default function BudgetPage() {
         {/* Page header + view toggle */}
         <div className="animate-fade-in mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Budget Planner</h1>
+            <h1 className="text-3xl font-display font-medium tracking-tight text-stone-900 dark:text-stone-100">Budget Planner</h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
               {viewMode === 'monthly'
                 ? 'Set your monthly income and allocate amounts to each category.'

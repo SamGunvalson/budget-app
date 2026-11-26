@@ -336,7 +336,7 @@ export default function RecurringGroupForm({
   const typeBadge = (type, active) => {
     const base = 'rounded px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none transition-all cursor-pointer';
     if (!active) return `${base} text-stone-400 hover:bg-stone-100 dark:text-stone-500 dark:hover:bg-stone-700`;
-    if (type === 'expense') return `${base} bg-amber-500 text-white shadow-sm`;
+    if (type === 'expense') return `${base} bg-amber-500 text-stone-950 shadow-sm`;
     if (type === 'income') return `${base} bg-emerald-500 text-white shadow-sm`;
     return `${base} bg-blue-500 text-white shadow-sm`;
   };
@@ -1045,7 +1045,7 @@ export default function RecurringGroupForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSaving ? 'Saving…' : isEditing ? 'Update Group' : 'Create Group'}
         </button>

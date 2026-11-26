@@ -30,7 +30,7 @@ const ServerSetupPage = lazy(() => import('./pages/ServerSetupPage'));
 
 function LoadingSpinner() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="flex min-h-screen items-center justify-center app-bg">
       <div className="h-10 w-10 animate-spin rounded-full border-4 border-stone-200 border-t-amber-500 dark:border-stone-700 dark:border-t-amber-500" />
     </div>
   );

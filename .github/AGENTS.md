@@ -114,8 +114,9 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
 ### Styling
 
 - Dark mode is default. All components must support both light and dark variants.
-- Color palette: **stone** neutrals, **amber** primary/CTA, **teal/emerald** income/success, **violet** analytics, **red** errors/expenses.
-- Background: `bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100` (light) / `dark:from-stone-950 dark:via-stone-900 dark:to-stone-950`
+- Palette **Forest & Gold** (tokens in `src/index.css`): `stone-*` is re-tinted to sage/forest neutrals and `amber-*` to gold. Keep using those scales, or the semantic tokens (`paper`, `panel`, `ink`, `soft`, `line`, `tint`, `forest`, `gold`, `income`, `warn`). **teal/emerald** income/success, **violet** analytics, **red** errors/expenses, **orange** warnings (never amber).
+- Text on gold (`bg-amber-500`) is `text-stone-950`, never `text-white`. No gradient buttons.
+- Page roots use `app-bg min-h-screen`. Page H1s use `font-display font-medium` (bundled Newsreader serif); do not use the serif for body text.
 - Use `border-stone-200/60` (translucent) for borders — not solid grays.
 
 ### File naming
