@@ -185,6 +185,64 @@ export async function clearAllOfflineData() {
   _pendingCountInit = null;
 }
 
+// ── Mirror ownership ──
+//
+// The mirror (and the pending edits stored in it) belongs to one user on one
+// server. Explicit sign-out wipes it, but a session can also end without one
+// (refresh token expired or revoked), leaving the rows behind for whoever
+// signs in next. The owner is recorded in sync_meta under a key no table
+// uses, so `clearAllOfflineData` drops it along with everything else.
+const OWNER_META_KEY = "__owner__";
+// Stores that carry `user_id`, checked when a mirror predates owner records.
+const USER_SCOPED_TABLES = [
+  "transactions",
+  "categories",
+  "budget_plans",
+  "accounts",
+  "user_preferences",
+  "recurring_templates",
+];
+
+/**
+ * Make the mirror safe for `userId` on `serverOrigin` before anything reads
+ * it: when it belongs to someone else, wipe it, including their queued edits.
+ * The same user signing back in keeps their mirror and pending edits.
+ *
+ * @param {string} userId
+ * @param {string|null} serverOrigin
+ * @returns {Promise<boolean>} true when the previous mirror was wiped
+ */
+export async function claimOfflineDataFor(userId, serverOrigin = null) {
+  const owner = await db.sync_meta.get(OWNER_META_KEY);
+  let foreign;
+  if (owner) {
+    foreign = owner.user_id !== userId || owner.server_origin !== serverOrigin;
+  } else {
+    // Mirror written before owners were recorded: wipe it if any row was
+    // written for another user. Server changes already wiped it then.
+    foreign = false;
+    for (const name of USER_SCOPED_TABLES) {
+      const other = await db
+        .table(name)
+        .filter((row) => row.user_id != null && row.user_id !== userId)
+        .first();
+      if (other) {
+        foreign = true;
+        break;
+      }
+    }
+  }
+  if (foreign) await clearAllOfflineData();
+  if (foreign || !owner) {
+    await db.sync_meta.put({
+      table_name: OWNER_META_KEY,
+      user_id: userId,
+      server_origin: serverOrigin,
+    });
+  }
+  return foreign;
+}
+
 // ── Local write log ──
 //
 // When each row was last written to the mirror by this tab, on the local

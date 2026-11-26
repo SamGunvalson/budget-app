@@ -15,13 +15,14 @@ roles/auth compatibility first, these seven setup scripts in order, then grants:
 2. [split_expenses.sql](./split_expenses.sql) - partnerships,
    shared expenses, and partner-email RPC.
 3. [add_updated_at.sql](./add_updated_at.sql) - remaining sync
-   timestamps and update triggers.
+   timestamps and server-side timestamp triggers.
 4. [category_archiving.sql](./category_archiving.sql) - archive/
    restore RPC and reference guards.
 5. [phase3_aggregations.sql](./phase3_aggregations.sql) - account/
    reporting RPCs and supporting indexes.
 6. [phase4_mutations.sql](./phase4_mutations.sql) - batched
-   writes and the closed-account insert guard.
+   writes, atomic transfer edits, the sync deletion feed, and the
+   closed-account insert guard.
 7. [rls_complete.sql](./rls_complete.sql) - complete policy
    definitions, after all referenced tables exist.
 

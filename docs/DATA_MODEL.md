@@ -200,6 +200,14 @@ owned live rows under SECURITY DEFINER with fixed search path. Execution is
 revoked from PUBLIC/anon and granted to authenticated. Repeat/missing-ID calls
 do not change rows. Never restore the legacy permissive FOR ALL policy.
 
+`get_deleted_transaction_ids(p_since TIMESTAMPTZ)` returns a JSONB array of the
+ids (no other columns) of the caller's soft-deleted transactions with
+`updated_at > p_since`, ordered by `(updated_at, id)`; a NULL `p_since` returns
+`[]`. It is SECURITY DEFINER with fixed search path because SELECT RLS hides
+deleted rows; ownership (`user_id = auth.uid()`) is explicit. Execution is
+revoked from PUBLIC/anon and granted to authenticated. Incremental sync uses it
+to prune transactions deleted on other devices.
+
 `soft_delete_recurring_projections(p_template_ids UUID[], p_transaction_ids UUID[],
 p_from_date DATE)` returns the integer count of soft-deleted rows. It requires
 authentication, a non-null local-date cutoff, and at least one non-null ID array.
@@ -362,6 +370,7 @@ queries in components. SQL return declarations and service joins define exact sh
 | `get_monthly_spending_trend` | `p_months INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL`, `p_as_of DATE DEFAULT NULL` | Rows `{key, label, year, month, spent, income, tx_count}` |
 | `get_yearly_spending_trend` | `p_years INTEGER`, `p_end_month INTEGER DEFAULT NULL`, `p_end_year INTEGER DEFAULT NULL`, `p_as_of DATE DEFAULT NULL` | Rows `{year, spent, income, tx_count}` |
 | `bulk_update_transactions` | `p_updates JSONB` array | JSONB updated rows with category/account joins; absent keys unchanged, explicit null handled per field |
+| `update_transfer_legs` | `p_updates JSONB` array of exactly two `{id, ...fields}` objects | JSONB updated rows with category/account joins, in input order. Both ids must be the caller's two live legs of one `transfer_group_id`; the group's live legs are locked `FOR UPDATE` and updated in one statement, so a failure changes neither. Fields as `bulk_update_transactions` plus `is_income`; `amount_locked` can only become true. SECURITY INVOKER, authenticated-only |
 | `bulk_update_category_sort_order` | `p_items JSONB` array of ID/sort-order objects | Void |
 | `upsert_recurring_group` | `p_parent_id UUID`, `p_parent JSONB`, `p_children JSONB` | Parent UUID; service refetches nested/joined templates. Children with a known `id` are updated, others inserted; on update, previously active children absent from the input are deactivated (`is_active = false`) |
 
@@ -374,8 +383,11 @@ Reports exclude these rows by default and offer an "Include upcoming" toggle.
 The aggregation script also defines immutable `_is_asset_account(p_type TEXT)`.
 The mutation script defines invoker `assert_account_open()` and its transaction
 BEFORE INSERT trigger, rejecting inserts into closed accounts.
-The sync migration defines `set_updated_at()` and category/budget-item/recurring
-UPDATE triggers. Archive/partner/soft-delete functions are documented with their tables.
+The sync migration defines `set_updated_at()` and BEFORE INSERT OR UPDATE
+triggers on all seven synced tables (transactions, categories, accounts, budget
+plans/items, preferences, recurring templates), so `updated_at` is always server
+time regardless of what a client sends. It also adds
+`idx_transactions_user_updated (user_id, updated_at, id)` for incremental pulls. Archive/partner/soft-delete functions are documented with their tables.
 
 `is_income` alone cannot classify reports: genuine income requires an income
 category, spending-category credits reduce spend, and income-category debits
@@ -404,19 +416,26 @@ and `[user_id+preference_key]`.
 | `_action` | `create`, `update`, or `delete` |
 | `_offlineAt` | ISO local mutation timestamp used in conflict resolution |
 | `_archiveRestore` | Local category-restore marker; stripped before backend writes |
-| `sync_meta` | Key `table_name`; `last_synced` ISO pull watermark |
+| `sync_meta` | Key `table_name`; `last_synced` ISO pull watermark. The reserved key `__owner__` records the mirror's `user_id` and `server_origin` |
 | `rpc_cache` | Key `key`; cached `value` and `updated_at` for derived RPC results |
 
 Sync strips local metadata and joined objects before backend writes, then clears
 pending flags on success. Full pulls record a watermark; incremental pulls
 use `.gt('updated_at', last_synced)` and advance to the newest returned timestamp.
-Empty incremental pulls do not advance it. Conflicts use last-write-wins
+Empty incremental pulls do not advance it. Transaction pulls also call
+`get_deleted_transaction_ids` with the same cutoff, because RLS hides
+soft-deleted rows from the incremental SELECT.
+
+Before a session is exposed to the app, `AuthContext` calls
+`claimOfflineDataFor(userId, serverOrigin)`: a mirror owned by another user or
+server, including its pending edits, is wiped. The same user signing back in
+after an expired session keeps their mirror and queued edits. Conflicts use last-write-wins
 (server `updated_at` versus local `_offlineAt`). Active/deleted flags allow
 local removal reconciliation subject to backend row visibility.
 
 The updated-at migration is required: base creation alone omits timestamps on
 categories, budget items, and recurring templates. It adds those columns and
-their update triggers; other write paths maintain timestamps in services/RPCs.
+the server-side timestamp triggers for every synced table.
 
 React Query is the in-memory layer above Dexie, with five-minute stale time and
 30-minute garbage collection in [queryClient](../src/services/queryClient.js).
@@ -445,7 +464,7 @@ and repairs.
 | [add_updated_at.sql](../sql_scripts/add_updated_at.sql) | Sync columns/triggers; required on fresh installs and unapplied existing databases |
 | [category_archiving.sql](../sql_scripts/category_archiving.sql) | Archive column/RPC/guards; after core base and updated-at migration |
 | [phase3_aggregations.sql](../sql_scripts/phase3_aggregations.sql) | Aggregation RPCs/helper/indexes; after required columns exist |
-| [phase4_mutations.sql](../sql_scripts/phase4_mutations.sql) | Batched writes and closed-account guard; follows aggregation installation |
+| [phase4_mutations.sql](../sql_scripts/phase4_mutations.sql) | Batched writes, atomic transfer-leg updates, transaction deletion feed, and closed-account guard; follows aggregation installation |
 | [rls_complete.sql](../sql_scripts/rls_complete.sql) | Drops/recreates complete policies; requires partnership/split tables too |
 | [migrations/recurring_occurrence_date.sql](../sql_scripts/migrations/recurring_occurrence_date.sql) | Existing-row backfill and dedup-index replacement; column and both indexes now in core base |
 | [migrations/transactions_soft_delete_rls.sql](../sql_scripts/migrations/transactions_soft_delete_rls.sql) | Repairs legacy transaction RLS and installs soft-delete RPC; effects in current core base |
@@ -459,6 +478,7 @@ and repairs.
 | [migrations/partnership_seen.sql](../sql_scripts/migrations/partnership_seen.sql) | Adds partnership seen timestamps; folded into split base |
 | [migrations/split_dedup.sql](../sql_scripts/migrations/split_dedup.sql) | Soft-deletes duplicates and adds live transaction uniqueness; index in split base |
 | [migrations/split_fix_rls.sql](../sql_scripts/migrations/split_fix_rls.sql) | Repairs split soft-delete policies; folded into split base and complete RLS |
+| [migrations/sync_integrity.sql](../sql_scripts/migrations/sync_integrity.sql) | Server-stamped `updated_at` triggers on all synced tables, the incremental-pull index, `update_transfer_legs`, and `get_deleted_transaction_ids`; included in current updated-at and phase-4 scripts |
 | [migrations/partnership_hardening_rls.sql](../sql_scripts/migrations/partnership_hardening_rls.sql) | Pending-only partnership inserts, `partnerships_guard` trigger, one-active-partnership indexes, split payer/transaction checks; folded into split base and complete RLS |
 
 The [local SQL README](../sql_scripts/local/README.md) documents local roles,
@@ -475,6 +495,6 @@ for local compatibility and RLS rules. The
 [security guide](./SECURITY.md) explains invariants; the
 [archive](./archive/README.md) contains historical plans, not current contracts.
 
-**Document version**: 3.9
+**Document version**: 3.10
 
-**Last updated**: 2026-11-25
+**Last updated**: 2026-11-26

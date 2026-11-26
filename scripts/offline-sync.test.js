@@ -107,6 +107,9 @@ class FakeTable {
   async toArray() {
     return [...this.rows.values()].map(clone);
   }
+  filter(fn) {
+    return new FakeCollection(this, fn);
+  }
   where(field) {
     // "[a+b]" is a compound index, matched against an array of values.
     const fields = field.startsWith("[") ? field.slice(1, -1).split("+") : null;
@@ -2111,10 +2114,15 @@ test("OFF-12: a push in which nothing gets through is not retried on a timer", a
 
 // The real sync engine over the fake Dexie with a backend that serves pulls.
 // `serve(table, since)` returns the rows for one pull request.
-async function loadSyncForPull(serve) {
+async function loadSyncForPull(serve, { deletedIds = async () => [] } = {}) {
   const base = await loadLocalStore();
   const requests = [];
   const api = {
+    async rpc(name, args) {
+      assert.equal(name, "get_deleted_transaction_ids");
+      requests.push({ rpc: name, since: args.p_since });
+      return { data: await deletedIds(args.p_since), error: null };
+    },
     from(table) {
       const request = { table, since: null };
       const query = {
@@ -2708,4 +2716,167 @@ test("budget items: a bulk upsert onto an unsynced plan is queued behind it", as
   const stored = await db.budget_items.get(item.id);
   assert.equal(stored._action, "create");
   assert.equal(stored.planned_amount, 40000);
+});
+
+// ── Mirror ownership (a session that ends without sign-out) ──
+
+test("claimOfflineDataFor wipes another user's rows and queued edits", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  assert.equal(await offlineDb.claimOfflineDataFor("user-a", "https://s"), false);
+  await db.transactions.put({ id: "tx-a", user_id: "user-a", _offline: 1, _action: "create" });
+  await db.accounts.put({ id: "acct-a", user_id: "user-a" });
+
+  assert.equal(await offlineDb.claimOfflineDataFor("user-b", "https://s"), true);
+  assert.equal(await db.transactions.count(), 0);
+  assert.equal(await db.accounts.count(), 0);
+  assert.equal(await offlineDb.getPendingSyncCount(), 0);
+  assert.equal((await db.sync_meta.get("__owner__")).user_id, "user-b");
+});
+
+test("claimOfflineDataFor keeps the same user's mirror and pending edits", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  await offlineDb.claimOfflineDataFor("user-a", "https://s");
+  await db.transactions.put({ id: "tx-a", user_id: "user-a", _offline: 1, _action: "update" });
+
+  assert.equal(await offlineDb.claimOfflineDataFor("user-a", "https://s"), false);
+  assert.equal(await db.transactions.count(), 1);
+});
+
+test("claimOfflineDataFor treats another server as another owner", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  await offlineDb.claimOfflineDataFor("user-a", "https://one");
+  await db.accounts.put({ id: "acct-a", user_id: "user-a" });
+
+  assert.equal(await offlineDb.claimOfflineDataFor("user-a", "https://two"), true);
+  assert.equal(await db.accounts.count(), 0);
+});
+
+test("claimOfflineDataFor wipes an unowned legacy mirror holding other users' rows", async () => {
+  const { offlineDb, db } = await loadOfflineDb();
+  await db.categories.put({ id: "cat-a", user_id: "user-a" });
+  assert.equal(await offlineDb.claimOfflineDataFor("user-b", "https://s"), true);
+  assert.equal(await db.categories.count(), 0);
+
+  const fresh = await loadOfflineDb();
+  await fresh.db.categories.put({ id: "cat-b", user_id: "user-b" });
+  assert.equal(await fresh.offlineDb.claimOfflineDataFor("user-b", "https://s"), false);
+  assert.equal(await fresh.db.categories.count(), 1);
+});
+
+// ── Transfer edits are a single atomic RPC ──
+
+async function loadTransferEditService({ rpcError = null } = {}) {
+  const legs = [
+    { id: "out-1", transfer_group_id: "g-1", is_income: false, amount: 5000, categories: { type: "transfer" } },
+    { id: "in-1", transfer_group_id: "g-1", is_income: true, amount: 5000, categories: { type: "transfer" } },
+  ];
+  const calls = [];
+  const api = {
+    from(table) {
+      let single = false;
+      const query = {
+        update() {
+          calls.push({ kind: "update", table });
+          return query;
+        },
+        single() {
+          single = true;
+          return query;
+        },
+        then(resolve, reject) {
+          return Promise.resolve({ data: single ? legs[0] : legs, error: null }).then(resolve, reject);
+        },
+      };
+      for (const method of ["select", "eq", "is"]) query[method] = () => query;
+      return query;
+    },
+    async rpc(name, args) {
+      calls.push({ kind: "rpc", name, args });
+      if (rpcError) return { data: null, error: rpcError };
+      return { data: args.p_updates.map((u) => ({ ...u })), error: null };
+    },
+  };
+  const { offlineDb } = await loadOfflineDb();
+  const service = await load(sources.transactions, {
+    "./backend": { db: api, getCurrentUser: async () => ({ id: "user-1" }) },
+    "./offlineDb": { ...offlineDb },
+    "../utils/ids": { ...(await load(sources.ids, {})) },
+    "../utils/statementPayments": { ...statementPayments },
+  });
+  return { service, calls };
+}
+
+test("transfer edits write both legs in one update_transfer_legs call", async () => {
+  const { service, calls } = await loadTransferEditService();
+  const base = { from_account_id: "a-1", to_account_id: "a-2", description: " Move ", transaction_date: "2026-03-01", category_id: "c-x" };
+
+  const sym = await service.updateTransfer("out-1", { ...base, amount: 6000 });
+  const asym = await service.updateAsymmetricTransfer("in-1", { ...base, from_amount: 6000, to_amount: 5900 });
+
+  assert.deepEqual(calls.filter((c) => c.kind === "update"), []);
+  const rpcs = calls.filter((c) => c.kind === "rpc");
+  assert.deepEqual(rpcs.map((c) => c.name), ["update_transfer_legs", "update_transfer_legs"]);
+  assert.deepEqual(rpcs[0].args.p_updates.map((u) => [u.id, u.account_id, u.amount, u.description]), [
+    ["out-1", "a-1", 6000, "Move"],
+    ["in-1", "a-2", 6000, "Move"],
+  ]);
+  assert.deepEqual(rpcs[1].args.p_updates.map((u) => [u.id, u.amount]), [["out-1", 6000], ["in-1", 5900]]);
+  assert.deepEqual(sym.map((r) => r.id), ["out-1", "in-1"]);
+  assert.deepEqual(asym.map((r) => r.id), ["out-1", "in-1"]);
+});
+
+test("a rejected transfer edit surfaces the RPC error and issues no per-leg writes", async () => {
+  const failure = { message: "Transfer legs are malformed.", code: "23514" };
+  const { service, calls } = await loadTransferEditService({ rpcError: failure });
+  await assert.rejects(
+    service.updateTransfer("out-1", {
+      from_account_id: "a-1", to_account_id: "a-2", amount: 1, transaction_date: "2026-03-01", category_id: "c-x",
+    }),
+    (err) => err === failure,
+  );
+  assert.deepEqual(calls.map((c) => c.kind), ["rpc"]);
+});
+
+// ── Deletion feed: soft-deleted transactions are invisible to SELECT ──
+
+test("an incremental pull removes transactions deleted on another device", async () => {
+  setOnline(true);
+  const t0 = Date.now() - 30 * MINUTE;
+  const server = [
+    { id: "t1", amount: 100, deleted_at: null, updated_at: iso(t0) },
+    { id: "t2", amount: 200, deleted_at: null, updated_at: iso(t0) },
+  ];
+  const deleted = [];
+  const { sync, db, notified, requests } = await loadSyncForPull(
+    (table, since) => (table === "transactions" ? server.filter((r) => !since || r.updated_at > since) : []),
+    { deletedIds: async () => deleted },
+  );
+  await sync.pullAll({ full: true });
+  assert.equal(await db.transactions.count(), 2);
+
+  // Deleted elsewhere: RLS drops it from the incremental SELECT entirely.
+  server.splice(1, 1);
+  deleted.push("t2");
+  notified.length = 0;
+  requests.length = 0;
+  await sync.pullAll();
+
+  assert.equal(await db.transactions.get("t2"), undefined);
+  assert.ok(await db.transactions.get("t1"));
+  assert.ok(notified.includes("transactions"));
+  const rpc = requests.find((r) => r.rpc);
+  assert.equal(rpc.since, requests.find((r) => r.table === "transactions").since);
+});
+
+test("the deletion feed never removes a row with a pending local edit", async () => {
+  setOnline(true);
+  const t0 = Date.now() - 30 * MINUTE;
+  const { sync, db } = await loadSyncForPull(
+    (table) => (table === "transactions" ? [{ id: "t1", amount: 100, deleted_at: null, updated_at: iso(t0) }] : []),
+    { deletedIds: async () => ["t1"] },
+  );
+  await sync.pullAll({ full: true });
+  await db.transactions.update("t1", { _offline: 1, _action: "update" });
+  await sync.pullAll();
+  assert.ok(await db.transactions.get("t1"));
 });

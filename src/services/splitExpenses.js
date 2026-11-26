@@ -51,16 +51,31 @@ export function computeShares(
  * @returns {Promise<Array>} List of split expenses, newest first
  */
 export async function getSplitExpenses(partnershipId) {
-  const { data, error } = await db
-    .from("split_expenses")
-    .select("*")
-    .eq("partnership_id", partnershipId)
-    .is("deleted_at", null)
-    .order("expense_date", { ascending: false })
-    .order("created_at", { ascending: false });
+  return fetchAllPages((from, to) =>
+    db
+      .from("split_expenses")
+      .select("*")
+      .eq("partnership_id", partnershipId)
+      .is("deleted_at", null)
+      .order("expense_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      // Unique tiebreaker so pages neither skip nor repeat rows.
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+}
 
-  if (error) throw error;
-  return data ?? [];
+// PostgREST caps every response at db-max-rows (1000 in docker-compose.yml),
+// silently truncating larger results. Page until a short page comes back.
+const PAGE_SIZE = 1000;
+async function fetchAllPages(buildQuery) {
+  let all = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    all = all.concat(data ?? []);
+    if (!data || data.length < PAGE_SIZE) return all;
+  }
 }
 
 /**
@@ -232,10 +247,20 @@ export async function updateSplitExpense({
 export async function getBalance(partnershipId) {
   const user = await getCurrentUser();
   const expenses = await getSplitExpenses(partnershipId);
+  return computeBalance(expenses, user.id);
+}
 
+/**
+ * Net balance (see getBalance) for an already-fetched, complete list of a
+ * partnership's active split expenses.
+ * @param {Array} expenses
+ * @param {string} userId - the current user's id
+ * @returns {number} Net balance in cents
+ */
+export function computeBalance(expenses, userId) {
   let balance = 0;
   for (const exp of expenses) {
-    const iPaid = exp.paid_by_user_id === user.id;
+    const iPaid = exp.paid_by_user_id === userId;
 
     if (exp.is_settlement) {
       // Settlement: payer is paying off debt to the other person.
@@ -273,15 +298,17 @@ export async function getSplitByTransaction(transactionId) {
  * @returns {Promise<Set<string>>} Set of transaction IDs that are split
  */
 export async function getSplitTransactionIds(partnershipId) {
-  const { data, error } = await db
-    .from("split_expenses")
-    .select("transaction_id")
-    .eq("partnership_id", partnershipId)
-    .is("deleted_at", null)
-    .not("transaction_id", "is", null);
-
-  if (error) throw error;
-  return new Set((data ?? []).map((d) => d.transaction_id));
+  const data = await fetchAllPages((from, to) =>
+    db
+      .from("split_expenses")
+      .select("id, transaction_id")
+      .eq("partnership_id", partnershipId)
+      .is("deleted_at", null)
+      .not("transaction_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  return new Set(data.map((d) => d.transaction_id));
 }
 
 // ─── Notification seen-state helpers ─────────────────────────────────────────

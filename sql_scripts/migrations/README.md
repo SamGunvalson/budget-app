@@ -23,6 +23,7 @@ Paths now include `migrations/`.
 | [recurring_projection_cleanup.sql](./recurring_projection_cleanup.sql) | Installs authenticated owner-scoped recurring projection cleanup RPC | Phase-4 mutations |
 | [report_as_of.sql](./report_as_of.sql) | Replaces plan-vs-actual and spending-trend RPCs with versions taking optional `p_as_of`, so reports can exclude projected/pending/future rows | Phase-3 aggregations |
 | [recurring_group_new_children.sql](./recurring_group_new_children.sql) | Replaces `upsert_recurring_group` so children added while editing a group are kept instead of deactivated | Phase-4 mutations |
+| [sync_integrity.sql](./sync_integrity.sql) | Server-stamps `updated_at` on insert/update for all seven synced tables, adds the incremental-pull index, and installs `update_transfer_legs` (atomic transfer edits) and `get_deleted_transaction_ids` (owner-scoped sync deletion feed). Transactional and safe to re-run | Updated-at script and phase-4 mutations |
 
 ## Applying upgrades
 

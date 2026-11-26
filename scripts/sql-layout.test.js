@@ -40,6 +40,7 @@ const migrationScripts = [
   'split_fix_rls.sql',
   'split_recurring.sql',
   'split_soft_delete_rpc.sql',
+  'sync_integrity.sql',
   'transactions_soft_delete_rls.sql',
 ];
 const readSqlFile = (file) => readFileSync(join(sqlDirectory, file), 'utf8');
@@ -153,6 +154,26 @@ test('fresh setup and recurring cleanup upgrade supply the same restricted RPC',
   assert.match(setup, /WHERE user_id = v_user_id\s+AND deleted_at IS NULL\s+AND recurring_template_id IS NOT NULL\s+AND status IN \('projected', 'pending'\)\s+AND transaction_date >= p_from_date/);
   assert.match(setup, /GET DIAGNOSTICS v_count = ROW_COUNT/);
   assert.match(setup, /REVOKE EXECUTE[\s\S]*FROM PUBLIC, anon;/);
+});
+
+test('sync integrity upgrade matches the fresh RPCs and timestamp triggers', () => {
+  const migration = readSqlFile('migrations/sync_integrity.sql');
+  const setup = readSqlFile('phase4_mutations.sql');
+  for (const [name, args] of [['update_transfer_legs', 'jsonb'], ['get_deleted_transaction_ids', 'timestamptz']]) {
+    const rpc = new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\([\\s\\S]*?GRANT EXECUTE ON FUNCTION public\\.${name}\\(${args}\\) TO authenticated;`);
+    const base = setup.match(rpc)?.[0];
+    assert.ok(base, `Missing ${name} in fresh setup`);
+    assert.equal(migration.match(rpc)?.[0], base, `${name} upgrade differs from fresh setup`);
+    assert.match(base, /REVOKE EXECUTE[\s\S]*FROM PUBLIC, anon;/);
+  }
+  assert.match(setup, /get_deleted_transaction_ids[\s\S]*?SECURITY DEFINER\s+SET search_path = public[\s\S]*?WHERE user_id = auth\.uid\(\)/);
+  const triggers = /DROP TRIGGER IF EXISTS trg_transactions_updated_at[\s\S]*?ON transactions\(user_id, updated_at, id\);/;
+  const baseTriggers = readSqlFile('add_updated_at.sql').match(triggers)?.[0];
+  assert.ok(baseTriggers);
+  assert.equal(migration.match(triggers)?.[0], baseTriggers);
+  for (const table of ['transactions', 'categories', 'accounts', 'budget_plans', 'budget_items', 'user_preferences', 'recurring_templates']) {
+    assert.match(baseTriggers, new RegExp(`BEFORE INSERT OR UPDATE ON ${table}\\n`), `${table} is not server-stamped`);
+  }
 });
 
 function runInitializer(failAt) {

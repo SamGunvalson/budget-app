@@ -25,6 +25,10 @@ jobs:
       - name: Run security audit (high + critical only)
         run: npm run audit:security
 
+      - name: Run auth service security audit (high + critical only)
+        run: npx --yes audit-ci@7.1.0 --config ../../audit-ci.jsonc
+        working-directory: server/auth
+
   lint:
     name: ESLint
     runs-on: ubuntu-latest

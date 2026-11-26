@@ -17,10 +17,14 @@
  * Per-user resets all hang off one place, `noteSessionIdentity()`: whenever
  * the session becomes null or the user id changes, the previous user's React
  * Query cache is dropped and the warm-up is re-armed for the next user.
+ * Before a new user's session is exposed, the offline mirror is claimed for
+ * them (`claimOfflineDataFor`), wiping another user's rows and queued edits
+ * left behind when a session ended without an explicit sign-out.
  * Theme/safe-mode providers key their own state on the same user id.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { isBackendReady } from '../services/backend';
+import { getServerOrigin, isBackendReady } from '../services/backend';
+import { claimOfflineDataFor } from '../services/offlineDb';
 import { getSession, onAuthStateChange } from '../services/auth';
 import { requestSync, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
@@ -73,11 +77,30 @@ export function AuthProvider({ children, enabled = true }) {
     if (!enabled || !isBackendReady()) return undefined;
 
     let mounted = true;
+    // Session updates are applied strictly in arrival order, each after the
+    // offline mirror has been claimed for its user, so no page can read the
+    // previous user's cached rows under the new session.
+    let applying = Promise.resolve();
+
+    const claimMirror = async (next) => {
+      const nextUserId = getSessionUserId(next);
+      if (!nextUserId || nextUserId === lastUserId) return;
+      try {
+        await claimOfflineDataFor(nextUserId, getServerOrigin() ?? null);
+      } catch (error) {
+        // IndexedDB unavailable: nothing could have been cached either.
+        console.error('AuthProvider: unable to check offline data owner', error);
+      }
+    };
 
     const applySession = (next) => {
-      noteSessionIdentity(next);
-      setSession(next);
-      setIsChecking(false);
+      applying = applying.then(async () => {
+        await claimMirror(next);
+        if (!mounted) return;
+        noteSessionIdentity(next);
+        setSession(next);
+        setIsChecking(false);
+      });
     };
 
     // 1. Check the current session once on mount.

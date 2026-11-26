@@ -55,7 +55,7 @@ import {
   getYearlySpendingTrendOffline,
 } from "../services/offlineAware";
 import { getPartnership, getPartnerEmail, getPartnerId } from "../services/partnerships";
-import { getBalance, getSplitExpenses } from "../services/splitExpenses";
+import { computeBalance, getSplitExpenses } from "../services/splitExpenses";
 
 // ── Transactions ──────────────────────────────────────────────────────────
 
@@ -296,11 +296,9 @@ export function useSplitExpenses(partnershipId, userId, { enabled = true } = {})
   return useQuery({
     queryKey: ["split_expenses", userId, partnershipId],
     queryFn: async () => {
-      const [expenses, balance] = await Promise.all([
-        getSplitExpenses(partnershipId),
-        getBalance(partnershipId),
-      ]);
-      return { expenses, balance };
+      // One complete (paginated) fetch serves both the list and the balance.
+      const expenses = await getSplitExpenses(partnershipId);
+      return { expenses, balance: computeBalance(expenses, userId) };
     },
     enabled: enabled && !!partnershipId && !!userId,
   });
