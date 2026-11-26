@@ -99,12 +99,10 @@ export default function NetWorthSummary({ netWorth = 0, projectedNetWorth = 0, t
       {/* Net worth history chart */}
       <Suspense
         fallback={
-          <div className="h-56 animate-pulse rounded-2xl bg-stone-100 dark:bg-stone-700/50" />
+          <div className="h-72 animate-pulse rounded-2xl bg-stone-100 dark:bg-stone-700/50" />
         }
       >
-        <div className="rounded-2xl border border-stone-200/60 bg-white px-6 pb-6 shadow-sm empty:hidden dark:border-stone-700/60 dark:bg-stone-800">
-          <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
-        </div>
+        <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
       </Suspense>
     </div>
   );
