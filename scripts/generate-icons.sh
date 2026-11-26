@@ -22,21 +22,25 @@ render "$BARS" 512 public/pwa-maskable-512x512.png "$FOREST"
 # iOS ignores transparency and rounds corners itself: full-bleed tile.
 render "$BARS" 180 public/apple-touch-icon-180x180.png "$FOREST"
 tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 for s in 16 32 48; do render "$MARK" "$s" "$tmp/fav-$s.png"; done
 magick "$tmp/fav-16.png" "$tmp/fav-32.png" "$tmp/fav-48.png" public/favicon.ico
 
 # ── Android launcher (legacy + adaptive) ──────────────────
-declare -A LAUNCHER=([mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192)
-for d in "${!LAUNCHER[@]}"; do
-  s=${LAUNCHER[$d]}
+# Portable across Bash 3.2 (stock macOS): no associative arrays.
+for entry in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+  d=${entry%%:*}; s=${entry#*:}
   render "$MARK" "$s" "$RES/mipmap-$d/ic_launcher.png"
   render "$BARS" "$s" "$tmp/round.png" "$FOREST"
   magick "$tmp/round.png" \( -size "${s}x${s}" xc:none -fill white -draw "circle $((s/2)),$((s/2)) $((s/2)),0" \) \
     -compose CopyOpacity -composite "$RES/mipmap-$d/ic_launcher_round.png"
   render "$BARS" $((s * 9 / 4)) "$RES/mipmap-$d/ic_launcher_foreground.png"
 done
-sed -i "s|<color name=\"ic_launcher_background\">[^<]*</color>|<color name=\"ic_launcher_background\">${FOREST}</color>|" \
-  "$RES/values/ic_launcher_background.xml"
+# Write to a temp file and move it back: `sed -i` differs between GNU and BSD.
+bg_xml="$RES/values/ic_launcher_background.xml"
+sed "s|<color name=\"ic_launcher_background\">[^<]*</color>|<color name=\"ic_launcher_background\">${FOREST}</color>|" \
+  "$bg_xml" > "$tmp/ic_launcher_background.xml"
+mv "$tmp/ic_launcher_background.xml" "$bg_xml"
 
 # ── Android splash screens ────────────────────────────────
 for f in "$RES"/drawable*/splash.png; do
@@ -48,5 +52,4 @@ for f in "$RES"/drawable*/splash.png; do
   magick -size "${w}x${h}" "xc:${PAPER_DARK}" "$tmp/tile.png" -gravity center -composite "$f"
 done
 
-rm -rf "$tmp"
 echo "Icons regenerated."

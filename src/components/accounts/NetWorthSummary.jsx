@@ -33,8 +33,13 @@ export default function NetWorthSummary({ netWorth = 0, projectedNetWorth = 0, t
 
   const projectedDiff = projectedNetWorth - netWorth;
   const signed = (cents) => `${cents < 0 ? '−' : ''}${formatCurrency(Math.abs(cents))}`;
-  const total = totalAssets + totalLiabilities;
-  const assetPct = total > 0 ? (totalAssets / total) * 100 : 0;
+  // Shares only make sense for non-negative sides: an overdrawn asset total
+  // (or a credit balance on liabilities) counts as zero rather than producing
+  // negative or >100% percentages.
+  const assetShare = Math.max(0, totalAssets);
+  const liabilityShare = Math.max(0, totalLiabilities);
+  const total = assetShare + liabilityShare;
+  const assetPct = total > 0 ? (assetShare / total) * 100 : 0;
   const tickMask = 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)';
 
   return (
