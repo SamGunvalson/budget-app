@@ -586,9 +586,13 @@ bg-forest p-6 sm:p-7 text-[#fbfcf2] shadow-lg shadow-stone-900/10`.
 - Charts go in their own white panel below the card, not inside it.
 - When the state is a warning (e.g. cash below cushion), use the red alert
   card instead of forest.
+- A button on the forest card is **light**, not gold, so it doesn't compete
+  with the page's gold action: `bg-[#fbfcf2] text-forest hover:bg-white`, with
+  a gold focus ring (e.g. Splits → Settle Up).
 
 Used by: Budgets (left in plan), Accounts (net worth), Accounts → Cashflow
-(lowest cash), and the Reports stat rows. Keep one forest card per screen.
+(lowest cash), Splits (balance), and the Reports stat rows. Keep one forest
+card per screen.
 
 **Report stat rows** use `StatCards` (`src/components/reports/StatCards.jsx`):
 the first card is the forest headline (Net, Left in / Over budget, Average
@@ -793,6 +797,14 @@ Cards should lift on hover:
 
 ```jsx
 hover:-translate-y-1 hover:shadow-xl transition-all duration-300
+```
+
+**Never hide actions behind hover alone.** Touch screens have no hover. Row
+actions that reveal on hover must stay visible on touch devices and when
+focused:
+
+```jsx
+className="focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
 ```
 
 ### Disabled States

@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phases 1–3 done · Phase 4 in progress (Transactions, Budgets, Accounts, Reports done) · 2026-11-26
+Status: Phases 1–4 done · Phase 5 (Overview) deferred · Phase 6 next · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -180,7 +180,7 @@ Order these by how often each page is used:
    to spend.
 4. **Reports** ✅: retheme the chart palette (violet accent kept); the serif title
    and eyebrow tabs.
-5. **Splits / Settings / Categories / Auth / Server setup:** apply the shared
+5. **Splits / Settings / Categories / Auth / Server setup** ✅: apply the shared
    components (low effort once 1–3 exist).
 
 ## Phase 5: Overview home page (optional, new feature)

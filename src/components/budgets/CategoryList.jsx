@@ -1,5 +1,14 @@
 import { CATEGORY_TYPE_LABELS, CATEGORY_TYPE_ORDER } from '../../utils/helpers';
 
+// Type colour dots, shared with the Budgets and Reports group headings.
+const TYPE_DOTS = {
+  income: 'bg-emerald-500',
+  needs: 'bg-red-500',
+  wants: 'bg-pink-500',
+  savings: 'bg-teal-500',
+  transfer: 'bg-slate-400',
+};
+
 const TYPE_LABELS = {
   income: { label: CATEGORY_TYPE_LABELS.income, description: 'Salary, freelance & other earnings' },
   needs: { label: CATEGORY_TYPE_LABELS.needs, description: 'Essential expenses' },
@@ -63,12 +72,13 @@ function CategoryList({ categories = [], onEdit, onDelete, deletingId, onArchive
         return (
           <div key={typeKey}>
             {/* Group Header */}
-            <div className="mb-3 flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{meta.label}</h3>
-              <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-600 dark:bg-stone-700 dark:text-stone-300">
-                {items.length}
-              </span>
-              <span className="text-sm text-stone-400 dark:text-stone-500">{meta.description}</span>
+            <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-1">
+              <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
+                <span aria-hidden="true" className={`h-2 w-2 rounded-full ${TYPE_DOTS[typeKey] ?? 'bg-stone-400'}`} />
+                {meta.label}
+                <span className="font-medium normal-case tracking-normal text-stone-500 dark:text-stone-400">· {items.length}</span>
+              </h3>
+              <span className="text-xs text-stone-500 dark:text-stone-400">{meta.description}</span>
             </div>
 
             {/* Cards */}
