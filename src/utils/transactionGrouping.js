@@ -191,3 +191,28 @@ export function computeTemplateGroupNet(children) {
   }
   return net;
 }
+
+/** Build the visible ledger rows in sort order, including expanded groups and optional day headings. */
+export function transactionListRows(transactions, groupedItems, expandedGroups, groupByDate) {
+  const items = groupedItems?.length ? groupedItems : transactions.map((transaction) => ({ type: 'transaction', transaction }));
+  const rows = [];
+  let previousDate;
+  for (const item of items) {
+    const date = item.type === 'group' ? item.date : item.transaction.transaction_date;
+    if (groupByDate && date !== previousDate) {
+      rows.push({ rowType: 'date', date });
+      previousDate = date;
+    }
+    if (item.type === 'group') {
+      rows.push({ rowType: 'groupHeader', group: item });
+      if (expandedGroups?.has(item.groupKey)) {
+        for (const child of item.children) {
+          rows.push({ rowType: 'groupChild', transaction: child, groupKey: item.groupKey });
+        }
+      }
+    } else {
+      rows.push({ rowType: 'transaction', transaction: item.transaction });
+    }
+  }
+  return rows;
+}

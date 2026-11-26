@@ -92,7 +92,7 @@ export default function TransactionFilters({
             onClick={() => onViewModeChange('monthly')}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
               viewMode === 'monthly'
-                ? 'bg-amber-500 text-white shadow-sm'
+                ? 'bg-amber-500 text-stone-950 shadow-sm'
                 : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
@@ -103,7 +103,7 @@ export default function TransactionFilters({
             onClick={() => onViewModeChange('yearly')}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
               viewMode === 'yearly'
-                ? 'bg-amber-500 text-white shadow-sm'
+                ? 'bg-amber-500 text-stone-950 shadow-sm'
                 : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
@@ -140,7 +140,7 @@ export default function TransactionFilters({
             onClick={() => setFiltersOpen((v) => !v)}
             className={`relative flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
               filtersOpen
-                ? 'border-amber-300 bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                ? 'border-amber-300 bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                 : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
             }`}
           >
@@ -220,7 +220,7 @@ export default function TransactionFilters({
               onClick={() => onFiltersChange({ ...filters, type: opt.value })}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                 filters.type === opt.value
-                  ? 'bg-amber-500 text-white shadow-sm'
+                  ? 'bg-amber-500 text-stone-950 shadow-sm'
                   : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
               }`}
             >

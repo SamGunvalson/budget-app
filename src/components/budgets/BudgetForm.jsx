@@ -128,6 +128,7 @@ export default function BudgetForm() {
   };
 
   const handleAllocationChange = (categoryId, cents) => {
+    setSuccess('');
     setAllocations((prev) => ({ ...prev, [categoryId]: cents }));
   };
 
@@ -207,14 +208,9 @@ export default function BudgetForm() {
       </div>
 
       {/* Alerts */}
-      {(error || loadError) && (
+      {loadError && (
         <div className="animate-fade-in rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-          <span className="mr-1.5">⚠</span>{error || loadError.message}
-        </div>
-      )}
-      {success && (
-        <div className="animate-fade-in rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
-          <span className="mr-1.5">✓</span>{success}
+          <span className="mr-1.5">⚠</span>{loadError.message}
         </div>
       )}
 
@@ -248,7 +244,7 @@ export default function BudgetForm() {
 
       {/* Summary bar */}
       <div className="rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Total Income</p>
             <p className="mt-1 text-xl font-bold text-stone-900 dark:text-stone-100">{formatCurrency(totalIncomeCents, 'USD', { hideCents: true })}</p>
@@ -257,25 +253,28 @@ export default function BudgetForm() {
             <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Total Allocated</p>
             <p className="mt-1 text-xl font-bold text-stone-900 dark:text-stone-100">{formatCurrency(totalAllocated, 'USD', { hideCents: true })}</p>
           </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Remaining</p>
-            <p className={`mt-1 text-xl font-bold ${remaining >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {formatCurrency(remaining, 'USD', { hideCents: true })}
-            </p>
-          </div>
         </div>
       </div>
 
-      {/* Save button */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="rounded-xl bg-amber-500 px-8 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isSaving ? 'Saving…' : plan ? 'Update Budget' : 'Create Budget'}
-        </button>
+      <div className="sticky bottom-[env(safe-area-inset-bottom,0px)] z-10 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-lg sm:bottom-3 dark:border-stone-700 dark:bg-stone-800">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-stone-600 dark:text-stone-300">Remaining to allocate</p>
+            <p className={`text-xl font-bold tabular-nums ${remaining >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
+              {formatCurrency(remaining)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="shrink-0 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-stone-950 shadow-sm hover:bg-amber-400 focus-visible:outline-2 focus-visible:outline-amber-500 disabled:opacity-50"
+          >
+            {isSaving ? 'Saving…' : plan ? 'Save changes' : 'Create budget'}
+          </button>
+        </div>
+        {error && <p role="alert" className="mt-1 text-sm text-red-700 dark:text-red-400">{error}</p>}
+        {success && <p role="status" className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">{success}</p>}
       </div>
     </div>
   );
