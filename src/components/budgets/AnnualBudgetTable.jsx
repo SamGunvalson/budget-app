@@ -117,10 +117,10 @@ function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, isSaving, onM
                       type="button"
                       onClick={() => onBulkFill(cat)}
                       disabled={isSaving}
-                      aria-label={`Set amount for all 12 months of ${cat.name}`}
+                      aria-label={`Set amount for several months of ${cat.name}`}
                       className="mb-2 min-h-11 w-full rounded-lg border border-dashed border-stone-300/70 px-3 text-xs font-semibold text-amber-800 transition-colors hover:border-stone-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-50 dark:border-stone-600 dark:text-amber-400"
                     >
-                      Set all 12 months
+                      Set multiple months
                     </button>
                     <div className="grid grid-cols-4 gap-1.5">
                       {MONTHS.map((m) => {
@@ -206,7 +206,7 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
             <button
               type="button"
               onClick={() => onBulkFill(cat)}
-              title="Set amount for all 12 months"
+              title="Set amount for multiple months"
               className="max-w-[120px] truncate text-left text-xs font-medium text-stone-800 transition-colors hover:text-amber-600 dark:text-stone-200 dark:hover:text-amber-400"
             >
               {categoryLabel(cat)}
@@ -461,7 +461,7 @@ export default function AnnualBudgetTable() {
   const [editingCategory, setEditingCategory] = useState(null);
   const isMobileLayout = useLayoutMode() === 'mobile';
   const [mobileEditCell, setMobileEditCell] = useState({ open: false, categoryId: null, month: null, value: '' });
-  const [bulkFillCell, setBulkFillCell] = useState({ open: false, categoryId: null, categoryName: '', categoryColor: null, value: '', overwriteExisting: true });
+  const [bulkFillCell, setBulkFillCell] = useState({ open: false, categoryId: null, categoryName: '', categoryColor: null, value: '', overwriteExisting: true, months: MONTHS });
 
   const openMobileEdit = (month, categoryId, dollars) => {
     setMobileEditCell({ open: true, categoryId, month, value: dollars === '' ? '' : String(dollars) });
@@ -484,13 +484,14 @@ export default function AnnualBudgetTable() {
       const mode = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
       defaultValue = String(Math.round(toDollars(mode, { raw: true })));
     }
-    setBulkFillCell({ open: true, categoryId: cat.id, categoryName: cat.name, categoryColor: cat.color, value: defaultValue, overwriteExisting: true });
+    setBulkFillCell({ open: true, categoryId: cat.id, categoryName: cat.name, categoryColor: cat.color, value: defaultValue, overwriteExisting: true, months: MONTHS });
   };
   const closeBulkFill = () => setBulkFillCell((prev) => ({ ...prev, open: false }));
   const handleBulkFillSave = () => {
     if (isSaving) return;
-    const { categoryId, value, overwriteExisting } = bulkFillCell;
-    MONTHS.forEach((m) => {
+    const { categoryId, value, overwriteExisting, months } = bulkFillCell;
+    if (months.length === 0) return;
+    months.forEach((m) => {
       if (!overwriteExisting) {
         const existing = monthData[m]?.allocations[categoryId] || 0;
         if (existing > 0) return;
@@ -499,6 +500,13 @@ export default function AnnualBudgetTable() {
     });
     closeBulkFill();
   };
+  const setBulkFillMonths = (months) => setBulkFillCell((prev) => ({ ...prev, months }));
+  const toggleBulkFillMonth = (m) => setBulkFillCell((prev) => ({
+    ...prev,
+    months: prev.months.includes(m)
+      ? prev.months.filter((x) => x !== m)
+      : [...prev.months, m].sort((a, b) => a - b),
+  }));
 
   const { years } = useAvailableYears();
 
@@ -1142,7 +1150,7 @@ export default function AnnualBudgetTable() {
               </button>
             </div>
             <p className="mb-4 text-sm text-stone-500 dark:text-stone-400">
-              Set a monthly budget for all 12 months of{' '}
+              Set a monthly budget for the selected months of{' '}
               <span className="font-semibold text-stone-700 dark:text-stone-300">{year}</span>.
             </p>
             <div className="relative mb-4">
@@ -1152,7 +1160,7 @@ export default function AnnualBudgetTable() {
                 step="0.01"
                 min="0"
                 value={bulkFillCell.value}
-                calculatorLabel={`${bulkFillCell.categoryName} budget for all months`}
+                calculatorLabel={`${bulkFillCell.categoryName} budget for selected months`}
                 minCents={0}
                 onAmountChange={(value) => setBulkFillCell((prev) => ({ ...prev, value }))}
                 onChange={(e) => setBulkFillCell((prev) => ({ ...prev, value: e.target.value }))}
@@ -1163,6 +1171,70 @@ export default function AnnualBudgetTable() {
                 className="w-full rounded-xl border border-stone-200 bg-stone-50 py-3 pl-8 pr-4 text-right text-base text-stone-800 placeholder-stone-300 focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 dark:border-stone-700 dark:bg-stone-700/50 dark:text-stone-200 dark:placeholder-stone-500 dark:focus:bg-stone-700"
               />
             </div>
+            {(() => {
+              const today = new Date();
+              const fromMonth = year === today.getFullYear() ? today.getMonth() + 1 : null;
+              const presets = [
+                { label: 'All', months: MONTHS },
+                ...(fromMonth && fromMonth > 1 ? [{ label: `${SHORT_MONTHS[fromMonth - 1]}–Dec`, months: MONTHS.filter((m) => m >= fromMonth) }] : []),
+                { label: 'Jan–Jun', months: MONTHS.slice(0, 6) },
+                { label: 'Jul–Dec', months: MONTHS.slice(6) },
+                { label: 'None', months: [] },
+              ];
+              const selected = bulkFillCell.months;
+              const sameSet = (a) => a.length === selected.length && a.every((m) => selected.includes(m));
+              return (
+                <fieldset className="mb-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <legend className="text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:text-stone-400">
+                      Months
+                    </legend>
+                    <span className="text-xs text-stone-500 dark:text-stone-400">{selected.length} selected</span>
+                  </div>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {presets.map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setBulkFillMonths(p.months)}
+                        aria-pressed={sameSet(p.months)}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                          sameSet(p.months)
+                            ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-900'
+                            : 'border-stone-200/60 text-stone-600 hover:bg-stone-100 dark:border-stone-700/60 dark:text-stone-300 dark:hover:bg-stone-700'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {MONTHS.map((m) => {
+                      const on = selected.includes(m);
+                      const cents = monthData[m]?.allocations[bulkFillCell.categoryId] || 0;
+                      const amount = cents ? formatCurrency(cents, 'USD', { hideCents: true }) : null;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => toggleBulkFillMonth(m)}
+                          aria-pressed={on}
+                          aria-label={`${SHORT_MONTHS[m - 1]}${amount ? `, currently ${amount}` : ''}`}
+                          className={`flex min-h-11 flex-col items-center justify-center rounded-lg border px-1 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                            on
+                              ? 'border-amber-500 bg-amber-500/15 text-stone-900 dark:text-stone-100'
+                              : 'border-stone-200/60 text-stone-500 hover:bg-stone-100 dark:border-stone-700/60 dark:text-stone-400 dark:hover:bg-stone-700'
+                          }`}
+                        >
+                          <span className="text-xs font-semibold">{SHORT_MONTHS[m - 1]}</span>
+                          <span className="max-w-full truncate text-[10px] opacity-70">{amount || '—'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              );
+            })()}
             <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-xl border border-stone-200 bg-stone-50/60 p-3 dark:border-stone-700 dark:bg-stone-700/30">
               <input
                 type="checkbox"
@@ -1188,10 +1260,12 @@ export default function AnnualBudgetTable() {
               <button
                 type="button"
                 onClick={handleBulkFillSave}
-                disabled={isSaving}
+                disabled={isSaving || bulkFillCell.months.length === 0}
                 className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                Apply to All Months
+                {bulkFillCell.months.length === 12
+                  ? 'Apply to All Months'
+                  : `Apply to ${bulkFillCell.months.length} Month${bulkFillCell.months.length === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>

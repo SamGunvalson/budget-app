@@ -503,46 +503,6 @@ export default function AccountsPage() {
         {/* ════════════════ Cashflow section ════════════════ */}
         {!balancesUnavailable && activeSection === 'cashflow' && (
           <>
-            {/* Account selector chips */}
-            <div className="mb-4">
-              <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
-                Chart Accounts
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {accounts.filter((a) => !a.closed_at).map((acct) => {
-                  const isSelected = cashflowAccountIds.includes(acct.id);
-                  return (
-                    <button
-                      key={acct.id}
-                      type="button"
-                      onClick={() => handleCashflowAccountToggle(acct.id)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-                        isSelected
-                          ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
-                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-stone-400 hover:text-stone-800 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
-                      }`}
-                    >
-                      {maskAccountName(acct.name)}
-                    </button>
-                  );
-                })}
-                {accounts.filter((a) => !a.closed_at).length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const allIds = accounts.filter((a) => !a.closed_at).map((a) => a.id);
-                      setCashflowAccountIds(
-                        cashflowAccountIds.length === allIds.length ? [] : allIds,
-                      );
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-stone-400 transition-colors hover:text-stone-600 dark:hover:text-stone-300"
-                  >
-                    {cashflowAccountIds.length === accounts.filter((a) => !a.closed_at).length ? 'Clear All' : 'Select All'}
-                  </button>
-                )}
-              </div>
-            </div>
-
             {/* Can I afford it? */}
             {scenarioResult && Object.values(scenarioResult.roles).includes('cash') && (
               <CashflowSummary
@@ -562,7 +522,15 @@ export default function AccountsPage() {
             >
               <CashflowChart
                 accounts={accounts}
+                selectableAccounts={openAccounts}
                 chartAccountIds={cashflowAccountIds}
+                onToggleAccount={handleCashflowAccountToggle}
+                onToggleAll={() => {
+                  const allIds = openAccounts.map((a) => a.id);
+                  setCashflowAccountIds(
+                    allIds.every((id) => cashflowAccountIds.includes(id)) ? [] : allIds,
+                  );
+                }}
                 result={scenarioResult}
                 hasItems={hasEnabledItems}
                 todayStr={cashflow.todayStr}

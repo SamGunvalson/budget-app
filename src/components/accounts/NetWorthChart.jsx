@@ -7,38 +7,40 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  ReferenceLine,
+  ReferenceDot,
 } from 'recharts';
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
-import { CHART_AXIS, CHART_GRID, CHART_MUTED } from '../../constants/chartColors';
+import { CHART_AXIS } from '../../constants/chartColors';
+
+// ─── Theme-aware series colors ───────────────────────────────────────────────
+// CSS variables flip with the theme (deep forest in light, sage in dark), so
+// the line matches the forest summary card above it in both modes.
+const SERIES = 'var(--app-income)';
+const PANEL = 'var(--app-panel)';
+const LINE = 'var(--app-line)';
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 function NetWorthTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
 
-  const actualEntry = payload.find((p) => p.dataKey === 'netWorth');
-  const projectedEntry = payload.find((p) => p.dataKey === 'projected');
+  const actual = payload.find((p) => p.dataKey === 'netWorth' && p.value != null);
+  const projected = payload.find((p) => p.dataKey === 'projected' && p.value != null);
+  const entry = actual ?? projected;
+  if (!entry) return null;
 
   return (
-    <div className="rounded-xl border border-stone-200/60 bg-white px-4 py-3 shadow-lg shadow-stone-200/40 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-      <p className="mb-1 text-sm font-semibold text-stone-700 dark:text-stone-300">{label}</p>
-      {actualEntry != null && actualEntry.value != null && (
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          <p className={`text-sm font-bold ${actualEntry.value < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {actualEntry.value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(actualEntry.value))}
-          </p>
-        </div>
-      )}
-      {projectedEntry != null && projectedEntry.value != null && (
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="h-2 w-2 rounded-full bg-violet-500" />
-          <p className="text-sm font-bold text-violet-600 dark:text-violet-400">
-            {projectedEntry.value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(projectedEntry.value))}
-            <span className="ml-1 text-[10px] font-medium text-violet-400 dark:text-violet-500">projected</span>
-          </p>
-        </div>
-      )}
+    <div className="rounded-xl border border-stone-200/60 bg-white px-3.5 py-2.5 shadow-lg shadow-stone-900/10 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
+        {label}
+        {!actual && <span className="ml-1.5 normal-case tracking-normal font-medium">· projected</span>}
+      </p>
+      <p
+        className={`mt-0.5 font-display text-xl leading-tight tabular-nums ${
+          entry.value < 0 ? 'text-red-600 dark:text-red-400' : 'text-ink'
+        }`}
+      >
+        {entry.value < 0 ? '−' : ''}{formatPreMaskedDollars(Math.abs(entry.value))}
+      </p>
     </div>
   );
 }
@@ -51,7 +53,8 @@ const RANGE_OPTIONS = [
 ];
 
 /**
- * NetWorthChart — monthly area chart of net worth over time with optional projected future line.
+ * NetWorthChart — section label plus a panel with a monthly net worth line
+ * (faint fill) and an optional dashed projection continuing the same line.
  *
  * Props:
  *  - data: Array<{ yearMonth: string, label: string, netWorth: number }>  (cents) — history
@@ -62,12 +65,6 @@ const RANGE_OPTIONS = [
  */
 export default function NetWorthChart({ data = [], projectedData = [], projectedNetWorth = null, isLoading = false }) {
   const [range, setRange] = useState('1y');
-
-  // Current month string (YYYY-MM) for range filtering and reference line
-  const currentYM = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  }, []);
 
   const filteredHistory = useMemo(() => {
     if (!data.length) return [];
@@ -132,11 +129,14 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
     return [...hist, ...proj];
   }, [filteredHistory, filteredProjected, projectedNetWorth]);
 
-  // Label of the current month tick (for reference line)
-  const currentLabel = useMemo(() => {
-    const match = data.find((d) => d.yearMonth === currentYM);
-    return match?.label ?? null;
-  }, [data, currentYM]);
+  // "Today" marker: the last actual point, where the dashed projection begins.
+  const todayPoint = useMemo(() => {
+    for (let i = chartData.length - 1; i >= 0; i -= 1) {
+      if (chartData[i].netWorth != null) return chartData[i];
+    }
+    return null;
+  }, [chartData]);
+  const hasProjection = filteredProjected.length > 0;
 
   // Decide tick interval so X axis doesn't get crowded
   const tickInterval = useMemo(() => {
@@ -148,128 +148,134 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
   }, [chartData]);
 
   if (isLoading) {
-    return (
-      <div className="mt-6">
-        <div className="h-52 animate-pulse rounded-xl bg-stone-100 dark:bg-stone-700/50" />
-      </div>
-    );
+    return <div className="h-72 animate-pulse rounded-2xl bg-stone-100 dark:bg-stone-700/50" />;
   }
 
   if (!data.length) return null;
 
   return (
-    <div className="mt-6">
-      {/* Header row */}
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
-            Net Worth Over Time
-          </p>
-          {filteredProjected.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <svg width="20" height="8" className="shrink-0">
-                <line x1="0" y1="4" x2="20" y2="4" stroke="#8b5cf6" strokeWidth="2" strokeDasharray="4 2" />
+    <section aria-labelledby="nw-chart-title" className="space-y-2">
+      <h2
+        id="nw-chart-title"
+        className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300"
+      >
+        Net worth over time
+      </h2>
+
+      <div className="rounded-2xl border border-stone-200/60 bg-white p-4 shadow-sm sm:p-6 dark:border-stone-700/60 dark:bg-stone-800">
+        {/* Legend + range toggle */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-4 text-[11px] font-medium text-soft">
+            <span className="flex items-center gap-1.5">
+              <svg width="16" height="6" aria-hidden="true" className="shrink-0">
+                <line x1="0" y1="3" x2="16" y2="3" stroke={SERIES} strokeWidth="2" strokeLinecap="round" />
               </svg>
-              <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400">Projected</span>
-            </div>
-          )}
-        </div>
-        {/* Range toggle */}
-        <div className="inline-flex rounded-lg border border-stone-200/60 bg-stone-50 p-0.5 shadow-sm dark:border-stone-700/60 dark:bg-stone-700/30">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => setRange(opt.key)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                range === opt.key
-                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
-                  : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Chart */}
-      {chartData.length === 0 ? (
-        <p className="py-10 text-center text-sm text-stone-400 dark:text-stone-500">
-          No data for this period.
-        </p>
-      ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id="gradNetWorth" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#10b981" stopOpacity={0.30} />
-                <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="gradProjected" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.20} />
-                <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.01} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} className="dark:stroke-stone-700" />
-            <XAxis
-              dataKey="label"
-              tick={{ fill: CHART_AXIS, fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              interval={tickInterval}
-            />
-            <YAxis
-              tickFormatter={formatPreMaskedAxisDollar}
-              tick={{ fill: CHART_AXIS, fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              width={72}
-            />
-            <Tooltip content={<NetWorthTooltip />} />
-
-            {/* Reference line at current month */}
-            {currentLabel && filteredProjected.length > 0 && (
-              <ReferenceLine
-                x={currentLabel}
-                stroke={CHART_MUTED}
-                strokeDasharray="3 3"
-                strokeWidth={1.5}
-                label={{ value: 'Today', position: 'insideTopRight', fontSize: 10, fill: CHART_MUTED }}
-              />
+              Actual
+            </span>
+            {hasProjection && (
+              <span className="flex items-center gap-1.5">
+                <svg width="16" height="6" aria-hidden="true" className="shrink-0">
+                  <line x1="1" y1="3" x2="15" y2="3" stroke={SERIES} strokeOpacity="0.55" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
+                </svg>
+                Projected
+              </span>
             )}
+          </div>
+          <div className="inline-flex rounded-lg border border-stone-200/60 bg-stone-50 p-0.5 dark:border-stone-700/60 dark:bg-stone-700/30">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                aria-pressed={range === opt.key}
+                onClick={() => setRange(opt.key)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                  range === opt.key
+                    ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                    : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {/* Historical area */}
-            <Area
-              type="monotone"
-              dataKey="netWorth"
-              name="Net Worth"
-              stroke="#10b981"
-              strokeWidth={2.5}
-              fill="url(#gradNetWorth)"
-              dot={false}
-              activeDot={{ r: 5, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }}
-              connectNulls={false}
-            />
+        {chartData.length === 0 ? (
+          <p className="py-10 text-center text-sm text-stone-400 dark:text-stone-500">
+            No data for this period.
+          </p>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={chartData} margin={{ top: 18, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid vertical={false} stroke={LINE} strokeOpacity={0.7} />
+              <XAxis
+                dataKey="label"
+                tick={{ fill: CHART_AXIS, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                interval={tickInterval}
+                tickMargin={8}
+              />
+              <YAxis
+                tickFormatter={formatPreMaskedAxisDollar}
+                tick={{ fill: CHART_AXIS, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                tickCount={4}
+                width={56}
+              />
+              <Tooltip
+                content={<NetWorthTooltip />}
+                cursor={{ stroke: LINE, strokeWidth: 1 }}
+              />
 
-            {/* Projected area (dotted) */}
-            {filteredProjected.length > 0 && (
+              {/* Actual: solid forest line with a barely-there wash */}
               <Area
                 type="monotone"
-                dataKey="projected"
-                name="Projected"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                strokeDasharray="5 3"
-                fill="url(#gradProjected)"
+                dataKey="netWorth"
+                name="Net Worth"
+                stroke={SERIES}
+                strokeWidth={2.25}
+                fill={SERIES}
+                fillOpacity={0.07}
                 dot={false}
-                activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }}
+                activeDot={{ r: 4.5, strokeWidth: 2, fill: PANEL, stroke: SERIES }}
                 connectNulls={false}
               />
-            )}
-          </AreaChart>
-        </ResponsiveContainer>
-      )}
-    </div>
+
+              {/* Projected: the same line, dashed and quieter, no fill */}
+              {hasProjection && (
+                <Area
+                  type="monotone"
+                  dataKey="projected"
+                  name="Projected"
+                  stroke={SERIES}
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  fill="none"
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 2, fill: PANEL, stroke: SERIES }}
+                  connectNulls={false}
+                />
+              )}
+
+              {/* Today: a dot where actual hands off to projected */}
+              {hasProjection && todayPoint && (
+                <ReferenceDot
+                  x={todayPoint.label}
+                  y={todayPoint.netWorth}
+                  r={4.5}
+                  fill={SERIES}
+                  stroke={PANEL}
+                  strokeWidth={2}
+                  label={{ value: 'Today', position: 'top', offset: 10, fontSize: 10, fontWeight: 600, fill: CHART_AXIS }}
+                />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </section>
   );
 }

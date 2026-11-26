@@ -211,7 +211,7 @@ export default function TransactionList({
     <>
       <div
         ref={parentRef}
-        className="max-h-[70vh] overflow-y-auto overflow-x-hidden sm:overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50 mobile:max-h-none mobile:overflow-visible"
+        className="max-h-[70vh] overflow-y-auto overflow-x-hidden sm:overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50 mobile:max-h-none mobile:overflow-clip"
       >
         <table className="w-full table-fixed text-sm">
           <colgroup>
@@ -220,7 +220,7 @@ export default function TransactionList({
                 {showCheckbox && <col className="w-9" />}
                 <col />
                 <col className="w-24 sm:w-28" />
-                <col className="w-8 sm:w-11" />
+                <col className="w-14" />
               </>
             ) : (
               <>
@@ -268,7 +268,7 @@ export default function TransactionList({
                   </button>
                 </th>
               ))}
-              <th className={`${isCompact ? 'py-2.5 pl-0 pr-2' : 'px-4 py-3'} text-right font-semibold text-stone-600 dark:text-stone-400`}>
+              <th className={`${isCompact ? 'py-2.5 pl-0 pr-3' : 'px-4 py-3'} text-right font-semibold text-stone-600 dark:text-stone-400`}>
                 {isCompact ? (
                   <button
                     type="button"
@@ -283,7 +283,7 @@ export default function TransactionList({
                       }
                     }}
                     aria-pressed={showCheckbox}
-                    className="rounded-md px-1 py-1 text-xs font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-400"
+                    className="rounded-md py-1 text-xs font-semibold normal-case tracking-normal whitespace-nowrap text-amber-800 dark:text-amber-400"
                   >
                     {showCheckbox ? 'Done' : 'Select'}
                   </button>
