@@ -73,8 +73,8 @@ export default function SplitExpenseList({ expenses, currentUserId, partnerEmail
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/50 p-8 text-center dark:border-stone-700 dark:bg-stone-900/30">
-          <svg className="mx-auto h-12 w-12 text-stone-300 dark:text-stone-600" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
+        <div className="rounded-2xl border border-dashed border-stone-300 bg-white/60 px-6 py-10 text-center dark:border-stone-700 dark:bg-stone-800/40">
+          <svg className="mx-auto h-10 w-10 text-stone-400 dark:text-stone-500" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
           </svg>
           <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">

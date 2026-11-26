@@ -13,6 +13,7 @@ import SettleUpModal from '../components/splits/SettleUpModal';
 import Modal from '../components/common/Modal';
 import { markSplitsSeenDB } from '../services/partnerships';
 import { createSplitExpense, createSettlement, deleteSplitExpense, updateSplitExpense, markSplitsSeenLocal } from '../services/splitExpenses';
+import { hapticSuccess } from '../utils/haptics';
 
 export default function SplitExpensesPage() {
   const { session, isChecking } = useAuth();
@@ -80,6 +81,7 @@ export default function SplitExpensesPage() {
         expenseDate: formData.expenseDate,
       });
       setShowAddForm(false);
+      hapticSuccess();
       await refreshExpenses();
     } catch (err) {
       setMutationError(err?.message || 'Failed to add expense.');
@@ -98,6 +100,7 @@ export default function SplitExpensesPage() {
         paidByUserId,
       });
       setShowSettleUp(false);
+      hapticSuccess();
       await refreshExpenses();
     } catch (err) {
       setMutationError(err?.message || 'Failed to settle up.');

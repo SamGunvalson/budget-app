@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phases 1–4 done · Phase 5 (Overview) deferred · Phase 6 next · 2026-11-26
+Status: Phases 1–4 and 6 done · Phase 5 (Overview) deferred · device testing pending · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -192,7 +192,7 @@ these can come from existing hooks (budget allocations, recurring, transactions)
 through `src/hooks/queries.js`, so no schema change is needed. Decide whether
 `/app` lands here or stays on Transactions.
 
-## Phase 6: Polish
+## Phase 6: Polish ✅
 
 - **Warning vs danger contrast.** `orange-600` warning text is close to
   `red-600` danger text in the Budget Thresholds legend and the Plan vs Actual

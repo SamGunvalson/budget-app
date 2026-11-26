@@ -223,7 +223,7 @@ export default function CategoryComparison({
                                 : alert?.level === 'danger'
                                   ? 'text-red-600'
                                   : alert?.level === 'warning'
-                                    ? 'text-orange-600'
+                                    ? 'text-warn'
                                     : alert?.level === 'underBudget'
                                       ? 'text-emerald-600'
                                       : 'text-stone-700 dark:text-stone-300'

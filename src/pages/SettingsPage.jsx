@@ -637,7 +637,7 @@ export default function SettingsPage() {
           <div className="animate-fade-in-up rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
             <h2 className="mb-1 text-lg font-semibold text-stone-900 dark:text-stone-100">Budget Thresholds</h2>
             <p className="mb-6 text-sm text-stone-500 dark:text-stone-400">
-              Control when categories are highlighted as <span className="font-medium text-emerald-600">under budget</span>, <span className="font-medium text-orange-600">warning</span>, or <span className="font-medium text-red-600">danger</span> based on the percentage of budget used.
+              Control when categories are highlighted as <span className="font-medium text-emerald-600 dark:text-emerald-400">under budget</span>, <span className="font-medium text-warn">warning</span>, or <span className="font-medium text-red-600 dark:text-red-400">danger</span> based on the percentage of budget used.
             </p>
 
             {(loadError || saveStatus === 'error') && (
@@ -663,7 +663,7 @@ export default function SettingsPage() {
               {/* Under budget threshold */}
               <div className="flex items-center gap-3">
                 <div className="flex flex-1 items-center gap-2">
-                  <label htmlFor="underBudgetThreshold" className="flex items-center gap-2 text-sm font-medium text-emerald-600">
+                  <label htmlFor="underBudgetThreshold" className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                     <span className="text-base">🟢</span>
                     <span>Under budget</span>
                   </label>
@@ -699,7 +699,7 @@ export default function SettingsPage() {
               {/* Warning threshold */}
               <div className="flex items-center gap-3">
                 <div className="flex flex-1 items-center gap-2">
-                  <label htmlFor="warningThreshold" className="flex items-center gap-2 text-sm font-medium text-orange-600">
+                  <label htmlFor="warningThreshold" className="flex items-center gap-2 text-sm font-medium text-warn">
                     <span className="text-base">⚠️</span>
                     <span>Warning</span>
                   </label>
@@ -735,7 +735,7 @@ export default function SettingsPage() {
               {/* Danger threshold */}
               <div className="flex items-center gap-3">
                 <div className="flex flex-1 items-center gap-2">
-                  <label htmlFor="dangerThreshold" className="flex items-center gap-2 text-sm font-medium text-red-600">
+                  <label htmlFor="dangerThreshold" className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
                     <span className="text-base">🔴</span>
                     <span>Danger</span>
                   </label>

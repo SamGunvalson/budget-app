@@ -63,6 +63,7 @@ import {
   QUICK_TRANSACTION_TEMPLATES_KEY,
   normalizeQuickTransactionTemplates,
 } from '../services/quickTransactions';
+import { hapticSuccess, hapticTap } from '../utils/haptics';
 
 // ================================================
 // TransactionsPage
@@ -395,6 +396,7 @@ export default function TransactionsPage() {
     const created = await createTransaction(rest);
     setTransactions((prev) => [created, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
     if (isSplit && partnership) {
       setSplittingTransaction(created);
     }
@@ -404,12 +406,14 @@ export default function TransactionsPage() {
     const [outgoing, incoming] = await createTransfer(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const handleCreateAsymmetricTransfer = async (values) => {
     const [outgoing, incoming] = await createAsymmetricTransferOffline(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const handleCreateLinkedTransfer = async (values) => {
@@ -417,6 +421,7 @@ export default function TransactionsPage() {
     const [mainLeg, companionLeg] = await createLinkedTransfer(rest);
     setTransactions((prev) => [mainLeg, companionLeg, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
     if (isSplit && partnership) {
       setSplittingTransaction(mainLeg);
     }
@@ -426,6 +431,7 @@ export default function TransactionsPage() {
     const created = await createAdjustment(values);
     setTransactions((prev) => [created, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const openQuickModal = () => {
@@ -536,6 +542,7 @@ export default function TransactionsPage() {
       }
 
       setShowQuickModal(false);
+      hapticSuccess();
       setSelectedQuickTemplate(null);
       setQuickAmount('');
       setQuickDate(getTodayString());
@@ -682,6 +689,7 @@ export default function TransactionsPage() {
     const confirmed = await mgr.handleConfirm(txId);
     // A failed confirm leaves the row unposted; do not record a split for it.
     if (!confirmed) return;
+    hapticTap();
     if (tx?.recurring_template_id && partnership && currentUser) {
       try {
         const tpl = await getRecurringTemplateById(tx.recurring_template_id);

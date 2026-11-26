@@ -155,3 +155,18 @@ input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin
 .animate-slide-in-left {
   animation: slideInFromLeft 0.25s ease-out both;
 }
+
+/* ── Reduced motion ────────────────────────────────────
+ * Honour the OS "reduce motion" setting: page slides, fade-ins, bottom-sheet
+ * slide-ups and hover transitions all collapse to instant changes.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

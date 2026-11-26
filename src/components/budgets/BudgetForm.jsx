@@ -21,6 +21,7 @@ import {
 import useMonthYear from '../../hooks/useMonthYear';
 import { categoriesForBudget } from '../../utils/categoryArchive';
 import { buttonClasses } from '../../utils/buttonClasses';
+import { hapticSuccess } from '../../utils/haptics';
 
 const TYPE_DOTS = {
   income: 'bg-emerald-500',
@@ -168,6 +169,7 @@ export default function BudgetForm() {
 
       setSavedAllocations(allocations);
       setSuccess('Budget saved successfully!');
+      hapticSuccess();
     } catch (err) {
       setError(err.message || 'Failed to save budget');
     } finally {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatCurrency, maskAccountName } from '../../utils/helpers';
 import { ACCOUNT_TYPES, isAssetAccount } from '../../services/accounts';
+import EmptyState from '../common/EmptyState';
 
 /**
  * AccountList — displays accounts grouped by Asset / Liability with balances.
@@ -14,16 +15,16 @@ export default function AccountList({ accounts, onViewTransactions }) {
 
   if (!accounts || accounts.length === 0) {
     return (
-      <div className="rounded-2xl border border-stone-200/60 bg-white p-12 text-center shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100 dark:bg-stone-700">
-          <svg className="h-7 w-7 text-stone-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
-          </svg>
-        </div>
-        <p className="text-base text-stone-500 dark:text-stone-400">No accounts yet.</p>
-        <p className="mt-1 text-sm text-stone-400 dark:text-stone-500">
-          Add your first account to start tracking your net worth.
-        </p>
+      <div className="rounded-2xl border border-stone-200/60 bg-white shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+        <EmptyState
+          icon={(
+            <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+            </svg>
+          )}
+          title="No accounts yet"
+          hint="Add your first account in Manage Accounts to start tracking your net worth."
+        />
       </div>
     );
   }

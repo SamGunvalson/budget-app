@@ -834,6 +834,36 @@ animate-fade-in-up    /* 0.5s fade + 12px upward slide */
 
 Use `style={{ animationDelay: '100ms' }}` for staggered card entrances.
 
+**Reduced motion:** a global `@media (prefers-reduced-motion: reduce)` rule in
+`index.css` collapses every animation and transition, including page slides,
+fade-ins, bottom-sheet slide-ups and skeleton pulses. Don't add per-component
+`motion-safe:` variants. Never make an animation the only way to tell that
+something happened.
+
+### Haptics (Android app)
+
+`src/utils/haptics.js`: call `hapticSuccess()` after a save the user just
+made (a transaction added, including Quick and transfers; a budget saved; a
+split added; settled up). Call `hapticTap()` for small confirmations (a
+pending transaction confirmed). Both do nothing on the web and never throw.
+Call them after the save succeeds, never before.
+
+### Empty states and loading
+
+- **Empty lists:** use `EmptyState` (`src/components/common/EmptyState.jsx`) inside
+  the list's panel: a stone icon well, a serif title, a one-line hint, and an
+  optional action.
+- **Page loading:** `PageSkeletons.jsx` mirrors each page's real layout (top
+  bar, eyebrow + title, forest summary card, hairline list panels). When a
+  page's layout changes, update its skeleton.
+
+### App icons and splash
+
+All icons and Android splash screens come from `resources/brand/mark.svg` (the
+full tile) and `resources/brand/bars.svg` (bars only, for full-bleed and
+adaptive icons). After changing either, run `bash scripts/generate-icons.sh`
+(needs ImageMagick 7). Don't edit the generated PNGs by hand.
+
 ---
 
 ## Usage in AI Prompts

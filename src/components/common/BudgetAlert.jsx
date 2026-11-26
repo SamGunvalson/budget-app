@@ -36,7 +36,7 @@ export default function BudgetAlert({
       container: 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950',
       icon: 'text-orange-500 dark:text-orange-400',
       title: 'text-orange-800 dark:text-orange-300',
-      message: 'text-orange-600 dark:text-orange-400',
+      message: 'text-warn',
       badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
     },
     underBudget: {

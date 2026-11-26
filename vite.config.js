@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: [
         "favicon.ico",
+        "favicon.svg",
         "apple-touch-icon-180x180.png",
         "pwa-maskable-512x512.png",
       ],
