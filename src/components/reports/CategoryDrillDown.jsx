@@ -129,6 +129,7 @@ export default function CategoryDrillDown({
           selectedIds={mgr.selectedIds}
           onToggleSelect={mgr.handleToggleSelect}
           onSelectAll={() => mgr.handleSelectAll(sorted)}
+          onClearSelection={() => mgr.handleSelectAll([])}
           pendingEdits={mgr.pendingEdits}
           onCellEdit={mgr.handleCellEdit}
           categories={categories}

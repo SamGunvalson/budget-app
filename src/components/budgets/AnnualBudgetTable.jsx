@@ -79,7 +79,7 @@ const TYPE_STYLES = {
 };
 
 // -- Mobile layout: one card per category with a 4×3 month grid --
-function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, onMobileEdit, getMonthIncome, getMonthExpenses }) {
+function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, isSaving, onMobileEdit, onBulkFill, getMonthIncome, getMonthExpenses }) {
   const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
   const yearIncome = MONTHS.reduce((sum, m) => sum + getMonthIncome(m), 0);
   const yearExpenses = MONTHS.reduce((sum, m) => sum + getMonthExpenses(m), 0);
@@ -113,6 +113,15 @@ function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, onMobileEdit,
                       <p className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-900 dark:text-stone-100">{categoryLabel(cat)}</p>
                       <p className="text-sm font-semibold text-stone-700 dark:text-stone-200">{money(total)}<span className="text-xs font-normal text-stone-500 dark:text-stone-400"> /yr</span></p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => onBulkFill(cat)}
+                      disabled={isSaving}
+                      aria-label={`Set amount for all 12 months of ${cat.name}`}
+                      className="mb-2 min-h-11 w-full rounded-lg border border-dashed border-stone-300/70 px-3 text-xs font-semibold text-amber-800 transition-colors hover:border-stone-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-50 dark:border-stone-600 dark:text-amber-400"
+                    >
+                      Set all 12 months
+                    </button>
                     <div className="grid grid-cols-4 gap-1.5">
                       {MONTHS.map((m) => {
                         const cents = monthData[m]?.allocations[cat.id] || 0;
@@ -122,8 +131,9 @@ function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, onMobileEdit,
                             key={m}
                             type="button"
                             onClick={() => onMobileEdit(m, cat.id, exactDollars)}
+                            disabled={isSaving}
                             aria-label={`${cat.name}, ${SHORT_MONTHS[m - 1]}: ${cents ? money(cents) : 'not set'}. Edit`}
-                            className="flex min-h-11 flex-col items-start justify-center rounded-lg border border-stone-200/70 bg-stone-50/60 px-2 py-1 text-left transition-colors hover:border-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-stone-700 dark:bg-stone-900/40"
+                            className="flex min-h-11 flex-col items-start justify-center rounded-lg border border-stone-200/70 bg-stone-50/60 px-2 py-1 text-left transition-colors hover:border-stone-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 disabled:opacity-50 dark:border-stone-700 dark:bg-stone-900/40"
                           >
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{SHORT_MONTHS[m - 1]}</span>
                             <span className={`text-xs font-semibold ${cents ? 'text-stone-900 dark:text-stone-100' : 'text-stone-300 dark:text-stone-600'}`}>
@@ -233,6 +243,7 @@ function SortableCategoryRow({ cat, months, monthData, isSaving, isEditMode, onC
             <button
               type="button"
               onClick={() => onMobileEdit(m, cat.id, exactDollars)}
+              disabled={isSaving}
               className="flex sm:hidden w-full items-center justify-end rounded border border-stone-200 bg-stone-50/30 px-1 py-1.5 text-right text-[11px] text-stone-800 dark:border-stone-700 dark:bg-stone-700/30 dark:text-stone-200"
             >
               {roundedDollars === '' ? <span className="text-stone-300 dark:text-stone-600">—</span> : `$${displayDollars}`}
@@ -457,6 +468,7 @@ export default function AnnualBudgetTable() {
   };
   const closeMobileEdit = () => setMobileEditCell({ open: false, categoryId: null, month: null, value: '' });
   const handleMobileSave = () => {
+    if (isSaving) return;
     handleCellChange(mobileEditCell.month, mobileEditCell.categoryId, mobileEditCell.value);
     closeMobileEdit();
   };
@@ -476,6 +488,7 @@ export default function AnnualBudgetTable() {
   };
   const closeBulkFill = () => setBulkFillCell((prev) => ({ ...prev, open: false }));
   const handleBulkFillSave = () => {
+    if (isSaving) return;
     const { categoryId, value, overwriteExisting } = bulkFillCell;
     MONTHS.forEach((m) => {
       if (!overwriteExisting) {
@@ -846,7 +859,9 @@ export default function AnnualBudgetTable() {
           typeOrder={typeOrder}
           visibleGrouped={visibleGrouped}
           monthData={monthData}
+          isSaving={isSaving}
           onMobileEdit={openMobileEdit}
+          onBulkFill={openBulkFill}
           getMonthIncome={getMonthIncome}
           getMonthExpenses={getMonthExpenses}
         />
@@ -1094,7 +1109,8 @@ export default function AnnualBudgetTable() {
                 <button
                   type="button"
                   onClick={handleMobileSave}
-                  className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                  disabled={isSaving}
+                  className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
                 >
                   Save
                 </button>
@@ -1172,7 +1188,8 @@ export default function AnnualBudgetTable() {
               <button
                 type="button"
                 onClick={handleBulkFillSave}
-                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+                disabled={isSaving}
+                className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
               >
                 Apply to All Months
               </button>

@@ -59,6 +59,7 @@ function SortArrow({ direction }) {
  *  - sortColumn, sortDirection, onSort(column): sorting
  *  - selectedIds: Set<string>
  *  - onToggleSelect(id), onSelectAll(): checkbox handlers
+ *  - onClearSelection(): clears the selection (compact "Done" button)
  *  - pendingEdits: Map<id, {field: value}>
  *  - onCellEdit(id, field, value): inline edit handler
  *  - categories: all categories (for inline dropdown)
@@ -78,6 +79,7 @@ export default function TransactionList({
   selectedIds,
   onToggleSelect,
   onSelectAll,
+  onClearSelection,
   pendingEdits,
   onCellEdit,
   categories,
@@ -270,7 +272,16 @@ export default function TransactionList({
                 {isCompact ? (
                   <button
                     type="button"
-                    onClick={() => setSelecting((on) => !on)}
+                    onClick={() => {
+                      if (showCheckbox) {
+                        // Done: leave selection mode and drop any checked rows,
+                        // otherwise a nonempty selection keeps checkboxes shown.
+                        setSelecting(false);
+                        if (selectedIds.size > 0) onClearSelection?.();
+                      } else {
+                        setSelecting(true);
+                      }
+                    }}
                     aria-pressed={showCheckbox}
                     className="rounded-md px-1 py-1 text-xs font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-400"
                   >

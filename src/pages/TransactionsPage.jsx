@@ -969,6 +969,7 @@ export default function TransactionsPage() {
             selectedIds={visibleSelectedIds}
             onToggleSelect={mgr.handleToggleSelect}
             onSelectAll={() => mgr.handleSelectAll(filteredSorted)}
+            onClearSelection={() => mgr.handleSelectAll([])}
             pendingEdits={mgr.pendingEdits}
             onCellEdit={mgr.handleCellEdit}
             categories={categories}
@@ -1019,20 +1020,18 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* Bulk action bar */}
-        <div>
-          <BulkActionBar
-            selectedCount={visibleSelectedIds.size}
-            categories={categories}
-            onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
-            onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
-            onDeselectAll={() => mgr.handleSelectAll([])}
-            isBusy={mgr.isBulkBusy}
-            hasNonPosted={hasNonPostedSelected}
-            onBulkConfirm={() => mgr.handleBulkConfirm(visibleSelectedIds)}
-            onBulkSkip={() => mgr.handleBulkSkip(visibleSelectedIds)}
+        {/* Bulk action bar (direct child so it stays sticky while scrolling the list) */}
+        <BulkActionBar
+          selectedCount={visibleSelectedIds.size}
+          categories={categories}
+          onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
+          onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
+          onDeselectAll={() => mgr.handleSelectAll([])}
+          isBusy={mgr.isBulkBusy}
+          hasNonPosted={hasNonPostedSelected}
+          onBulkConfirm={() => mgr.handleBulkConfirm(visibleSelectedIds)}
+          onBulkSkip={() => mgr.handleBulkSkip(visibleSelectedIds)}
           />
-        </div>
       </div>
 
       {/* Create modal */}
