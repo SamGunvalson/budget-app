@@ -27,7 +27,7 @@ export default function BulkActionBar({ selectedCount, categories, onRecategoriz
       <div className="flex flex-col gap-2 rounded-2xl border border-amber-200/60 bg-amber-50 px-4 py-3 shadow-lg shadow-amber-100/50 sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:border-amber-700/60 dark:bg-amber-950 dark:shadow-amber-900/50">
         {/* Selection count */}
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-stone-950">
             {selectedCount}
           </div>
           <span className="text-sm font-medium text-stone-700 dark:text-stone-300">
@@ -124,7 +124,7 @@ export default function BulkActionBar({ selectedCount, categories, onRecategoriz
                   }
                 }}
                 disabled={!selectedCategoryId || isBusy}
-                className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-stone-950 shadow-sm transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
               >
                 {isBusy ? 'Applying…' : 'Apply'}
               </button>

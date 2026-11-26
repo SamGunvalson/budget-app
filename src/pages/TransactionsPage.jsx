@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { isAvailableCategory } from '../utils/categoryArchive';
 import { useQueryClient } from '@tanstack/react-query';
 import TransactionForm from '../components/transactions/TransactionForm';
@@ -64,19 +64,25 @@ import {
 // ================================================
 // TransactionsPage
 // ================================================
+const PENDING_REVIEW_FILTERS = { statusFilter: 'pending' };
+
 export default function TransactionsPage() {
   const { month, year, setMonthYear } = useMonthYear();
   const [searchParams] = useSearchParams();
   const accountFilterParam = searchParams.get('account') || '';
+  const reviewPending = searchParams.get('status') === 'pending';
   const queryClient = useQueryClient();
 
   // Period state
   const [viewMode, setViewMode] = useSessionState('transactionsViewMode', 'monthly'); // 'monthly' | 'yearly'
 
   // ── react-query data sources ───────────────────────────────────────────────
-  const monthlyTxQuery = useTransactions({ month, year }, { enabled: viewMode !== 'yearly' });
-  const yearlyTxQuery = useTransactionsForYear(year, { enabled: viewMode === 'yearly' });
-  const txQuery = viewMode === 'yearly' ? yearlyTxQuery : monthlyTxQuery;
+  // The Reports badge counts pending transactions across all dates.
+  const showYear = !reviewPending && viewMode === 'yearly';
+  const listFilters = reviewPending ? { status: 'pending' } : { month, year };
+  const listQuery = useTransactions(listFilters, { enabled: !showYear });
+  const yearlyTxQuery = useTransactionsForYear(year, { enabled: showYear });
+  const txQuery = showYear ? yearlyTxQuery : listQuery;
   const categoriesQuery = useCategories();
   const accountsQuery = useAccounts();
   const quickTemplatesQuery = useUserPreference(QUICK_TRANSACTION_TEMPLATES_KEY);
@@ -118,15 +124,18 @@ export default function TransactionsPage() {
   // useTransactionManager's optimistic edits survive until the bridge invalidation
   // refetches the real data from Dexie/server.
   const setTransactions = useCallback((updater) => {
-    const key = viewMode === 'yearly'
+    const key = showYear
       ? ['transactions', 'year', year]
-      : ['transactions', 'list', { month, year, status: null }];
-    queryClient.setQueryData(key, (prev) =>
-      typeof updater === 'function' ? updater(prev ?? []) : updater,
-    );
-  }, [queryClient, viewMode, year, month]);
+      : ['transactions', 'list', reviewPending
+          ? { month: null, year: null, status: 'pending' }
+          : { month, year, status: null }];
+    queryClient.setQueryData(key, (prev) => {
+      const next = typeof updater === 'function' ? updater(prev ?? []) : updater;
+      return reviewPending ? next.filter((tx) => tx.status === 'pending') : next;
+    });
+  }, [queryClient, showYear, reviewPending, year, month]);
 
-  const periodKey = `${viewMode}-${month}-${year}`;
+  const periodKey = reviewPending ? 'pending' : `${viewMode}-${month}-${year}`;
 
   // Trigger initial auto-scroll once per period, but preserve user scroll
   // position during same-period data refreshes (e.g. saving edits).
@@ -140,7 +149,7 @@ export default function TransactionsPage() {
   }, [txQuery.isSuccess, txQuery.dataUpdatedAt, periodKey]);
 
   // Filter state
-  const [filters, setFilters] = useState({
+  const [periodFilters, setFilters] = useState({
     searchText: '',
     categoryId: '',
     accountId: accountFilterParam,
@@ -150,6 +159,9 @@ export default function TransactionsPage() {
     dateStart: '',
     dateEnd: '',
   });
+
+  // The all-dates queue is independent of filters applied in the monthly or yearly ledger.
+  const filters = reviewPending ? PENDING_REVIEW_FILTERS : periodFilters;
 
   // Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -708,7 +720,7 @@ export default function TransactionsPage() {
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Transactions</h1>
             <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
@@ -716,11 +728,24 @@ export default function TransactionsPage() {
             </p>
           </div>
           <div className="flex shrink-0 gap-2 sm:gap-3">
+            <select
+              aria-label="More transaction actions"
+              value=""
+              onChange={(event) => {
+                if (event.target.value === 'quick') openQuickModal();
+                if (event.target.value === 'recurring') setShowRecurringPanel((open) => !open);
+              }}
+              className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-sm font-medium text-stone-700 sm:hidden dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
+            >
+              <option value="" disabled>More</option>
+              <option value="quick">Quick transactions</option>
+              <option value="recurring">{showRecurringPanel ? 'Hide recurring' : 'Show recurring'}</option>
+            </select>
             <button
               type="button"
               title="Recurring"
               onClick={() => setShowRecurringPanel((v) => !v)}
-              className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-sm font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 sm:px-5 sm:py-2.5 ${
+              className={`hidden items-center gap-2 rounded-xl border px-2.5 py-2 text-sm font-medium shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 sm:flex sm:px-5 sm:py-2.5 ${
                 showRecurringPanel
                   ? 'border-violet-300 bg-violet-500 text-white shadow-md shadow-violet-200/50'
                   : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700'
@@ -735,7 +760,7 @@ export default function TransactionsPage() {
               type="button"
               title="Quick"
               onClick={openQuickModal}
-              className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-2.5 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 sm:px-5 sm:py-2.5 dark:border-emerald-700 dark:bg-stone-800 dark:text-emerald-400 dark:hover:bg-stone-700"
+              className="hidden items-center gap-2 rounded-xl border border-emerald-300 bg-white px-2.5 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-all hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 sm:flex sm:px-5 sm:py-2.5 dark:border-emerald-700 dark:bg-stone-800 dark:text-emerald-400 dark:hover:bg-stone-700"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 2L3 6v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V6l-3-4H6zM3.8 6h16.4M16 10a4 4 0 1 1-8 0" />
@@ -746,12 +771,13 @@ export default function TransactionsPage() {
               type="button"
               title="New Transaction"
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-2.5 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] sm:px-5 sm:py-2.5"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 px-2.5 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] sm:px-5 sm:py-2.5"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
               <span className="hidden sm:inline">New Transaction</span>
+              <span className="sm:hidden">Add</span>
             </button>
           </div>
         </div>
@@ -759,7 +785,7 @@ export default function TransactionsPage() {
         {/* Recurring panel */}
         {showRecurringPanel && (
           <div className="animate-fade-in mb-8 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Recurring Transactions</h2>
               <div className="flex items-center gap-2">
                 <button
@@ -795,7 +821,13 @@ export default function TransactionsPage() {
         )}
 
         {/* View mode toggle — always visible so you can switch mid-load */}
-        {isLoading && (
+        {reviewPending && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-semibold text-stone-800 dark:text-stone-200">Pending review <span className="text-sm font-normal text-stone-500 dark:text-stone-400">· All dates</span></h2>
+            <Link to="/app/transactions" className="text-sm font-medium text-amber-800 underline dark:text-amber-400">Show all transactions</Link>
+          </div>
+        )}
+        {isLoading && !reviewPending && (
           <div className="mb-6">
             <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50/50 p-1 dark:border-stone-700 dark:bg-stone-700/50">
               {['monthly', 'yearly'].map((mode) => (
@@ -805,7 +837,7 @@ export default function TransactionsPage() {
                   onClick={() => setViewMode(mode)}
                   className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                     viewMode === mode
-                      ? 'bg-amber-500 text-white shadow-sm'
+                      ? 'bg-amber-500 text-stone-950 shadow-sm'
                       : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
                   }`}
                 >
@@ -817,7 +849,7 @@ export default function TransactionsPage() {
         )}
 
         {/* Filters (full bar — only after load to avoid debounce setState loop) */}
-        {!isLoading && (
+        {!isLoading && !reviewPending && (
           <div className="mb-6">
             <TransactionFilters
                 categories={categories}
@@ -852,7 +884,7 @@ export default function TransactionsPage() {
                 style={{ animationDelay: `${i * 80}ms` }}
               />
             ))}
-            {viewMode === 'yearly' && (
+            {showYear && (
               <p className="pt-2 text-center text-sm text-stone-400 dark:text-stone-500">
                 Loading all transactions for {year}…
               </p>
@@ -888,7 +920,7 @@ export default function TransactionsPage() {
             onEditAll={handleEditAll}
             onDeleteAll={handleDeleteAll}
             emptyMessage={
-              viewMode === 'yearly'
+              reviewPending ? 'No pending transactions to review.' : showYear
                 ? `No transactions for ${year}.`
                 : undefined
             }
@@ -915,7 +947,7 @@ export default function TransactionsPage() {
                   type="button"
                   onClick={mgr.handleSaveAllEdits}
                   disabled={mgr.isSavingEdits}
-                  className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 active:scale-[0.98] disabled:opacity-50"
+                  className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 active:scale-[0.98] disabled:opacity-50"
                 >
                   {mgr.isSavingEdits ? 'Saving…' : 'Save All'}
                 </button>
@@ -925,7 +957,7 @@ export default function TransactionsPage() {
         )}
 
         {/* Bulk action bar */}
-        <div className="hidden sm:block">
+        <div>
           <BulkActionBar
             selectedCount={visibleSelectedIds.size}
             categories={categories}

@@ -391,7 +391,8 @@ const TransactionItem = forwardRef(function TransactionItem({
   onRecalculate,
   onSplit,
   splitTransactionIds,
-  isMobile = false,
+  isCompact = false,
+  showRowDate = true,
   isGroupChild = false,
   ...rest
 }, ref) {
@@ -445,7 +446,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   const mobileSecondaryText = displayPayee && displayDesc && displayDesc !== displayPayee ? displayDesc : '';
   const hasAnyBadge = isProjected || isPending || isTransfer || isLinkedTransfer || splitTransactionIds?.has(transaction.id);
 
-  if (isMobile) {
+  if (isCompact) {
     return (
       <tr
         ref={ref}
@@ -458,14 +459,8 @@ const TransactionItem = forwardRef(function TransactionItem({
           : !isGroupChild ? 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30' : ''
         } ${hasPending ? 'border-l-2 border-l-amber-400' : ''}`}
       >
-        <td className="px-3 py-2 whitespace-nowrap">
-          <button
-            type="button"
-            onClick={() => onEdit(transaction)}
-            className="text-left text-xs font-medium text-stone-600 transition-colors hover:text-amber-600 dark:text-stone-300 dark:hover:text-amber-400"
-          >
-            {formatDate(displayDate)}
-          </button>
+        <td className="px-2 py-2">
+          <input type="checkbox" aria-label={`Select ${mobilePrimaryText}`} checked={isSelected} onChange={() => onToggleSelect(transaction.id)} />
         </td>
 
         <td className="overflow-hidden px-1 py-2">
@@ -477,6 +472,7 @@ const TransactionItem = forwardRef(function TransactionItem({
             <span className="w-full truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
               {mobilePrimaryText}
             </span>
+            {showRowDate && <time dateTime={displayDate} className="text-xs text-stone-500 dark:text-stone-400">{formatDate(displayDate)}</time>}
             {(displayCategory || mobileSecondaryText || hasAnyBadge) && (
               <span className="mt-0.5 flex w-full min-w-0 items-center gap-1.5">
                 {displayCategory && (
@@ -507,7 +503,7 @@ const TransactionItem = forwardRef(function TransactionItem({
           </button>
         </td>
 
-        <td className={`px-3 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${
+        <td className={`px-1 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${
           effectiveIsIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
         }`}>
           <button
@@ -522,7 +518,7 @@ const TransactionItem = forwardRef(function TransactionItem({
           </button>
         </td>
 
-        <td className="px-2 py-2 text-right whitespace-nowrap">
+        <td className="px-0.5 py-2 text-right whitespace-nowrap">
           <KebabMenu
             transaction={transaction}
             isNotPosted={isNotPosted}

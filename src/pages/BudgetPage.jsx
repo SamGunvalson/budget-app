@@ -33,7 +33,7 @@ export default function BudgetPage() {
               onClick={() => setViewMode('monthly')}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 viewMode === 'monthly'
-                  ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >
@@ -44,7 +44,7 @@ export default function BudgetPage() {
               onClick={() => setViewMode('annual')}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 viewMode === 'annual'
-                  ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'
               }`}
             >

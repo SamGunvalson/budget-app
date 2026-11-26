@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { transactionListRows } from '../src/utils/transactionGrouping.js';
 import {
   buildStatusMap,
   hasNonPostedSelection,
@@ -10,6 +11,39 @@ import {
 } from '../src/utils/selectionRules.js';
 
 const rows = (...ids) => ids.map((id) => ({ id }));
+
+test('date headings are shared by standalone transactions and expanded groups on the same day', () => {
+  const date = '2026-11-25';
+  const transaction = { id: 'a', transaction_date: date };
+  const child = { id: 'b', transaction_date: date };
+  const group = { type: 'group', groupKey: 'g', date, children: [child] };
+  const nextDay = { id: 'c', transaction_date: '2026-11-26' };
+  const items = [{ type: 'transaction', transaction }, group, { type: 'transaction', transaction: nextDay }];
+
+  assert.deepEqual(transactionListRows([], items, new Set(['g']), true), [
+    { rowType: 'date', date },
+    { rowType: 'transaction', transaction },
+    { rowType: 'groupHeader', group },
+    { rowType: 'groupChild', transaction: child, groupKey: 'g' },
+    { rowType: 'date', date: nextDay.transaction_date },
+    { rowType: 'transaction', transaction: nextDay },
+  ]);
+  assert.deepEqual(transactionListRows([], items, new Set(), false), [
+    { rowType: 'transaction', transaction },
+    { rowType: 'groupHeader', group },
+    { rowType: 'transaction', transaction: nextDay },
+  ]);
+});
+
+test('a flat report drill-down preserves the supplied transaction order', () => {
+  const transactions = [
+    { id: 'a', transaction_date: '2026-11-24' },
+    { id: 'b', transaction_date: '2026-11-26' },
+    { id: 'c', transaction_date: '2026-11-24' },
+  ];
+  assert.deepEqual(transactionListRows(transactions, undefined, undefined, false),
+    transactions.map((transaction) => ({ rowType: 'transaction', transaction })));
+});
 
 // APP-11 — bulk actions only act on selected rows the filters still show.
 test('visibleSelection drops selected ids that the filters hide', () => {

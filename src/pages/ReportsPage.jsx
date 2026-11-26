@@ -313,7 +313,7 @@ export default function ReportsPage() {
             </p>
             {pendingReviewCount > 0 && (
               <Link
-                to="/app/transactions"
+                to="/app/transactions?status=pending"
                 className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50"
               >
                 <span className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
@@ -327,7 +327,7 @@ export default function ReportsPage() {
             {/* Unified view tab bar */}
             <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
               {[
-                { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-white shadow-md shadow-amber-200/50' },
+                { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50' },
                 { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
                 { id: 'trends',        label: 'Trends',         shortLabel: 'Trends',  activeClass: 'bg-sky-500 text-white shadow-md shadow-sky-200/50' },
                 { id: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual',  activeClass: 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md shadow-violet-200/50 dark:shadow-violet-900/30' },
@@ -370,7 +370,7 @@ export default function ReportsPage() {
                     onClick={() => setViewMode('monthly')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'monthly'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >
@@ -381,7 +381,7 @@ export default function ReportsPage() {
                     onClick={() => setViewMode('ytd')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'ytd'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >

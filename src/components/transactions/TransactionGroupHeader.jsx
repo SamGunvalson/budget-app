@@ -138,7 +138,8 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   group,
   isExpanded,
   onToggleExpand,
-  isMobile = false,
+  isCompact = false,
+  showRowDate = true,
   isSelected,
   isIndeterminate,
   onToggleSelect,
@@ -240,7 +241,7 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
     </>
   );
 
-  if (isMobile) {
+  if (isCompact) {
     return (
       <tr
         ref={ref}
@@ -248,16 +249,15 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
         className={`border-b border-stone-100 transition-colors dark:border-stone-700/50 cursor-pointer ${rowBg}`}
         onClick={onToggleExpand}
       >
-        {/* Date */}
-        <td className="px-3 py-2 whitespace-nowrap">
-          <span className="text-xs font-medium text-stone-600 dark:text-stone-300">
-            {formatDate(date)}
-          </span>
+        <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
+          <input type="checkbox" aria-label={`Select ${displayLabel} group`} checked={isSelected}
+            ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
+            onChange={onToggleSelect} />
         </td>
 
         {/* Label + expand + badge */}
         <td className="overflow-hidden px-1 py-2">
-          <div className="flex min-w-0 items-center gap-1.5">
+          <button type="button" aria-expanded={isExpanded} className="flex w-full min-w-0 items-center gap-1.5 text-left">
             {/* Chevron */}
             <svg
               className={`h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform dark:text-stone-500 ${isExpanded ? 'rotate-90' : ''}`}
@@ -287,11 +287,12 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
               </span>
             )}
             {statusBadgesCompact}
-          </div>
+          </button>
+          {showRowDate && <time dateTime={date} className="text-xs text-stone-500 dark:text-stone-400">{formatDate(date)}</time>}
         </td>
 
         {/* Net amount */}
-        <td className={`px-3 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
+        <td className={`px-1 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
           <span className="text-xs font-bold">{isPositive ? '+' : '−'}</span>
           {formatCurrency(Math.abs(netAmount))}
           {isMixedWithTransfers && (
@@ -300,7 +301,7 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
         </td>
 
         {/* Actions — kebab menu */}
-        <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+        <td className="px-0.5 py-2" onClick={(e) => e.stopPropagation()}>
           <GroupKebabMenu
             children={children}
             isNotPosted={isNotPosted}

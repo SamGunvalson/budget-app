@@ -10,7 +10,7 @@ import { getPartnership, getPartnerEmail } from '../../services/partnerships';
 
 const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
 
-function MobileNavigationMenu({ pathname }) {
+function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -26,7 +26,17 @@ function MobileNavigationMenu({ pathname }) {
   }, [menuOpen]);
 
   return (
-    <div className="relative md:hidden" ref={menuRef}>
+    <div className="relative lg:hidden" ref={menuRef}
+      onKeyDown={(event) => {
+        if (menuOpen && event.key === 'Escape') {
+          setMenuOpen(false);
+          menuRef.current.querySelector('button').focus();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setMenuOpen(false);
+      }}
+    >
       <button
         type="button"
         onClick={() => setMenuOpen((v) => !v)}
@@ -64,6 +74,14 @@ function MobileNavigationMenu({ pathname }) {
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={onSignOut}
+            disabled={isSigningOut}
+            className="mt-1 w-full border-t border-stone-200 px-4 py-2.5 text-left text-sm font-medium text-stone-600 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-300 dark:hover:bg-stone-700"
+          >
+            {isSigningOut ? 'Signing out…' : 'Sign out'}
+          </button>
         </div>
       )}
     </div>
@@ -73,8 +91,7 @@ function MobileNavigationMenu({ pathname }) {
 /**
  * Shared sticky top navigation bar.
  *
- * Desktop (md+): shows all nav pages as links in the center.
- * Mobile (<md):  hamburger menu opens a dropdown overlay.
+ * The compact navigation fits phones and portrait tablets.
  */
 export default function TopBar() {
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -136,18 +153,18 @@ export default function TopBar() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Left: logo + mobile hamburger */}
         <div className="flex items-center gap-3">
-          <MobileNavigationMenu key={pathname} pathname={pathname} />
+          <MobileNavigationMenu key={pathname} pathname={pathname} onSignOut={handleSignOut} isSigningOut={isSigningOut} />
 
-          <Link to="/app/transactions" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+          <Link to="/app/transactions" aria-label="Budget App transactions" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             {logo}
           </Link>
         </div>
 
         {/* Center: page dots on mobile, full nav on desktop */}
-        <div className="flex items-center md:hidden">
+        <div className="flex items-center lg:hidden">
           <MobilePageDots />
         </div>
-        <div className="hidden items-center gap-1.5 md:flex">
+        <div className="hidden items-center gap-1.5 lg:flex">
           {navPages.map((page) => {
             const isActive = pathname === page.link;
             return (
@@ -183,12 +200,12 @@ export default function TopBar() {
           )}
           <SyncStatus />
           <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={isSigningOut}
-          className="rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
-        >
-          {isSigningOut ? 'Signing out…' : 'Sign out'}
+            type="button"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="hidden rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:block dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+          >
+            {isSigningOut ? 'Signing out…' : 'Sign out'}
           </button>
         </div>
       </div>
