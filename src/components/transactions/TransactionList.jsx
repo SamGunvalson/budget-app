@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
 import TransactionItem from './TransactionItem';
 import TransactionGroupHeader from './TransactionGroupHeader';
 import { transactionListRows } from '../../utils/transactionGrouping';
-import { formatDate } from '../../utils/helpers';
+import { getTodayString } from '../../utils/helpers';
+import useLayoutMode from '../../hooks/useLayoutMode';
 
 const SORT_COLUMNS = [
   { key: 'transaction_date', label: 'Date', align: 'left' },
@@ -18,6 +19,20 @@ const MOBILE_SORT_COLUMNS = [
   { key: 'payee', label: 'Payee', align: 'left' },
   { key: 'amount', label: 'Amount', align: 'right' },
 ];
+
+/** "Today · Nov 26", "Yesterday · Nov 25", else "Mon, Nov 24" (local dates). */
+function dayLabel(dateStr) {
+  const today = getTodayString();
+  const d = new Date(dateStr + 'T00:00:00');
+  const short = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (dateStr === today) return `Today · ${short}`;
+  const y = new Date(today + 'T00:00:00');
+  y.setDate(y.getDate() - 1);
+  const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+  if (dateStr === yesterday) return `Yesterday · ${short}`;
+  const sameYear = d.getFullYear() === y.getFullYear();
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+}
 
 function SortArrow({ direction }) {
   if (!direction) return null;
@@ -81,6 +96,10 @@ export default function TransactionList({
 }) {
   const parentRef = useRef(null);
   const [isCompact, setIsCompact] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  // In mobile layout the page scrolls (no nested scroll box under the tab bar).
+  const windowScroll = useLayoutMode() === 'mobile';
   const hasRows = transactions.length > 0;
   useLayoutEffect(() => {
     const list = parentRef.current;
@@ -92,6 +111,19 @@ export default function TransactionList({
     return () => observer.disconnect();
   }, [hasRows]);
   const groupByDate = isCompact && sortColumn === 'transaction_date';
+  // Compact rows hide checkboxes until the user starts selecting.
+  const showCheckbox = !isCompact || selecting || selectedIds.size > 0;
+
+  // Window virtualizer needs the list's offset from the top of the document.
+  useLayoutEffect(() => {
+    const list = parentRef.current;
+    if (!windowScroll || !list) return;
+    const measure = () => setScrollMargin(list.getBoundingClientRect().top + window.scrollY);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  }, [windowScroll, hasRows]);
 
   // Flatten grouped items into virtual rows: group headers, child rows, and standalone transactions
   const flatRows = useMemo(
@@ -104,14 +136,28 @@ export default function TransactionList({
     return row.rowType === 'date' ? row.date : row.group?.groupKey ?? row.transaction.id;
   }, [flatRows]);
 
-  const virtualizer = useVirtualizer({
+  const estimateSize = (index) => flatRows[index].rowType === 'date' ? 32 : (isCompact ? 60 : 52);
+  const elementVirtualizer = useVirtualizer({
     count: flatRows.length,
     getScrollElement: () => parentRef.current,
     getItemKey,
-    estimateSize: (index) => flatRows[index].rowType === 'date' ? 28 : (isCompact ? 56 : 52),
+    estimateSize,
     scrollPaddingStart: 48,
     overscan: 10,
+    enabled: !windowScroll,
   });
+  const windowVirtualizer = useWindowVirtualizer({
+    count: flatRows.length,
+    getItemKey,
+    estimateSize,
+    scrollMargin,
+    // Clear the sticky top bar when scrolling a row into view.
+    scrollPaddingStart: 80,
+    overscan: 10,
+    enabled: windowScroll,
+  });
+  const virtualizer = windowScroll ? windowVirtualizer : elementVirtualizer;
+  const margin = windowScroll ? scrollMargin : 0;
 
   // Scroll to the transaction nearest to today whenever a new data load completes
   useEffect(() => {
@@ -120,8 +166,11 @@ export default function TransactionList({
       row.transaction?.id === scrollToTransactionId || row.group?.children.some((tx) => tx.id === scrollToTransactionId)
     );
     if (idx >= 0) {
+      const target = flatRows[idx - 1]?.rowType === 'date' ? idx - 1 : idx;
+      // With page scrolling, leave the header in view when the row is already near the top.
+      if (windowScroll && target * estimateSize(target) < window.innerHeight * 0.5) return;
       requestAnimationFrame(() => {
-        virtualizer.scrollToIndex(flatRows[idx - 1]?.rowType === 'date' ? idx - 1 : idx, { align: 'start' });
+        virtualizer.scrollToIndex(target, { align: 'start' });
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,7 +179,7 @@ export default function TransactionList({
   const allSelected = transactions.length > 0 && selectedIds.size === transactions.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
   const activeColumns = isCompact ? MOBILE_SORT_COLUMNS : SORT_COLUMNS;
-  const columnCount = isCompact ? 4 : 8;
+  const columnCount = (isCompact ? 3 : 7) + (showCheckbox ? 1 : 0);
 
   if (transactions.length === 0) {
     return (
@@ -144,23 +193,23 @@ export default function TransactionList({
   }
 
   const virtualItems = virtualizer.getVirtualItems();
-  const paddingTop = virtualItems.length > 0 ? (virtualItems[0].start ?? 0) : 0;
+  const paddingTop = virtualItems.length > 0 ? (virtualItems[0].start ?? margin) - margin : 0;
   const paddingBottom =
     virtualItems.length > 0
-      ? virtualizer.getTotalSize() - (virtualItems.at(-1).end ?? 0)
+      ? virtualizer.getTotalSize() - ((virtualItems.at(-1).end ?? margin) - margin)
       : 0;
 
   return (
     <>
       <div
         ref={parentRef}
-        className="max-h-[70vh] overflow-y-auto overflow-x-hidden sm:overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50"
+        className="max-h-[70vh] overflow-y-auto overflow-x-hidden sm:overflow-x-auto rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50 mobile:max-h-none mobile:overflow-visible"
       >
         <table className="w-full table-fixed text-sm">
           <colgroup>
             {isCompact ? (
               <>
-                <col className="w-7 sm:w-9" />
+                {showCheckbox && <col className="w-9" />}
                 <col />
                 <col className="w-24 sm:w-28" />
                 <col className="w-8 sm:w-11" />
@@ -179,18 +228,20 @@ export default function TransactionList({
             )}
           </colgroup>
 
-          <thead className="sticky top-0 z-10 border-b border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800">
+          <thead className="sticky top-0 z-10 border-b border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-800 mobile:static">
             <tr>
-              <th className="px-2 py-3">
-                <input
-                  type="checkbox"
-                  aria-label="Select all visible transactions"
-                  checked={allSelected}
-                  ref={(el) => { if (el) el.indeterminate = someSelected; }}
-                  onChange={onSelectAll}
-                  className="h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-2 focus:ring-amber-500 focus:ring-offset-0"
-                />
-              </th>
+              {showCheckbox && (
+                <th className={isCompact ? 'py-2.5 pl-3 pr-0' : 'px-2 py-3'}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible transactions"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                    onChange={onSelectAll}
+                    className="h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-2 focus:ring-amber-500 focus:ring-offset-0"
+                  />
+                </th>
+              )}
               {activeColumns.map((col) => (
                 <th
                   key={col.key}
@@ -209,8 +260,19 @@ export default function TransactionList({
                   </button>
                 </th>
               ))}
-              <th className={`${isCompact ? 'px-2 py-2.5' : 'px-4 py-3'} text-right font-semibold text-stone-600 dark:text-stone-400`}>
-                <span className="sr-only">Actions</span>
+              <th className={`${isCompact ? 'py-2.5 pl-0 pr-2' : 'px-4 py-3'} text-right font-semibold text-stone-600 dark:text-stone-400`}>
+                {isCompact ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelecting((on) => !on)}
+                    aria-pressed={showCheckbox}
+                    className="rounded-md px-1 py-1 text-xs font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-400"
+                  >
+                    {showCheckbox ? 'Done' : 'Select'}
+                  </button>
+                ) : (
+                  <span className="sr-only">Actions</span>
+                )}
               </th>
             </tr>
           </thead>
@@ -225,8 +287,8 @@ export default function TransactionList({
               if (row.rowType === 'date') {
                 return (
                   <tr key={row.date} ref={virtualizer.measureElement} data-index={virtualRow.index}>
-                    <td colSpan={columnCount} className="bg-stone-100 px-3 py-1.5 text-xs font-semibold text-stone-600 dark:bg-stone-700 dark:text-stone-200">
-                      <time dateTime={row.date}>{formatDate(row.date)}</time>
+                    <td colSpan={columnCount} className="border-b border-stone-200/60 bg-stone-50 px-3 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-stone-500 dark:border-stone-700/50 dark:bg-stone-800 dark:text-stone-400">
+                      <time dateTime={row.date}>{dayLabel(row.date)}</time>
                     </td>
                   </tr>
                 );
@@ -249,6 +311,7 @@ export default function TransactionList({
                     isExpanded={isExpanded}
                     onToggleExpand={() => onToggleGroupExpand(group.groupKey)}
                     isCompact={isCompact}
+                    showCheckbox={showCheckbox}
                     showRowDate={!groupByDate}
                     isSelected={groupAllSelected}
                     isIndeterminate={groupSomeSelected}
@@ -293,6 +356,7 @@ export default function TransactionList({
                   onSplit={onSplit}
                   splitTransactionIds={splitTransactionIds}
                   isCompact={isCompact}
+                  showCheckbox={showCheckbox}
                   showRowDate={!groupByDate}
                   isGroupChild={isChild}
                 />

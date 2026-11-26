@@ -514,6 +514,32 @@ When adding new sub-controls inside a Reports section, reference this table to p
 </div>
 ```
 
+### Transaction rows
+
+`TransactionList` renders a sortable table on wide screens and **compact
+rows** when the list is narrower than 900px:
+
+- **Compact row:** a 36px category badge (the category color at 18%, with its
+  initial), the payee (semibold, 15px), and a "Category · Account" line below
+  in `text-xs text-stone-500`. The amount is right-aligned in tabular figures,
+  with the kebab menu at the end. A different description shows as the row's
+  `title`.
+- **Status chips:** `Pending` (amber chip) and `Planned` (stone chip) sit
+  next to the payee. Other states (transfer, split, locked amount) stay as
+  small icons on the sub-line.
+- **Amounts:** income is `text-emerald-700 dark:text-emerald-400` with `+`.
+  Expenses are **ink** (`text-stone-900 dark:text-stone-100`) with `−`, not
+  red. Transfers are stone with `↑`/`↓`. Red is for errors and over-budget, not
+  for ordinary spending.
+- **Day headers** (when sorted by date): "Today · Nov 26", "Yesterday · Nov 25",
+  then "Tue, Nov 24", in small uppercase on `bg-stone-50`.
+- **Selection:** compact rows hide checkboxes until **Select** in the header is
+  tapped, or any row is selected. Desktop always shows them.
+- **Scrolling:** in mobile layout the list scrolls with the page (window
+  virtualizer). There is no nested scroll box under the tab bar.
+- **Status switch:** "All / Pending (n)" above the filters (`?status=pending`),
+  with the selected segment in ink.
+
 ### Alert/Message Components
 
 **Success Message**:

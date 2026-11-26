@@ -29,6 +29,7 @@ import {
   useCategories,
   useAccounts,
   useUserPreference,
+  usePendingReviewCount,
 } from '../hooks/queries';
 import BulkEditModal from '../components/transactions/BulkEditModal';
 import {
@@ -73,6 +74,7 @@ export default function TransactionsPage() {
   const [searchParams] = useSearchParams();
   const accountFilterParam = searchParams.get('account') || '';
   const reviewPending = searchParams.get('status') === 'pending';
+  const pendingCount = usePendingReviewCount().data ?? 0;
   const queryClient = useQueryClient();
 
   // Period state
@@ -840,13 +842,34 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* View mode toggle — always visible so you can switch mid-load */}
-        {reviewPending && (
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold text-stone-800 dark:text-stone-200">Pending review <span className="text-sm font-normal text-stone-500 dark:text-stone-400">· All dates</span></h2>
-            <Link to="/app/transactions" className="text-sm font-medium text-amber-800 underline dark:text-amber-400">Show all transactions</Link>
+        {/* All / Pending status switch */}
+        <nav aria-label="Transaction status" className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-xl border border-stone-200 bg-stone-100/70 p-1 dark:border-stone-700 dark:bg-stone-800">
+            {[
+              { key: 'all', label: 'All', to: '/app/transactions', active: !reviewPending },
+              { key: 'pending', label: 'Pending', to: '/app/transactions?status=pending', active: reviewPending },
+            ].map((tab) => (
+              <Link
+                key={tab.key}
+                to={tab.to}
+                aria-current={tab.active ? 'page' : undefined}
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                  tab.active
+                    ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                    : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
+                }`}
+              >
+                {tab.label}
+                {tab.key === 'pending' && pendingCount > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+              </Link>
+            ))}
           </div>
-        )}
+          {reviewPending && <span className="text-sm text-stone-500 dark:text-stone-400">All dates</span>}
+        </nav>
         {isLoading && !reviewPending && (
           <div className="mb-6">
             <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50/50 p-1 dark:border-stone-700 dark:bg-stone-700/50">

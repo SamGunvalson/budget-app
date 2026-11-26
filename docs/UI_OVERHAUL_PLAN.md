@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phases 1–3 done (Phase 2 pending device testing) · 2026-11-26
+Status: Phases 1–3 done · Phase 4 in progress (Transactions done) · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -165,7 +165,7 @@ mobile Safari/Chrome PWA (safe areas, keyboard, swipe still working).
 
 Order these by how often each page is used:
 
-1. **Transactions:** rows grouped by day ("Today · Nov 26") with a category icon
+1. **Transactions** ✅: rows grouped by day ("Today · Nov 26") with a category icon
    well, payee, "Category · Account" sub-line, and right-aligned tabular amount.
    Income shows in green with a `+`. A segmented **Posted / Pending (n)**
    control. On mobile, tapping a row opens a full-screen editor (mockup) instead
