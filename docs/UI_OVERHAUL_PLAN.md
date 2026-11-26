@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phases 1–3 done · Phase 4 in progress (Transactions, Budgets, Accounts done) · 2026-11-26
+Status: Phases 1–3 done · Phase 4 in progress (Transactions, Budgets, Accounts, Reports done) · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -178,7 +178,7 @@ Order these by how often each page is used:
    dedicated mobile view (cards per category) instead of horizontal scrolling.
 3. **Accounts** ✅: hairline lists; forest hero card for net worth / available
    to spend.
-4. **Reports:** retheme the chart palette (violet accent kept); the serif title
+4. **Reports** ✅: retheme the chart palette (violet accent kept); the serif title
    and eyebrow tabs.
 5. **Splits / Settings / Categories / Auth / Server setup:** apply the shared
    components (low effort once 1–3 exist).

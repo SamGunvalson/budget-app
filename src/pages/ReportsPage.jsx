@@ -324,9 +324,9 @@ export default function ReportsPage() {
               </Link>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            {/* Unified view tab bar */}
-            <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
+            {/* Unified view tab bar — full width on phones */}
+            <div className="flex w-full overflow-x-auto rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto dark:border-stone-700/60 dark:bg-stone-800">
               {[
                 { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50' },
                 { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
@@ -339,7 +339,7 @@ export default function ReportsPage() {
                   type="button"
                   title={label}
                   onClick={() => setActiveView(id)}
-                  className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-4 ${
+                  className={`flex-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium transition-all sm:flex-none sm:px-4 ${
                     activeView === id
                       ? activeClass
                       : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
@@ -364,7 +364,7 @@ export default function ReportsPage() {
             )}
             {/* Time-period controls — only for Summary and Plan vs Actual */}
             {(activeView === 'summary' || activeView === 'planVsActual') && (
-              <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
                 <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
                   <button
                     type="button"

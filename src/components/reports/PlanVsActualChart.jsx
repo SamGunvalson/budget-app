@@ -1,4 +1,5 @@
 import { formatPreMaskedDollars, toDollars } from '../../utils/helpers';
+import { CHART_SPENDING } from '../../constants/chartColors';
 
 /**
  * A single metric row with a diverging bar chart anchored at the shared zero line.
@@ -131,7 +132,7 @@ export default function PlanVsActualChart({
       label: 'Expenses',
       planned: toDollars(plannedExpenses),
       actual: toDollars(actualExpenses),
-      actualColor: '#F59E0B',
+      actualColor: CHART_SPENDING,
     },
     {
       label: 'Net',

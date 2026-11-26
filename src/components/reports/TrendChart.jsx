@@ -12,7 +12,7 @@ import {
   Legend,
 } from 'recharts';
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
-import { CHART_AXIS, CHART_GOLD, CHART_GRID, CHART_MUTED } from '../../constants/chartColors';
+import { CHART_AXIS, CHART_GOLD, CHART_GRID, CHART_MUTED, CHART_SPENDING } from '../../constants/chartColors';
 
 /* ------------------------------------------------------------------ */
 /*  Custom tooltip                                                     */
@@ -204,8 +204,8 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
             <AreaChart data={areaData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
               <defs>
                 <linearGradient id="gradSpent" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.03} />
+                  <stop offset="0%" stopColor={CHART_SPENDING} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={CHART_SPENDING} stopOpacity={0.03} />
                 </linearGradient>
                 <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
@@ -247,7 +247,7 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
                 type="monotone"
                 dataKey="spent"
                 name="Spending"
-                stroke="#F59E0B"
+                stroke={CHART_SPENDING}
                 strokeWidth={2.5}
                 fill="url(#gradSpent)"
                 dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}

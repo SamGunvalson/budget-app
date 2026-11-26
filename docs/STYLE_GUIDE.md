@@ -588,7 +588,18 @@ bg-forest p-6 sm:p-7 text-[#fbfcf2] shadow-lg shadow-stone-900/10`.
   card instead of forest.
 
 Used by: Budgets (left in plan), Accounts (net worth), Accounts → Cashflow
-(lowest cash). Keep one forest card per screen.
+(lowest cash), and the Reports stat rows. Keep one forest card per screen.
+
+**Report stat rows** use `StatCards` (`src/components/reports/StatCards.jsx`):
+the first card is the forest headline (Net, Left in / Over budget, Average
+spending), and the rest are plain panels with an eyebrow label and an **ink**
+figure. Don't color figures by meaning (no orange "actual", no red
+"highest"); `negative: true` marks a bad outcome (peach on forest, red on
+panels).
+
+**Chart series:** income is emerald (`CHART_INCOME`). Spending is **violet**
+(`CHART_SPENDING`, the Reports accent), never amber or orange, which mean
+primary action and warning. Category charts keep each category's own color.
 
 **Section labels** above panels and lists use
 `px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300`.
