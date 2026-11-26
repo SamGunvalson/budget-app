@@ -17,11 +17,15 @@
  * Per-user resets all hang off one place, `noteSessionIdentity()`: whenever
  * the session becomes null or the user id changes, the previous user's React
  * Query cache is dropped and the warm-up is re-armed for the next user.
+ * Before a new user's session is exposed, the offline mirror is claimed for
+ * them (`claimOfflineDataFor`), wiping another user's rows and queued edits
+ * left behind when a session ended without an explicit sign-out.
  * Theme/safe-mode providers key their own state on the same user id.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { isBackendReady } from '../services/backend';
-import { getSession, onAuthStateChange } from '../services/auth';
+import { getServerOrigin, isBackendReady } from '../services/backend';
+import { claimOfflineDataFor, clearAllOfflineData } from '../services/offlineDb';
+import { getSession, onAuthStateChange, signOut as signOutAdapter } from '../services/auth';
 import { requestSync, startSyncListener } from '../services/sync';
 import { initializeRecurringCycle, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import AuthContext, { classifySessionChange, getSessionUserId } from './authContextValue';
@@ -73,11 +77,43 @@ export function AuthProvider({ children, enabled = true }) {
     if (!enabled || !isBackendReady()) return undefined;
 
     let mounted = true;
+    // Session updates are applied strictly in arrival order, each after the
+    // offline mirror has been claimed for its user, so no page can read the
+    // previous user's cached rows under the new session.
+    let applying = Promise.resolve();
+
+    // Resolves to the session that may be exposed: `next`, or null when the
+    // mirror could not be made safe for its user.
+    const claimMirror = async (next) => {
+      const nextUserId = getSessionUserId(next);
+      if (!nextUserId || nextUserId === lastUserId) return next;
+      try {
+        await claimOfflineDataFor(nextUserId, getServerOrigin() ?? null);
+        return next;
+      } catch (error) {
+        console.error('AuthProvider: unable to check offline data owner', error);
+      }
+      // Ownership unknown: the mirror may hold another account's rows and
+      // queued edits. Empty it (all or nothing), or refuse the session.
+      try {
+        await clearAllOfflineData();
+        await claimOfflineDataFor(nextUserId, getServerOrigin() ?? null);
+        return next;
+      } catch (error) {
+        console.error('AuthProvider: unable to clear offline data; signing out', error);
+      }
+      try { await signOutAdapter(); } catch { /* credentials are dropped locally regardless */ }
+      return null;
+    };
 
     const applySession = (next) => {
-      noteSessionIdentity(next);
-      setSession(next);
-      setIsChecking(false);
+      applying = applying.then(async () => {
+        const allowed = await claimMirror(next);
+        if (!mounted) return;
+        noteSessionIdentity(allowed);
+        setSession(allowed);
+        setIsChecking(false);
+      });
     };
 
     // 1. Check the current session once on mount.

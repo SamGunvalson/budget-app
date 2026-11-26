@@ -292,6 +292,24 @@ export async function createLinkedTransfer({
 }
 
 /**
+ * Write both legs of a transfer in one database statement (the
+ * `update_transfer_legs` RPC), so a failure can never leave one leg changed
+ * and the other not. The RPC checks that the two ids are the caller's two
+ * live legs of one transfer and locks them for the update.
+ *
+ * @param {{ id: string }} first - leg id plus the fields to set
+ * @param {{ id: string }} second
+ * @returns {Promise<Object[]>} the updated legs, joined, in argument order
+ */
+async function updateTransferLegPair(first, second) {
+  const { data, error } = await db.rpc("update_transfer_legs", {
+    p_updates: [first, second],
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Update both legs of a linked transfer.
  * The main leg's category is user-chosen; the companion stays "Account Transfer".
  *
@@ -339,40 +357,23 @@ export async function updateLinkedTransfer(
   if (!mainLeg || !companionLeg)
     throw new Error("Linked transfer legs are malformed.");
 
-  const user = await getCurrentUser();
-  const now = new Date().toISOString();
   const sharedBase = {
     description: description?.trim() || "",
     payee: payee?.trim() || null,
     transaction_date,
-    updated_at: now,
   };
 
-  // Update main leg
-  const { data: updatedMain, error: mainErr } = await db
-    .from("transactions")
-    .update({ ...sharedBase, amount, account_id, category_id, is_income })
-    .eq("id", mainLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (mainErr) throw mainErr;
-
-  // Update companion leg (keep its transfer category, flip is_income).
-  // If companion_amount is provided, the companion uses that instead of amount
+  // Companion keeps its transfer category and flips is_income. If
+  // companion_amount is provided, the companion uses that instead of amount
   // (asymmetric linked transfer — e.g. principal portion < total payment).
   const companionAmt =
     companion_amount != null && companion_amount !== amount
       ? companion_amount
       : amount;
-  const { data: updatedCompanion, error: compErr } = await db
-    .from("transactions")
-    .update({ ...sharedBase, amount: companionAmt, account_id: linked_account_id, is_income: !is_income })
-    .eq("id", companionLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (compErr) throw compErr;
+  const [updatedMain, updatedCompanion] = await updateTransferLegPair(
+    { ...sharedBase, id: mainLeg.id, amount, account_id, category_id, is_income },
+    { ...sharedBase, id: companionLeg.id, amount: companionAmt, account_id: linked_account_id, is_income: !is_income },
+  );
 
   return [updatedMain, updatedCompanion];
 }
@@ -586,14 +587,11 @@ export async function updateAsymmetricTransfer(
   if (!outgoingLeg || !incomingLeg)
     throw new Error("Transfer legs are malformed.");
 
-  const user = await getCurrentUser();
-  const now = new Date().toISOString();
   const shared = {
     category_id,
     description: description?.trim() || "",
     payee: payee?.trim() || null,
     transaction_date,
-    updated_at: now,
   };
   // A hand-edited generated payment keeps its amount from now on.
   if (amountLockedAfterEdit([
@@ -603,23 +601,10 @@ export async function updateAsymmetricTransfer(
     shared.amount_locked = true;
   }
 
-  const { data: updatedOut, error: outErr } = await db
-    .from("transactions")
-    .update({ ...shared, account_id: from_account_id, amount: from_amount })
-    .eq("id", outgoingLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (outErr) throw outErr;
-
-  const { data: updatedIn, error: inErr } = await db
-    .from("transactions")
-    .update({ ...shared, account_id: to_account_id, amount: to_amount })
-    .eq("id", incomingLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (inErr) throw inErr;
+  const [updatedOut, updatedIn] = await updateTransferLegPair(
+    { ...shared, id: outgoingLeg.id, account_id: from_account_id, amount: from_amount },
+    { ...shared, id: incomingLeg.id, account_id: to_account_id, amount: to_amount },
+  );
 
   return [updatedOut, updatedIn];
 }
@@ -669,15 +654,12 @@ export async function updateTransfer(
   if (!outgoingLeg || !incomingLeg)
     throw new Error("Transfer legs are malformed.");
 
-  const user = await getCurrentUser();
-  const now = new Date().toISOString();
   const shared = {
     category_id,
     amount,
     description: description?.trim() || "",
     payee: payee?.trim() || null,
     transaction_date,
-    updated_at: now,
   };
   // A hand-edited generated payment keeps its amount from now on.
   if (amountLockedAfterEdit([
@@ -687,25 +669,10 @@ export async function updateTransfer(
     shared.amount_locked = true;
   }
 
-  // Update outgoing leg (from account)
-  const { data: updatedOut, error: outErr } = await db
-    .from("transactions")
-    .update({ ...shared, account_id: from_account_id })
-    .eq("id", outgoingLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (outErr) throw outErr;
-
-  // Update incoming leg (to account)
-  const { data: updatedIn, error: inErr } = await db
-    .from("transactions")
-    .update({ ...shared, account_id: to_account_id })
-    .eq("id", incomingLeg.id)
-    .eq("user_id", user.id)
-    .select("*, categories(id, name, color, type), accounts(id, name, type)")
-    .single();
-  if (inErr) throw inErr;
+  const [updatedOut, updatedIn] = await updateTransferLegPair(
+    { ...shared, id: outgoingLeg.id, account_id: from_account_id },
+    { ...shared, id: incomingLeg.id, account_id: to_account_id },
+  );
 
   return [updatedOut, updatedIn];
 }

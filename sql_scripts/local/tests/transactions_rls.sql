@@ -39,6 +39,12 @@ BEGIN
       AND (cmd = 'ALL' OR roles <> ARRAY['authenticated']::name[]));
   ASSERT NOT has_function_privilege('anon', 'public.soft_delete_transaction(uuid)', 'EXECUTE');
   ASSERT has_function_privilege('authenticated', 'public.soft_delete_transaction(uuid)', 'EXECUTE');
+  -- updated_at is server time: the fixtures' client-supplied 2020 value is ignored.
+  ASSERT NOT EXISTS (SELECT 1 FROM public.transactions
+    WHERE description = 'RLS fixture' AND updated_at <= '2020-01-01'::timestamptz);
+  ASSERT NOT has_function_privilege('anon', 'public.get_deleted_transaction_ids(timestamptz)', 'EXECUTE');
+  ASSERT has_function_privilege('authenticated', 'public.get_deleted_transaction_ids(timestamptz)', 'EXECUTE');
+  ASSERT NOT has_function_privilege('anon', 'public.update_transfer_legs(jsonb)', 'EXECUTE');
 END;
 $$;
 
@@ -114,7 +120,7 @@ RESET ROLE;
 
 DO $$
 BEGIN
-  ASSERT (SELECT deleted_at IS NOT NULL AND updated_at > '2020-01-01'::timestamptz
+  ASSERT (SELECT deleted_at > '2020-01-01'::timestamptz
     FROM public.transactions WHERE id = '20000000-0000-0000-0000-000000000001');
   ASSERT (SELECT deleted_at IS NULL FROM public.transactions
     WHERE id = '20000000-0000-0000-0000-000000000002');
@@ -228,9 +234,10 @@ RESET ROLE;
 
 DO $$
 BEGIN
+  -- Deleted by the RPC above; row 5 was already deleted in 2020.
   ASSERT (SELECT count(*) = 3 FROM public.transactions
     WHERE description = 'Recurring RLS fixture'
-      AND deleted_at IS NOT NULL AND updated_at > '2020-01-01'::timestamptz);
+      AND deleted_at > '2020-01-01'::timestamptz);
   ASSERT (SELECT count(*) = 4 FROM public.transactions
     WHERE description = 'Recurring RLS fixture' AND deleted_at IS NULL);
   ASSERT (SELECT deleted_at = '2020-01-01'::timestamptz FROM public.transactions

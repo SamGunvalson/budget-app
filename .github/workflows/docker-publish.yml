@@ -20,7 +20,7 @@ env:
 jobs:
   # ── 1. Quality gates ───────────────────────────────────────────────────────
   audit:
-    name: Security & Lint
+    name: Security, Lint & Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,12 +34,34 @@ jobs:
       - run: npm ci
       - run: npm run audit:security
       - run: npm run lint
+      - run: npm test
+
+  auth-tests:
+    name: Auth Service Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: server/auth/package-lock.json
+
+      - run: npm ci
+        working-directory: server/auth
+      - name: Audit auth dependencies (high + critical only)
+        run: npx --yes audit-ci@7.1.0 --config ../../audit-ci.jsonc
+        working-directory: server/auth
+      # Each run starts its own throwaway postgres:16 container (test/helpers.js).
+      - run: npm test
+        working-directory: server/auth
 
   # ── 2. Build & push ────────────────────────────────────────────────────────
   selfhost-smoke:
     name: Self-hosted Deployment Smoke Test
     runs-on: ubuntu-latest
-    needs: audit
+    needs: [audit, auth-tests]
     permissions:
       contents: read
     steps:
@@ -59,7 +81,7 @@ jobs:
   release:
     name: Prepare Release Version
     runs-on: ubuntu-latest
-    needs: [audit, selfhost-smoke]
+    needs: [audit, auth-tests, selfhost-smoke]
     permissions:
       contents: write   # required to create the version tag
     outputs:

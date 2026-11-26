@@ -32,9 +32,10 @@ import {
   dropUnchangedRows,
   getTableLastSynced,
   getTableRowCount,
+  isOfflineOwner,
 } from "./offlineDb";
 import { drainAll } from "../utils/syncQueue";
-import { notifyTable } from "./cache";
+import { getCacheEpoch, notifyTable } from "./cache";
 import { isDataSaver } from "../hooks/useDataSaver";
 
 // ── Sync state (observable) ──
@@ -159,6 +160,9 @@ const SYNC_TABLES = [
     name: "transactions",
     select: "*, categories(id, name, color, type), accounts(id, name, type)",
     softDeleteField: "deleted_at", // not-null = removed
+    // SELECT RLS hides soft-deleted rows, so the incremental pull cannot see
+    // them; this owner-scoped RPC returns just their ids.
+    deletedIdsRpc: "get_deleted_transaction_ids",
     activeFilter: null,
   },
   {
@@ -214,10 +218,12 @@ export async function pullAll({ full = false } = {}) {
 
   try {
     const user = await getCurrentUser();
-    if (!user) return;
+    // Only pull into a mirror that has been claimed for this user.
+    if (!user || !isOfflineOwner(user.id)) return;
+    const epoch = getCacheEpoch();
 
     await Promise.all(
-      SYNC_TABLES.map((t) => pullTableIncremental(t, { full })),
+      SYNC_TABLES.map((t) => pullTableIncremental(t, { full, epoch })),
     );
 
     console.log("[sync] Pull complete");
@@ -237,16 +243,17 @@ export async function pullAll({ full = false } = {}) {
 //  * it is the smaller of that local time and the newest `updated_at` the
 //    fetch returned, so a client clock that runs ahead cannot push it past
 //    the data. This one rule serves every table: where the server stamps
-//    `updated_at` by trigger (categories, budget_items, recurring_templates)
-//    the newest value seen is server time; on the other tables it is some
-//    client's clock, which is why it only ever lowers the watermark;
+//    `updated_at` by trigger (every synced table, once migrated)
+//    the newest value seen is server time; on databases without those
+//    triggers it can be some client's clock, so it only ever lowers it;
 //  * a margin is subtracted, so rows that commit slightly late or carry a
 //    slightly older timestamp are re-read instead of skipped. Re-read rows
 //    that are already mirrored are dropped by `dropUnchangedRows`.
 //
-// A writer whose clock lags by more than the margin on a table without a
-// server-side `updated_at` trigger can still be missed; only server
-// timestamps on those tables close that gap.
+// Every synced table now has a server-side `updated_at` trigger (see
+// sql_scripts/add_updated_at.sql), so a writer's clock no longer decides
+// what a pull can see; the rules above still guard this client's own clock
+// and databases that predate the trigger migration.
 const WATERMARK_MARGIN_MS = 5 * 60 * 1000;
 
 /**
@@ -281,8 +288,8 @@ export function pullSince(lastSynced, now) {
  * Pull a single table incrementally. Falls back to a full pull when the
  * local cache is empty (cold) or `full` is set.
  */
-async function pullTableIncremental(tableConfig, { full = false } = {}) {
-  const { name, select, softDeleteField, activeFilter } = tableConfig;
+async function pullTableIncremental(tableConfig, { full = false, epoch = getCacheEpoch() } = {}) {
+  const { name, select, softDeleteField, activeFilter, deletedIdsRpc } = tableConfig;
   const lastSynced = full ? null : await getTableLastSynced(name);
   const localCount = await getTableRowCount(name);
   const isCold = localCount === 0;
@@ -294,6 +301,8 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
       activeFilter,
       includeDeleted: false,
     });
+    // The mirror changed hands while fetching: these rows are not its owner's.
+    if (getCacheEpoch() !== epoch) return;
     await cacheTable(name, rows, {
       lastSynced: computeWatermark(fetchStartedAt, rows),
     });
@@ -303,20 +312,24 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
 
   // Incremental: fetch rows changed since lastSynced.
   // We fetch BOTH active and inactive/deleted so we can prune locally.
-  const changed = await fetchAll(name, select, {
-    activeFilter: null,
-    includeDeleted: true,
-    updatedSince: pullSince(lastSynced, fetchStartedAt),
-  });
+  const since = pullSince(lastSynced, fetchStartedAt);
+  const [changed, deletedIds] = await Promise.all([
+    fetchAll(name, select, {
+      activeFilter: null,
+      includeDeleted: true,
+      updatedSince: since,
+    }),
+    deletedIdsRpc ? fetchDeletedIds(deletedIdsRpc, since) : [],
+  ]);
 
-  if (!changed.length) {
+  if (!changed.length && !deletedIds.length) {
     // Nothing changed — no watermark bump needed (it stays at the previous
     // server timestamp; no risk of missing an update).
     return;
   }
 
   // Split into upserts vs deletes.
-  const removedIds = [];
+  const removedIds = [...deletedIds];
   const upserts = [];
   for (const row of changed) {
     const isRemoved =
@@ -334,9 +347,13 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
     removedIds,
   );
 
+  if (getCacheEpoch() !== epoch) return;
   await cacheTableIncremental(name, newRows, {
     removedIds: newRemovedIds,
-    lastSynced: computeWatermark(fetchStartedAt, changed),
+    // Deletion ids carry no server timestamp. With no changed rows to cap it,
+    // a watermark from this device's clock could run ahead of the server and
+    // skip rows, so a deletion-only pull keeps the previous watermark.
+    lastSynced: changed.length ? computeWatermark(fetchStartedAt, changed) : lastSynced,
   });
   if (newRows.length || newRemovedIds.length) notifyTable(name);
 }
@@ -346,6 +363,16 @@ async function pullTableIncremental(tableConfig, { full = false } = {}) {
 async function _doSync({ skipPull = false } = {}) {
   if (_syncing) return;
   if (!navigator.onLine) return;
+  // Queued edits are pushed as the signed-in user, so the mirror holding them
+  // must have been claimed for that user (see claimOfflineDataFor).
+  let user;
+  try {
+    user = await getCurrentUser();
+  } catch {
+    return;
+  }
+  if (!user || !isOfflineOwner(user.id) || _syncing) return;
+  const epoch = getCacheEpoch();
 
   _syncing = true;
   _lastError = null;
@@ -389,6 +416,8 @@ async function _doSync({ skipPull = false } = {}) {
       const changedDuringPush = new Set();
       for (const [tableName, rows] of ops) {
         for (const row of rows) {
+          // Account switched mid-push: the rest of this queue is gone.
+          if (getCacheEpoch() !== epoch) break;
           try {
             const serverRow = await pushRow(tableName, row, planIds);
             let cleared;
@@ -602,6 +631,23 @@ async function pushRow(tableName, row, planIds = new Map()) {
       if (error) throw error;
     }
   }
+}
+
+/**
+ * Ids of the caller's rows removed since `since`, from a deletion-feed RPC.
+ * A backend without the RPC yet (migration not applied) yields none, which
+ * is the old behaviour: removals then wait for a full refresh.
+ */
+async function fetchDeletedIds(rpcName, since) {
+  const { data, error } = await db.rpc(rpcName, { p_since: since });
+  if (error) {
+    if (error.code === "PGRST202") {
+      console.warn(`[sync] ${rpcName} is unavailable; apply sql_scripts/migrations/sync_integrity.sql`);
+      return [];
+    }
+    throw error;
+  }
+  return Array.isArray(data) ? data : [];
 }
 
 /**
