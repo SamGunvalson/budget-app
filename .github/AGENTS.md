@@ -57,6 +57,14 @@ new reads; non-mirrored tables need their existing explicit invalidation.
 
 Auth state is managed by `src/contexts/AuthContext.jsx`. All client auth calls go through `src/services/auth/` (backed by the auth service in `server/auth/`); do not call auth endpoints directly from components. PostgreSQL Row-Level Security, with the auth compatibility shim in `sql_scripts/local/`, scopes database access to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The PostgREST client (`db`) and server origin live in `src/services/backend.js`; services import `db` from there.
 
+### Mobile layout
+
+Below 1024px, or in the native app, the app uses the mobile shell: a bottom tab
+bar plus floating page actions (`MobileChrome`). Pages register their actions
+with `usePageActions` and hide the matching header buttons with
+`mobile:hidden`. Use the `mobile:` / `desktop:` Tailwind variants rather than
+`sm:`/`lg:` for shell differences. See STYLE_GUIDE → *Mobile layout*.
+
 ### Routing
 
 All pages are lazy-loaded. Each protected route is wrapped in `<ProtectedPage>` with a per-page skeleton fallback. Routes are defined in `src/App.jsx`.
@@ -105,7 +113,7 @@ Each context is split into two files:
 - `src/contexts/FooContext.jsx` — the provider component
 - `src/contexts/fooContextValue.js` — the context object consumed by hooks
 
-Contexts: `AuthContext`, `MonthYearContext`, `SafeModeContext`, `ThemeContext`.
+Contexts: `AuthContext`, `MonthYearContext`, `PageActionsContext`, `SafeModeContext`, `ThemeContext`.
 
 ### Safe mode
 

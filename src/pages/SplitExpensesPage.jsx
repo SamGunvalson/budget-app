@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import useAuth from '../hooks/useAuth';
 import { usePartnership, useSplitExpenses } from '../hooks/queries';
 import TopBar from '../components/common/TopBar';
+import usePageActions from '../hooks/usePageActions';
 import PartnerSetup from '../components/splits/PartnerSetup';
 import BalanceSummary from '../components/splits/BalanceSummary';
 import SplitExpenseList from '../components/splits/SplitExpenseList';
@@ -137,6 +138,23 @@ export default function SplitExpensesPage() {
     }
   }
 
+  // Mobile action bar (desktop keeps the header button).
+  usePageActions(
+    partnership
+      ? [{
+          id: 'add-split',
+          label: 'Add expense',
+          variant: 'primary',
+          icon: (
+            <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+          ),
+          onSelect: () => setShowAddForm(true),
+        }]
+      : [],
+  );
+
   // Partnership not loaded yet
   if (partnershipLoading) {
     return (
@@ -192,7 +210,7 @@ export default function SplitExpensesPage() {
           </div>
           <button
             onClick={() => setShowAddForm(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-500/20 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98]"
+            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 mobile:hidden px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-500/20 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-500/30 active:scale-[0.98]"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

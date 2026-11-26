@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+/* Layout mode from src/utils/layoutMode.js (<html data-layout="mobile|desktop">). */
+@custom-variant mobile (&:where([data-layout=mobile], [data-layout=mobile] *));
+@custom-variant desktop (&:where([data-layout=desktop], [data-layout=desktop] *));
 
 /* ── Forest & Gold theme ───────────────────────────────────────────────
  * The built-in `stone` scale is re-tinted to sage/forest neutrals and
@@ -97,6 +100,9 @@
 
 body {
   font-variant-numeric: tabular-nums;
+  background-color: var(--app-paper);
+  /* Room for the mobile tab bar + page actions (set by MobileChrome). */
+  padding-bottom: var(--bottom-chrome, 0px);
 }
 
 .safe-area-pt {

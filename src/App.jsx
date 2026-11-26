@@ -2,7 +2,9 @@ import { lazy, Suspense, useCallback, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import SwipeableWrapper from './components/common/SwipeableWrapper';
+import MobileChrome from './components/common/MobileChrome';
 import { AuthProvider } from './contexts/AuthContext';
+import { PageActionsProvider } from './contexts/PageActionsContext';
 import { SafeModeProvider } from './contexts/SafeModeContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import useSafeMode from './hooks/useSafeMode';
@@ -59,6 +61,7 @@ function ProtectedPage({ fallback, children, serverReady }) {
           <SwipeableWrapper>{children}</SwipeableWrapper>
         </Suspense>
       </SafeModeGate>
+      <MobileChrome />
     </ProtectedRoute>
   );
 }
@@ -178,7 +181,9 @@ function App() {
     <AuthProvider key={clientEpoch} enabled={serverState.status === 'ready'}>
       <SafeModeProvider>
         <ThemeProvider>
-          <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+          <PageActionsProvider>
+            <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+          </PageActionsProvider>
         </ThemeProvider>
       </SafeModeProvider>
     </AuthProvider>

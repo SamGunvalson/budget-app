@@ -13,6 +13,7 @@ import CashflowSummary from '../components/accounts/CashflowSummary';
 import CashflowAccountSetup from '../components/accounts/CashflowAccountSetup';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
+import usePageActions from '../hooks/usePageActions';
 import useSessionState from '../hooks/useSessionState';
 import {
   createAccountOffline as createAccount,
@@ -335,6 +336,21 @@ export default function AccountsPage() {
   const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0 && !a.closed_at);
   const hasNegativeAssets = negativeAssets.length > 0;
 
+  // Mobile action bar (desktop keeps the header button).
+  usePageActions([
+    {
+      id: 'manage-accounts',
+      label: 'Manage accounts',
+      variant: 'primary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      ),
+      onSelect: () => setShowManagerModal(true),
+    },
+  ]);
+
   // ---------- Render ----------
   return (
     <div className="min-h-screen app-bg">
@@ -354,7 +370,7 @@ export default function AccountsPage() {
             <button
               type="button"
               onClick={() => setShowManagerModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 mobile:hidden px-5 py-2.5 text-sm font-semibold text-stone-950 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />

@@ -594,10 +594,47 @@ Every authenticated sub-page must follow this exact navigation pattern: a clicka
 
 | Rule                         | Detail                                                                                                                                                                  |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Mobile navigation**        | In mobile layout the top bar shows only the logo, status, and a "⋯" menu. Page links are in the bottom tab bar. See *Mobile layout* above. |
 | **Back navigation**          | Clicking "Budget App" in the nav bar returns to the home page. **Do not** add separate "← Back" buttons.                                    |
 | **Breadcrumb label**         | Every sub-page displays a vertical divider (`\|`) followed by the page name after "Budget App" (e.g. `Budget App \| Accounts`). Hidden on small screens via `sm:block`. |
 | **Home exception**           | The home page renders "Budget App" as plain text (not a `<Link>`) since the user is already there. No breadcrumb label is shown.                        |
 | **Auth page**                | No navigation bar — only the logo badge and sign-in form.                                                                                                               |
+
+### Mobile layout (bottom tab bar)
+
+The layout mode is `mobile` below 1024px (Tailwind `lg`) **or** in the native
+Android app at any width. Otherwise it is `desktop`. `src/utils/layoutMode.js`
+mirrors it onto `<html data-layout>`, and `src/index.css` defines matching
+Tailwind variants:
+
+- `mobile:hidden` / `desktop:hidden` (and any utility, e.g. `mobile:items-end`):
+  prefer these over `sm:`/`lg:` for anything that differs between the two
+  shells, so phone, tablet and native behave the same way.
+- `useLayoutMode()` (`src/hooks/useLayoutMode.js`): only when the DOM
+  structure itself differs.
+
+**Mobile shell** (`src/components/common/MobileChrome.jsx`, rendered by
+`ProtectedPage` in `App.jsx`):
+
+- **Bottom tab bar:** pages with `tabActive` in `src/constants/pages.jsx`
+  (Transactions, Splits, Accounts, Reports, Budgets). The active tab uses the
+  page accent (`tabActive` text + `tabPill` background). Settings, Categories
+  and Sign out live in the top bar's "⋯" menu.
+- **Page actions:** pages register their actions with `usePageActions([...])`
+  (`src/hooks/usePageActions.js`). They render as floating buttons above the
+  tab bar: `primary` is a gold pill with an icon and label (one per page, last
+  in the array), `secondary` is a panel pill with an icon and label, and
+  `icon` is a round 48px panel button with `aria-label` and optional
+  `pressed`. Hide the same buttons in the desktop header with `mobile:hidden`
+  so each action appears once.
+- **Spacing:** MobileChrome sets `--bottom-chrome` and `<body>` pads by it.
+  Don't add your own bottom padding for the tab bar.
+- **Keyboard:** the tab bar and actions hide while a text field outside a
+  dialog has focus.
+- **Sheets:** `Modal` renders as a bottom sheet in mobile layout (slides up,
+  scrolls inside, has a grab handle, and pads for the safe area). No per-modal
+  work is needed.
+- Swipe between pages still works. The top-bar page dots were removed.
 
 ### Browser Tab Title
 

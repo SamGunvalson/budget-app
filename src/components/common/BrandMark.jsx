@@ -6,7 +6,7 @@ export default function BrandMark({ className = 'h-9 w-9' }) {
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex shrink-0 items-end justify-center gap-[3px] rounded-xl bg-forest p-2 shadow-md shadow-stone-900/10 ${className}`}
+      className={`inline-flex shrink-0 items-end justify-center gap-[3px] rounded-xl bg-forest p-2 shadow-md shadow-stone-900/10 dark:ring-1 dark:ring-gold/30 ${className}`}
     >
       <b className="h-[30%] w-1 rounded-sm bg-gold" />
       <b className="h-1/2 w-1 rounded-sm bg-gold" />

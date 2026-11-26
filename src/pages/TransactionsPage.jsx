@@ -47,6 +47,7 @@ import { toCents, getTodayString } from '../utils/helpers';
 import { getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
+import usePageActions from '../hooks/usePageActions';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
 import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/backend';
@@ -432,6 +433,44 @@ export default function TransactionsPage() {
     setQuickError('');
   };
 
+  // Mobile action bar (desktop keeps the header buttons below).
+  usePageActions([
+    {
+      id: 'recurring',
+      label: showRecurringPanel ? 'Hide recurring' : 'Show recurring',
+      variant: 'icon',
+      pressed: showRecurringPanel,
+      icon: (
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.183" />
+        </svg>
+      ),
+      onSelect: () => setShowRecurringPanel((open) => !open),
+    },
+    {
+      id: 'quick',
+      label: 'Quick',
+      variant: 'secondary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+        </svg>
+      ),
+      onSelect: openQuickModal,
+    },
+    {
+      id: 'add',
+      label: 'Add transaction',
+      variant: 'primary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+      ),
+      onSelect: () => setShowCreateModal(true),
+    },
+  ]);
+
   const handleQuickSubmit = async (e) => {
     e.preventDefault();
     if (!selectedQuickTemplate) return;
@@ -727,20 +766,7 @@ export default function TransactionsPage() {
               Track your income and expenses.
             </p>
           </div>
-          <div className="flex shrink-0 gap-2 sm:gap-3">
-            <select
-              aria-label="More transaction actions"
-              value=""
-              onChange={(event) => {
-                if (event.target.value === 'quick') openQuickModal();
-                if (event.target.value === 'recurring') setShowRecurringPanel((open) => !open);
-              }}
-              className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-sm font-medium text-stone-700 sm:hidden dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
-            >
-              <option value="" disabled>More</option>
-              <option value="quick">Quick transactions</option>
-              <option value="recurring">{showRecurringPanel ? 'Hide recurring' : 'Show recurring'}</option>
-            </select>
+          <div className="flex shrink-0 gap-2 sm:gap-3 mobile:hidden">
             <button
               type="button"
               title="Recurring"
@@ -776,8 +802,7 @@ export default function TransactionsPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
-              <span className="hidden sm:inline">New Transaction</span>
-              <span className="sm:hidden">Add</span>
+              <span>New Transaction</span>
             </button>
           </div>
         </div>

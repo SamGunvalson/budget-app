@@ -1,6 +1,6 @@
 # UI Overhaul Plan
 
-Status: Phase 1 in progress · 2026-11-26
+Status: Phase 1 done · Phase 2 done (pending device testing) · 2026-11-26
 References: [`mockups/mobile-transactions.html`](../mockups/mobile-transactions.html),
 [`mockups/monthly-overview.html`](../mockups/monthly-overview.html)
 
@@ -105,36 +105,41 @@ after. Check text contrast (soft-on-paper and gold-on-ink must meet WCAG AA).
 Run `npm run verify`.
 **Risk:** low. The change is easy to revert, and the class markup does not change.
 
-## Phase 2: Mobile shell and bottom action dock
+## Phase 2: Mobile shell (bottom tab bar + action buttons)
+
+With the bottom tab bar chosen, the mobile navigation and the action dock
+are built together. That way the bottom of the screen holds one bar, not two
+stacked bars.
 
 1. **`useLayoutMode()` hook.** It returns `'mobile'` when
-   `matchMedia('(max-width: 639px)')` matches **or** when
+   `matchMedia('(max-width: 1023.98px)')` matches (the old hamburger
+   breakpoint, so tablets get the tab bar too) **or** when
    `Capacitor.isNativePlatform()` is true. Otherwise it returns `'desktop'`.
-2. **Page actions registry.** Pages declare their primary and secondary actions
-   once, through a small context such as `usePageActions([{ id, label, icon,
-   onClick, variant }])`. Desktop renders them in the page header, as today.
-   Mobile renders them in the dock. This removes the hidden `<select>` "More"
+2. **Bottom tab bar** (`MobileTabBar`): Transactions, Splits, Accounts,
+   Reports, Budgets. Each has an icon and a label, and the active tab is drawn
+   in that page's accent color from `pages.jsx`. It is fixed to the bottom and
+   padded by `env(safe-area-inset-bottom)`. The hamburger menu and page dots go
+   away on mobile. Settings and Sign out move to a menu button in the compact
+   top bar. Swipe between pages stays.
+3. **Page actions registry.** Pages declare their actions once with
+   `usePageActions([{ id, label, icon, variant, onSelect }])`. Desktop keeps
+   its header buttons. Mobile shows the actions as floating buttons just above
+   the tab bar: a gold "+ Add …" pill for the primary action and small round
+   tint buttons for secondary ones. This removes the hidden `<select>` "More"
    workaround.
-3. **`MobileActionDock` component.** It is fixed to the bottom, uses panel
-   background with a top hairline, and has padding
-   `max(14px, env(safe-area-inset-bottom))`. Buttons are at least 48px tall.
-   The primary button is gold and fills the row; secondary buttons use the tint
-   color. Add `--safe-area-bottom` beside `--safe-area-top` and pad page content
-   so the dock never covers the last row.
-   - Transactions: **Add transaction** · **Quick** (templates) · overflow
-     (Recurring, Import)
-   - Splits: **Add split** · Settle up
-   - Accounts: **Add account** · Update balances
-   - Budgets and Reports: month picker in the dock, or no dock
-4. **Bottom sheets on mobile.** The New transaction, Quick, and Settle up modals
-   open as full-height sheets that slide up, with their submit button pinned at
-   the bottom. On desktop `Modal.jsx` keeps its current behavior; a
-   `variant="sheet"` switches on mobile.
-5. The dock hides while the on-screen keyboard is open (input focused) and while
-   a sheet is open.
+   - Transactions: **Add transaction** · **Quick** · Recurring
+   - Splits: **Add split**
+   - Accounts: **Manage accounts**
+   - Budgets, Reports, Settings: no actions
+4. **Bottom spacing.** A `--bottom-chrome` CSS variable pads `<body>`, so the
+   tab bar and the action buttons never cover the last row.
+5. **Keyboard.** The tab bar and action buttons hide while a text field has
+   focus, so they don't ride up over the keyboard on Android.
+6. **Bottom sheets on mobile.** Modals open as sheets that slide up from the
+   bottom, with the submit button reachable.
 
-**Check:** test on the Android build and in mobile Safari/Chrome PWA (safe areas,
-keyboard, swipe navigation still working).
+**Check:** phone-size screenshots in both themes; test the Android build and
+mobile Safari/Chrome PWA (safe areas, keyboard, swipe still working).
 
 ## Phase 3: Page headers and navigation
 
@@ -145,12 +150,15 @@ keyboard, swipe navigation still working).
 2. **Desktop nav:** brand bar + underline tabs (mockup style). The active
    underline and text use the page's existing accent from `pages.jsx`, so tab
    colors carry over.
-3. **Mobile nav (decision needed):** either keep the hamburger, swipe, and dots,
-   or switch to a **bottom tab bar** (5 icons in their accent colors) with the
-   action dock stacked above it or merged into it. Recommendation: bottom tab
-   bar, with page actions moved into a floating gold "+" that opens a small
-   action sheet. This keeps the bottom area to one bar.
-4. Update the STYLE_GUIDE *Page Layout* and *Navigation rules* (the
+3. **Mobile nav:** done in Phase 2 (bottom tab bar).
+4. **Fewer gold buttons.** Gold means "the one main action on this screen".
+   Add a shared `Button` component (`primary` gold, `secondary` tint/outline,
+   `ghost`, `danger`) and demote repeated gold buttons to `secondary`. The
+   worst case found in Phase 1 is Settings, with about 8 gold buttons (Download
+   ×3, Import Transactions, Import Budget, Add template, Go to Categories,
+   Update password). Also check Accounts ("Manage Accounts") and Budgets.
+   Document the rule in the STYLE_GUIDE *Buttons* section.
+5. Update the STYLE_GUIDE *Page Layout* and *Navigation rules* (the
    "Budget App | Page" breadcrumb rule changes).
 
 ## Phase 4: Page-level redesigns (one PR per page)
@@ -162,6 +170,9 @@ Order these by how often each page is used:
    Income shows in green with a `+`. A segmented **Posted / Pending (n)**
    control. On mobile, tapping a row opens a full-screen editor (mockup) instead
    of a modal. Keep bulk-select on desktop.
+   - **Pending rows on mobile** currently show only a faint "···" under the
+     payee, which is easy to miss. Show a visible "Pending" chip, or a separate
+     Pending section, with clear review actions.
 2. **Budgets:** category rows with a thin progress track, "$X left" or an
    orange "$X over" chip, and "$used of $plan". `AnnualBudgetTable` needs a
    dedicated mobile view (cards per category) instead of horizontal scrolling.
@@ -183,7 +194,15 @@ through `src/hooks/queries.js`, so no schema change is needed. Decide whether
 
 ## Phase 6: Polish
 
-Motion that respects `prefers-reduced-motion`; Capacitor Haptics on add and
+- **Warning vs danger contrast.** `orange-600` warning text is close to
+  `red-600` danger text in the Budget Thresholds legend and the Plan vs Actual
+  and Category Comparison status text. Check side by side in both themes.
+  Consider `orange-700` / `dark:orange-300`, or the `warn` token, and keep the
+  icon or chip so color is not the only signal.
+- **App icons.** Replace the amber `$` favicon, PWA icons
+  (`public/pwa-*.png`, `apple-touch-icon-180x180.png`, `favicon.ico`) and the
+  Android launcher icon with the forest-and-gold brand mark.
+- Motion that respects `prefers-reduced-motion`; Capacitor Haptics on add and
 confirm; skeletons restyled to the new surfaces; empty states; and the
 PWA/Android splash screen colors.
 
