@@ -853,6 +853,13 @@ Call them after the save succeeds, never before.
 - **Empty lists:** use `EmptyState` (`src/components/common/EmptyState.jsx`) inside
   the list's panel: a stone icon well, a serif title, a one-line hint, and an
   optional action.
+- **Data that failed to load:** never show zeros in place of missing figures.
+  When `isQueryUnavailable(query)` (`src/utils/queryState.js`) is true, render
+  `DataUnavailable` (`src/components/common/DataUnavailable.jsx`) with a Try
+  again button instead of the figures, and leave that query's error out of the
+  page's red banner so it isn't reported twice. Used by Transactions, Accounts,
+  Budgets, and Reports' Summary and Plan vs Actual. Cached data always wins:
+  the card only appears when there's nothing to show.
 - **Page loading:** `PageSkeletons.jsx` mirrors each page's real layout (top
   bar, eyebrow + title, forest summary card, hairline list panels). When a
   page's layout changes, update its skeleton.

@@ -9,7 +9,7 @@ import {
   usePlanVsActual,
 } from '../../hooks/queries';
 import useThresholds from '../../hooks/useThresholds';
-import { getCurrentMonthYear } from '../../utils/helpers';
+import { getCurrentMonthYear, getTodayString } from '../../utils/helpers';
 import {
   createBudgetPlanOffline,
   updateBudgetPlanOffline,
@@ -21,7 +21,10 @@ import {
 import useMonthYear from '../../hooks/useMonthYear';
 import { categoriesForBudget } from '../../utils/categoryArchive';
 import { buttonClasses } from '../../utils/buttonClasses';
+import { monthSpendingSummary } from '../../utils/budgetCalculations';
 import { hapticSuccess } from '../../utils/haptics';
+import DataUnavailable from '../common/DataUnavailable';
+import { isQueryUnavailable } from '../../utils/queryState';
 
 const TYPE_DOTS = {
   income: 'bg-emerald-500',
@@ -56,9 +59,13 @@ export default function BudgetForm() {
   const [seeded, setSeeded] = useState({ key: null, plan: null, items: null });
 
   // This month's actual spending/income per category (for progress bars).
-  const pvaQuery = usePlanVsActual(month, year);
-  const actualByCategory = new Map((pvaQuery.data?.categories ?? []).map((c) => [c.categoryId, c.actual]));
-  const hasActuals = pvaQuery.isSuccess;
+  // Same cutoff as Reports' default: only activity settled by today counts, so a
+  // scheduled (future-dated) paycheck or bill never shows as received/spent.
+  const pvaQuery = usePlanVsActual(month, year, { asOf: getTodayString() });
+  const actuals = pvaQuery.data ?? null;
+  const hasActuals = actuals != null;
+  const actualsFailed = isQueryUnavailable(pvaQuery);
+  const actualByCategory = new Map((actuals?.categories ?? []).map((c) => [c.categoryId, c.actual]));
   const { thresholds } = useThresholds();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -77,12 +84,6 @@ export default function BudgetForm() {
     .filter(([id]) => !incomeCategoryIds.has(id) && !transferCategoryIds.has(id))
     .reduce((sum, [, cents]) => sum + (cents || 0), 0);
   const remaining = totalIncomeCents - totalAllocated;
-  const spentThisMonth = Object.entries(allocations)
-    .filter(([id]) => !incomeCategoryIds.has(id) && !transferCategoryIds.has(id))
-    .reduce((sum, [id]) => sum + Math.max(actualByCategory.get(id) ?? 0, 0), 0);
-  const receivedThisMonth = [...incomeCategoryIds].reduce((sum, id) => sum + Math.max(actualByCategory.get(id) ?? 0, 0), 0);
-  const leftInPlan = totalAllocated - spentThisMonth;
-  const usedPct = totalAllocated > 0 ? Math.round((spentThisMonth / totalAllocated) * 100) : 0;
   const now = getCurrentMonthYear();
   const isCurrentMonth = now.month === month && now.year === year;
   const isDirty = Object.keys({ ...allocations, ...savedAllocations })
@@ -182,6 +183,20 @@ export default function BudgetForm() {
     ...annualBudgetQuery.data,
     [month]: { allocations: savedAllocations },
   });
+  // Headline totals use every signed expense row in the actuals (uncategorized
+  // spending, categories outside the saved plan, net refunds), matching Reports.
+  // `outsidePlan` is the part no row below accounts for, called out in the card.
+  const {
+    spent: spentThisMonth,
+    received: receivedThisMonth,
+    left: leftInPlan,
+    usedPct,
+    outsidePlan: outsidePlanSpend,
+  } = monthSpendingSummary(actuals, {
+    plannedSpending: totalAllocated,
+    listedCategoryIds: new Set(budgetableCategories.map((c) => c.id)),
+  });
+  const barPct = Math.min(Math.max(usedPct, 0), 100);
   const grouped = { needs: [], wants: [], savings: [], income: [] };
   budgetableCategories.forEach((c) => {
     if (grouped[c.type]) grouped[c.type].push(c);
@@ -220,8 +235,21 @@ export default function BudgetForm() {
         </div>
       )}
 
-      {/* Month summary */}
-      {plan && totalAllocated > 0 && (
+      {/* Month summary — waits for actuals; never shows $0 spent in place of missing data */}
+      {plan && totalAllocated > 0 && !hasActuals && (
+        actualsFailed ? (
+          <DataUnavailable
+            eyebrow="Spending this month"
+            title="Spending data unavailable"
+            message="Couldn't load this month's transactions, so progress isn't shown. Your plan below is still editable."
+            onRetry={() => pvaQuery.refetch()}
+            retrying={pvaQuery.isFetching}
+          />
+        ) : (
+          <div aria-label="Loading month summary" aria-busy="true" className="h-44 animate-pulse rounded-2xl bg-forest/85" />
+        )
+      )}
+      {plan && totalAllocated > 0 && hasActuals && (
         <section
           aria-label="Month summary"
           className="flex flex-col justify-between gap-6 rounded-2xl bg-forest p-6 text-[#fbfcf2] shadow-lg shadow-stone-900/10 sm:p-7"
@@ -234,15 +262,20 @@ export default function BudgetForm() {
               {money(Math.abs(leftInPlan))}
             </p>
             <p className="mt-2 text-sm text-[#daeadc]">
-              {money(spentThisMonth)} spent of {money(totalAllocated)} budgeted
+              {spentThisMonth < 0 ? `${money(-spentThisMonth)} net refunds` : `${money(spentThisMonth)} spent`} of {money(totalAllocated)} budgeted
             </p>
+            {outsidePlanSpend !== 0 && (
+              <p className="mt-1 text-xs text-[#d8e9d8]">
+                Includes {money(outsidePlanSpend)} in categories outside this plan
+              </p>
+            )}
           </div>
           <div>
             <div
               aria-hidden="true"
               className="h-4"
               style={{
-                background: `linear-gradient(to right, ${leftInPlan >= 0 ? '#b8d9ac' : '#f5b887'} 0 ${Math.min(usedPct, 100)}%, #477365 ${Math.min(usedPct, 100)}% 100%)`,
+                background: `linear-gradient(to right, ${leftInPlan >= 0 ? '#b8d9ac' : '#f5b887'} 0 ${barPct}%, #477365 ${barPct}% 100%)`,
                 maskImage: 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)',
                 WebkitMaskImage: 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)',
               }}
@@ -261,7 +294,7 @@ export default function BudgetForm() {
         if (!cats || cats.length === 0) return null;
         const { label, desc } = typeLabels[type];
         const groupPlanned = cats.reduce((sum, c) => sum + (allocations[c.id] || 0), 0);
-        const groupActual = cats.reduce((sum, c) => sum + Math.max(actualByCategory.get(c.id) ?? 0, 0), 0);
+        const groupActual = cats.reduce((sum, c) => sum + (actualByCategory.get(c.id) ?? 0), 0);
 
         return (
           <section key={type} aria-labelledby={`budget-group-${type}`}>

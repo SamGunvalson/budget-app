@@ -64,6 +64,8 @@ import {
   normalizeQuickTransactionTemplates,
 } from '../services/quickTransactions';
 import { hapticSuccess, hapticTap } from '../utils/haptics';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 // ================================================
 // TransactionsPage
@@ -118,9 +120,11 @@ export default function TransactionsPage() {
     txQuery.isLoading ||
     categoriesQuery.isLoading ||
     accountsQuery.isLoading;
+  // Without the list itself, show "unavailable" instead of "No transactions".
+  const listUnavailable = isQueryUnavailable(txQuery);
   const loadError =
     mutationError ||
-    txQuery.error?.message ||
+    (listUnavailable ? '' : txQuery.error?.message) ||
     categoriesQuery.error?.message ||
     accountsQuery.error?.message ||
     '';
@@ -941,6 +945,14 @@ export default function TransactionsPage() {
               </p>
             )}
           </div>
+        ) : listUnavailable ? (
+          <DataUnavailable
+            eyebrow={reviewPending ? 'Pending review' : showYear ? String(year) : formatMonthYearLabel(month, year)}
+            title="Transactions unavailable"
+            message="Couldn't load transactions for this period. Nothing has been changed."
+            onRetry={() => txQuery.refetch()}
+            retrying={txQuery.isFetching}
+          />
         ) : (
           <TransactionList
             transactions={filteredSorted}

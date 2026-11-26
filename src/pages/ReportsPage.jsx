@@ -33,6 +33,8 @@ import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
 import IncludePendingToggle from '../components/reports/IncludePendingToggle';
 import { CATEGORY_FALLBACK_COLOR } from '../constants/chartColors';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 // Skeleton placeholder shown while a lazy chart chunk is downloading.
 function ChartFallback() {
@@ -75,8 +77,11 @@ export default function ReportsPage() {
   const pendingReviewCount = pendingQuery.data ?? 0;
   const isLoading =
     ytdQuery.isLoading || categoriesQuery.isLoading || pendingQuery.isLoading;
+  // Summary figures come from the YTD transactions; without them, show
+  // "unavailable" in the Summary view rather than $0 totals.
+  const summaryUnavailable = isQueryUnavailable(ytdQuery);
   const error =
-    ytdQuery.error?.message ||
+    (summaryUnavailable ? '' : ytdQuery.error?.message) ||
     categoriesQuery.error?.message ||
     pendingQuery.error?.message ||
     '';
@@ -429,7 +434,7 @@ export default function ReportsPage() {
                   isLoading={trendLoading}
                   error={trendError}
                 />
-                <TrendSummary {...trendSummary} />
+                {!trendError && <TrendSummary {...trendSummary} />}
               </Suspense>
             ) : activeView === 'planVsActual' ? (
               <Suspense fallback={<ChartFallback />}>
@@ -442,6 +447,14 @@ export default function ReportsPage() {
                   asOf={asOf}
                 />
               </Suspense>
+            ) : summaryUnavailable ? (
+              <DataUnavailable
+                eyebrow={viewMode === 'ytd' ? `${year} year to date` : `${getMonthName(month)} ${year}`}
+                title="Summary unavailable"
+                message="Couldn't load transactions for this period, so no totals are shown."
+                onRetry={() => ytdQuery.refetch()}
+                retrying={ytdQuery.isFetching}
+              />
             ) : (
               <>
                 {/* Stat cards + YTD */}

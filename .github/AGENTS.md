@@ -29,6 +29,13 @@ not Dexie-mirrored. Provider/imperative preference reads use existing offline
 wrappers. **Do not add direct backend reads to components**; preserve specialized
 existing paths unless their migration is explicitly in scope.
 
+Failed reads: `swrRead` (`src/services/cache.js`) returns the local cache when
+the backend is unreachable (offline, 502–504, expired session). When the
+backend rejects a request (another 4xx/5xx) and nothing is cached, it throws,
+so the query errors. Pages check `isQueryUnavailable(query)` and show
+`DataUnavailable`, never empty or zero figures. Connectivity classification
+lives in `src/services/connectivity.js`.
+
 ### Data flow (writes)
 
 Mutations may be called directly from components via the `*Offline` wrappers in `src/services/offlineAware.js` — no hook layer is required for writes. Each wrapper:

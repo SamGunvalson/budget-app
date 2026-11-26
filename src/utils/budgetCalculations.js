@@ -1,4 +1,4 @@
-import { formatCurrency } from './helpers';
+import { formatCurrency } from './helpers.js';
 
 // ── Default thresholds (user-configurable via Settings) ──
 export const BUDGET_UNDER_BUDGET_THRESHOLD = 80; // percent
@@ -175,5 +175,29 @@ export function projectedSpend(transactions) {
     postedSpend,
     pendingSpend,
     projectedSpend: postedSpend + pendingSpend,
+  };
+}
+
+/**
+ * Month summary for the Budgets page from a plan-vs-actual result.
+ * Uses every signed expense row (uncategorized spending, categories outside the
+ * saved plan, and net refunds all count) and the result's income total.
+ *
+ * @param {{ categories?: Array<{ categoryId: string, categoryType: string, actual: number }>, actualIncome?: number } | null} actuals
+ * @param {{ plannedSpending: number, listedCategoryIds?: Set<string> }} opts  plannedSpending in cents
+ * @returns {{ spent: number, received: number, left: number, usedPct: number, outsidePlan: number }}
+ */
+export function monthSpendingSummary(actuals, { plannedSpending, listedCategoryIds = new Set() }) {
+  const expenseRows = (actuals?.categories ?? []).filter((c) => c.categoryType !== 'income');
+  const spent = expenseRows.reduce((sum, c) => sum + c.actual, 0);
+  const outsidePlan = expenseRows
+    .filter((c) => !listedCategoryIds.has(c.categoryId))
+    .reduce((sum, c) => sum + c.actual, 0);
+  return {
+    spent,
+    received: actuals?.actualIncome ?? 0,
+    left: plannedSpending - spent,
+    usedPct: plannedSpending > 0 ? Math.round((spent / plannedSpending) * 100) : 0,
+    outsidePlan,
   };
 }

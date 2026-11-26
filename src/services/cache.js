@@ -32,6 +32,8 @@
  *    `notifyTable` directly so the indicator doesn't lie.
  */
 
+import { isConnectivityError } from "./connectivity";
+
 // ── Table change pub/sub ──
 
 const tableListeners = new Map(); // table → Set<fn>
@@ -211,11 +213,15 @@ export async function swrRead({
       if (table) notifyTable(table);
       return fresh;
     } catch (err) {
-      // Network failed and we have nothing cached — surface the empty cache
-      // to keep the UI rendering. Errors are logged but not thrown so a flaky
-      // network never breaks the UI; mutations / explicit refreshes will
-      // still report errors via their own paths.
-      console.warn(`[cache] fetchFresh for ${key} failed (cold):`, err);
+      // Nothing cached and the fetch failed.
+      // - Backend unreachable (offline, gateway down, expired session): return
+      //   the empty cache so the UI keeps rendering — offline is a supported
+      //   state and the sync indicator already says so.
+      // - Backend rejected the request (a 4xx/5xx answer, e.g. a missing
+      //   migration): throw, so the query reports an error and the page can
+      //   say "unavailable" instead of showing empty data as if it were real.
+      if (!isConnectivityError(err)) throw err;
+      console.warn(`[cache] fetchFresh for ${key} failed (cold, unreachable):`, err);
       return cached;
     }
   }

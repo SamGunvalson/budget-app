@@ -21,7 +21,7 @@ test("an nginx HTML error page becomes a PostgREST-shaped JSON error", async () 
 });
 
 test("gateway messages keep the phrases isConnectivityError matches on", () => {
-  // Mirrors CONNECTIVITY_MESSAGE in src/services/offlineAware.js.
+  // Mirrors CONNECTIVITY_MESSAGE in src/services/connectivity.js.
   const connectivity = /bad gateway|service unavailable|gateway time-?out/i;
   for (const status of [502, 503, 504]) {
     assert.match(readableHttpErrorMessage(status), connectivity);

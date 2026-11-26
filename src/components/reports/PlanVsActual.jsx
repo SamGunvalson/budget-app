@@ -18,6 +18,8 @@ import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
 import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
+import DataUnavailable from '../common/DataUnavailable';
+import { isQueryUnavailable } from '../../utils/queryState';
 
 /**
  * Main "Plan vs Actual" comparison view.
@@ -60,10 +62,13 @@ export default function PlanVsActual({
   // background invalidation when transactions or budget items mutate.
   const monthlyPvaQuery = usePlanVsActual(month, year, { enabled: !isYTD, asOf });
   const ytdPvaQuery = usePlanVsActualYTD(year, month, { enabled: isYTD, asOf });
-  const data = (isYTD ? ytdPvaQuery.data : monthlyPvaQuery.data)
-    ?? { categories: [], plannedIncome: 0, actualIncome: 0 };
-  const isPlanLoading = isYTD ? ytdPvaQuery.isLoading : monthlyPvaQuery.isLoading;
-  const planError = (isYTD ? ytdPvaQuery.error : monthlyPvaQuery.error)?.message || '';
+  const pvaQuery = isYTD ? ytdPvaQuery : monthlyPvaQuery;
+  // No aggregate (error with nothing cached): show "unavailable", never $0.
+  const pvaUnavailable = isQueryUnavailable(pvaQuery);
+  const data = pvaQuery.data ?? { categories: [], plannedIncome: 0, actualIncome: 0 };
+  const isPlanLoading = pvaQuery.isLoading;
+  // Shown by the unavailable panel instead of the generic error banner.
+  const planError = pvaUnavailable ? '' : pvaQuery.error?.message || '';
 
   // Collapse drill-down whenever the period or view mode changes.  The
   // expanded state stops being meaningful for the new dataset, so we drop
@@ -227,6 +232,14 @@ export default function PlanVsActual({
           <div className="h-64 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
           <div className="h-48 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
         </div>
+      ) : pvaUnavailable ? (
+        <DataUnavailable
+          eyebrow={isYTD ? 'Year to date' : `${getMonthName(month)} ${year}`}
+          title="Budget comparison unavailable"
+          message="Couldn't load planned and actual totals for this period, so no figures are shown."
+          onRetry={() => pvaQuery.refetch()}
+          retrying={pvaQuery.isFetching}
+        />
       ) : (
         <>
           {/* Overall budget alert */}

@@ -38,6 +38,8 @@ import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accoun
 import { generateProjectedTransactions, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import { itemLegs, itemSettlementInfo, settlementPayer } from '../utils/cashflowScenario';
 import { toDateString, maskAccountName } from '../utils/helpers';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 const CASHFLOW_SETTINGS_KEY = 'cashflow_settings';
 const EMPTY_SETTINGS = { roles: {}, cushion: 0 };
@@ -218,9 +220,12 @@ export default function AccountsPage() {
     saveCashflowSettings({ ...cashflowSettings, cushion: cents });
   }
 
+  // Both sections are built on account balances; without them, show
+  // "unavailable" instead of a $0 net worth and "No accounts yet".
+  const balancesUnavailable = isQueryUnavailable(balancesQuery);
   const loadError =
     mutationError ||
-    balancesQuery.error?.message ||
+    (balancesUnavailable ? '' : balancesQuery.error?.message) ||
     nwQuery.error?.message ||
     (activeSection === 'cashflow' ? cashflow.error?.message : '') ||
     '';
@@ -428,8 +433,18 @@ export default function AccountsPage() {
           ))}
         </div>
 
+        {balancesUnavailable && (
+          <DataUnavailable
+            eyebrow="Accounts"
+            title="Balances unavailable"
+            message="Couldn't load your accounts and balances, so no totals are shown."
+            onRetry={() => balancesQuery.refetch()}
+            retrying={balancesQuery.isFetching}
+          />
+        )}
+
         {/* ════════════════ Overview section ════════════════ */}
-        {activeSection === 'overview' && (
+        {!balancesUnavailable && activeSection === 'overview' && (
           <>
             {/* Net Worth Summary */}
             <div className="mb-6">
@@ -486,7 +501,7 @@ export default function AccountsPage() {
         )}
 
         {/* ════════════════ Cashflow section ════════════════ */}
-        {activeSection === 'cashflow' && (
+        {!balancesUnavailable && activeSection === 'cashflow' && (
           <>
             {/* Account selector chips */}
             <div className="mb-4">
