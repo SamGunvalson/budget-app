@@ -1,10 +1,24 @@
 import { memo, useState, useRef, useEffect, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import AmountInput from '../common/AmountInput';
+import CategoryWell from '../common/CategoryWell';
 import { centsToInput } from '../../utils/calculator';
 import { formatCurrency, formatDate, toCents, maskAccountName } from '../../utils/helpers';
 import { getAccountBadgeColor } from '../../services/accounts';
 import { isValidInlineEdit } from '../../utils/transactionFormRules';
+
+const STATUS_CHIP_TONES = {
+  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  planned: 'bg-stone-200/70 text-stone-600 dark:bg-stone-700 dark:text-stone-300',
+};
+
+function StatusChip({ tone, children }) {
+  return (
+    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATUS_CHIP_TONES[tone]}`}>
+      {children}
+    </span>
+  );
+}
 
 function TransactionStatusBadges({
   isProjected,
@@ -394,6 +408,7 @@ const TransactionItem = forwardRef(function TransactionItem({
   isCompact = false,
   showRowDate = true,
   isGroupChild = false,
+  showCheckbox = true,
   ...rest
 }, ref) {
   const category = transaction.categories;
@@ -444,81 +459,80 @@ const TransactionItem = forwardRef(function TransactionItem({
     : account;
   const mobilePrimaryText = displayPayee || displayDesc || '—';
   const mobileSecondaryText = displayPayee && displayDesc && displayDesc !== displayPayee ? displayDesc : '';
-  const hasAnyBadge = isProjected || isPending || isTransfer || isLinkedTransfer || splitTransactionIds?.has(transaction.id);
 
   if (isCompact) {
+    const subline = [displayCategory?.name, displayAccount ? maskAccountName(displayAccount.name) : null]
+      .filter(Boolean)
+      .join(' · ');
+    const hasOtherBadge = isTransfer || isLinkedTransfer || isAmountLocked || splitTransactionIds?.has(transaction.id);
     return (
       <tr
         ref={ref}
         {...rest}
-        className={`border-b border-stone-100 align-top transition-colors dark:border-stone-700/50 ${
+        className={`border-b border-stone-200/60 transition-colors dark:border-stone-700/50 ${
           isGroupChild ? 'border-l-2 border-l-violet-300 bg-violet-50/20 dark:border-l-violet-700 dark:bg-violet-900/10' : ''
         } ${
-          isProjected ? 'bg-stone-50/30 opacity-60 dark:bg-stone-800/30'
-          : isPending ? 'bg-amber-50/30 dark:bg-amber-900/10'
-          : !isGroupChild ? 'hover:bg-stone-50/50 dark:hover:bg-stone-700/30' : ''
+          isSelected ? 'bg-amber-50/60 dark:bg-amber-900/20'
+          : isProjected ? 'opacity-60'
+          : !isGroupChild ? 'hover:bg-stone-50/60 dark:hover:bg-stone-700/30' : ''
         } ${hasPending ? 'border-l-2 border-l-amber-400' : ''}`}
       >
-        <td className="px-2 py-2">
-          <input type="checkbox" aria-label={`Select ${mobilePrimaryText}`} checked={isSelected} onChange={() => onToggleSelect(transaction.id)} />
-        </td>
+        {showCheckbox && (
+          <td className="py-2.5 pl-3 pr-0 align-middle">
+            <input type="checkbox" aria-label={`Select ${mobilePrimaryText}`} checked={isSelected} onChange={() => onToggleSelect(transaction.id)} />
+          </td>
+        )}
 
-        <td className="overflow-hidden px-1 py-2">
+        <td className={`overflow-hidden py-2.5 pr-1 align-middle ${showCheckbox ? 'pl-2' : 'pl-3'}`}>
           <button
             type="button"
             onClick={() => onEdit(transaction)}
-            className="flex w-full min-w-0 flex-col items-start text-left"
+            title={mobileSecondaryText || undefined}
+            className="flex w-full min-w-0 items-center gap-3 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
           >
-            <span className="w-full truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
-              {mobilePrimaryText}
-            </span>
-            {showRowDate && <time dateTime={displayDate} className="text-xs text-stone-500 dark:text-stone-400">{formatDate(displayDate)}</time>}
-            {(displayCategory || mobileSecondaryText || hasAnyBadge) && (
-              <span className="mt-0.5 flex w-full min-w-0 items-center gap-1.5">
-                {displayCategory && (
-                  <span
-                    title={displayCategory.name}
-                    className="inline-block h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: displayCategory.color }}
-                  />
-                )}
-                {mobileSecondaryText && (
-                  <span className="min-w-0 flex-1 truncate text-xs text-stone-500 dark:text-stone-400">
-                    {mobileSecondaryText}
-                  </span>
-                )}
-                <TransactionStatusBadges
-                  compact
-                  isProjected={isProjected}
-                  isPending={isPending}
-                  isAmountLocked={isAmountLocked}
-                  isTransfer={isTransfer}
-                  isLinkedTransfer={isLinkedTransfer}
-                  effectiveIsIncome={effectiveIsIncome}
-                  splitTransactionIds={splitTransactionIds}
-                  transactionId={transaction.id}
-                />
+            <CategoryWell category={displayCategory} />
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[15px] font-semibold text-stone-900 dark:text-stone-100">{mobilePrimaryText}</span>
+                {isPending && <StatusChip tone="pending">Pending</StatusChip>}
+                {isProjected && <StatusChip tone="planned">Planned</StatusChip>}
               </span>
-            )}
+              {(subline || hasOtherBadge) && (
+                <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
+                  {subline && <span className="truncate">{subline}</span>}
+                  <TransactionStatusBadges
+                    compact
+                    isProjected={false}
+                    isPending={false}
+                    isAmountLocked={isAmountLocked}
+                    isTransfer={isTransfer}
+                    isLinkedTransfer={isLinkedTransfer}
+                    effectiveIsIncome={effectiveIsIncome}
+                    splitTransactionIds={splitTransactionIds}
+                    transactionId={transaction.id}
+                  />
+                </span>
+              )}
+              {showRowDate && <time dateTime={displayDate} className="block text-xs text-stone-500 dark:text-stone-400">{formatDate(displayDate)}</time>}
+            </span>
           </button>
         </td>
 
-        <td className={`px-1 py-2 text-right text-sm font-semibold tabular-nums whitespace-nowrap ${
-          effectiveIsIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+        <td className={`py-2.5 pl-1 text-right align-middle text-[15px] font-semibold tabular-nums whitespace-nowrap ${
+          isTransfer ? 'text-stone-500 dark:text-stone-400'
+          : effectiveIsIncome ? 'text-emerald-700 dark:text-emerald-400' : 'text-stone-900 dark:text-stone-100'
         }`}>
           <button
             type="button"
             onClick={() => onEdit(transaction)}
-            className={`inline-flex items-center gap-1 rounded-lg px-1 py-0.5 ${
-              effectiveIsIncome ? 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20' : 'hover:bg-red-50 dark:hover:bg-red-900/20'
-            }`}
+            className="inline-flex items-center gap-0.5 rounded-lg px-1 py-0.5 hover:bg-stone-100 dark:hover:bg-stone-700/50"
           >
-            <span className="text-xs font-bold">{isTransfer ? (effectiveIsIncome ? '↓' : '↑') : (effectiveIsIncome ? '+' : '−')}</span>
+            <span>{isTransfer ? (effectiveIsIncome ? '↓' : '↑') : (effectiveIsIncome ? '+' : '−')}</span>
             <span>{formatCurrency(displayAmount)}</span>
           </button>
         </td>
 
-        <td className="px-0.5 py-2 text-right whitespace-nowrap">
+        <td className="py-2.5 pl-0.5 pr-1 text-right align-middle whitespace-nowrap">
           <KebabMenu
             transaction={transaction}
             isNotPosted={isNotPosted}
@@ -647,7 +661,7 @@ const TransactionItem = forwardRef(function TransactionItem({
       <td className={`px-4 py-3 text-right text-sm font-medium whitespace-nowrap ${
         effectiveIsIncome
           ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-red-500 dark:text-red-400'
+          : 'text-stone-900 dark:text-stone-100'
       }`}>
         <div className="inline-flex items-center gap-0.5">
           {/* Clickable type indicator — toggles income/expense */}

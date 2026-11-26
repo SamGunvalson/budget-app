@@ -4,7 +4,7 @@
 //
 // The message keeps the standard reason phrase ("Bad Gateway", "Service
 // Unavailable", "Gateway Timeout") because isConnectivityError() in
-// offlineAware.js matches on it to fall back to the offline cache.
+// connectivity.js matches on it to fall back to the offline cache.
 
 const REASON_PHRASES = {
   400: "Bad Request",

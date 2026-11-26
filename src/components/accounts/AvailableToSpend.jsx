@@ -65,14 +65,14 @@ export default function AvailableToSpend({ accounts = [], chartAccountIds = [], 
 
   return (
     <div className="mt-6">
-      <p className="mb-3 text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
         Account Outlook
       </p>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
           <div
             key={c.id}
-            className="rounded-xl border border-stone-200/60 bg-white/60 px-4 py-3 shadow-sm dark:border-stone-700/60 dark:bg-stone-800/60"
+            className="rounded-2xl border border-stone-200/60 bg-white px-4 py-3 shadow-sm dark:border-stone-700/60 dark:bg-stone-800"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="truncate text-sm font-semibold text-stone-700 dark:text-stone-200">{maskAccountName(c.name)}</p>
@@ -81,13 +81,13 @@ export default function AvailableToSpend({ accounts = [], chartAccountIds = [], 
               </span>
             </div>
             <div className="grid grid-cols-2 gap-y-1 text-[11px]">
-              <span className="text-stone-400">{c.liability ? 'Owed today' : 'Today'}</span>
+              <span className="text-stone-500 dark:text-stone-400">{c.liability ? 'Owed today' : 'Today'}</span>
               <span className={`text-right font-semibold ${amountClass(c, c.today)}`}>{signed(c.today)}</span>
-              <span className="text-stone-400">{c.liability ? 'Most owed' : 'Lowest'} ({formatShortDate(c.worstDate)})</span>
+              <span className="text-stone-500 dark:text-stone-400">{c.liability ? 'Most owed' : 'Lowest'} ({formatShortDate(c.worstDate)})</span>
               <span className={`text-right font-semibold ${amountClass(c, c.worst)}`}>{signed(c.worst)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between border-t border-stone-100 pt-2 dark:border-stone-700">
-              <span className="text-[10px] uppercase tracking-wider text-teal-500 dark:text-teal-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
                 {c.liability ? 'Owed' : 'Balance'} on {formatShortDate(c.endDate)}
               </span>
               <span className={`text-base font-extrabold ${amountClass(c, c.end)}`}>{signed(c.end)}</span>

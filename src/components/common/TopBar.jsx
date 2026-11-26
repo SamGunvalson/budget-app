@@ -3,14 +3,18 @@ import { Link, useLocation } from 'react-router-dom';
 import { signOut, getCurrentUser } from '../../services/backend';
 import PAGE_REGISTRY from '../../constants/pages';
 import SyncStatus from './SyncStatus';
-import MobilePageDots from './MobilePageDots';
+import BrandMark from './BrandMark';
 import SplitNotificationBell from '../splits/SplitNotificationBell';
 import useSplitNotifications from '../../hooks/useSplitNotifications';
 import { getPartnership, getPartnerEmail } from '../../services/partnerships';
 
 const navPages = PAGE_REGISTRY.filter((p) => p.showInNav);
+const MENU_HOVER = 'hover:border-stone-200 hover:bg-stone-50 dark:hover:border-stone-700 dark:hover:bg-stone-700/50';
+const MENU_ACTIVE = 'border-stone-300 bg-stone-100 text-stone-800 dark:border-stone-600 dark:bg-stone-700/50 dark:text-stone-100';
+// Pages reachable on mobile only through the top-bar menu (not in the bottom tab bar).
+const menuPages = PAGE_REGISTRY.filter((p) => p.link && !p.tabActive);
 
-function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
+function MobileAccountMenu({ pathname, onSignOut, isSigningOut }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -26,7 +30,7 @@ function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
   }, [menuOpen]);
 
   return (
-    <div className="relative lg:hidden" ref={menuRef}
+    <div className="relative desktop:hidden" ref={menuRef}
       onKeyDown={(event) => {
         if (menuOpen && event.key === 'Escape') {
           setMenuOpen(false);
@@ -40,7 +44,7 @@ function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
       <button
         type="button"
         onClick={() => setMenuOpen((v) => !v)}
-        aria-label="Navigation menu"
+        aria-label="More pages and sign out"
         aria-expanded={menuOpen}
         className="rounded-lg p-1.5 text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
       >
@@ -50,22 +54,22 @@ function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
           </svg>
         ) : (
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
           </svg>
         )}
       </button>
       {menuOpen && (
-        <div className="absolute left-0 top-full mt-2 w-56 rounded-xl border border-stone-200/60 bg-white py-2 shadow-xl dark:border-stone-700/60 dark:bg-stone-800">
-          {navPages.map((page) => {
+        <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-stone-200/60 bg-white py-2 shadow-xl dark:border-stone-700/60 dark:bg-stone-800">
+          {menuPages.map((page) => {
             const isActive = pathname === page.link;
             return (
               <Link
                 key={page.id}
                 to={page.link}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex items-center gap-3 border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navHover} ${page.navFocus} ${
+                className={`flex items-center gap-3 border px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navHover ?? MENU_HOVER} ${page.navFocus ?? 'focus-visible:ring-amber-500'} ${
                   isActive
-                    ? page.navActive
+                    ? (page.navActive ?? MENU_ACTIVE)
                     : 'border-transparent text-stone-600 dark:text-stone-300'
                 }`}
               >
@@ -91,7 +95,8 @@ function MobileNavigationMenu({ pathname, onSignOut, isSigningOut }) {
 /**
  * Shared sticky top navigation bar.
  *
- * The compact navigation fits phones and portrait tablets.
+ * On mobile layout the page links live in the bottom tab bar (MobileChrome);
+ * this bar keeps the logo, status, and a menu for Settings, Categories and Sign out.
  */
 export default function TopBar() {
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -139,53 +144,22 @@ export default function TopBar() {
   // ── Logo block ──
   const logo = (
     <>
-      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-md shadow-amber-200/50">
-        <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </div>
-      <span className="hidden text-lg font-bold text-stone-900 dark:text-stone-100 md:inline">Budget App</span>
+      <BrandMark />
+      <span className="font-display text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">Budget App</span>
     </>
   );
 
   return (
-    <nav className="safe-area-pt sticky top-0 z-30 border-b border-stone-200/60 bg-white/80 shadow-sm backdrop-blur-md dark:border-stone-700/60 dark:bg-stone-900/80">
+    <nav className="safe-area-pt sticky top-0 z-30 border-b border-stone-200/60 bg-panel/85 backdrop-blur-md dark:border-stone-700/60">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        {/* Left: logo + mobile hamburger */}
+        {/* Left: logo */}
         <div className="flex items-center gap-3">
-          <MobileNavigationMenu key={pathname} pathname={pathname} onSignOut={handleSignOut} isSigningOut={isSigningOut} />
-
           <Link to="/app/transactions" aria-label="Budget App transactions" className="flex items-center gap-3 transition-opacity hover:opacity-80">
             {logo}
           </Link>
         </div>
 
-        {/* Center: page dots on mobile, full nav on desktop */}
-        <div className="flex items-center lg:hidden">
-          <MobilePageDots />
-        </div>
-        <div className="hidden items-center gap-1.5 lg:flex">
-          {navPages.map((page) => {
-            const isActive = pathname === page.link;
-            return (
-              <Link
-                key={page.id}
-                to={page.link}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900 ${page.navHover} ${page.navFocus} ${
-                  isActive
-                    ? page.navActive
-                    : 'border-stone-200/60 bg-white text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300'
-                }`}
-              >
-                {page.iconSmall}
-                {page.label}
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Right: sync status + split bell + sign out */}
+        {/* Right: split bell + sync status + sign out (desktop) or menu (mobile) */}
         <div className="flex items-center gap-2">
           {partnership && (
             <SplitNotificationBell
@@ -203,10 +177,35 @@ export default function TopBar() {
             type="button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="hidden rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:block dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
+            className="hidden rounded-lg border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-stone-600 shadow-sm transition-all hover:bg-stone-50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 desktop:block dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700"
           >
             {isSigningOut ? 'Signing out…' : 'Sign out'}
           </button>
+          <MobileAccountMenu key={pathname} pathname={pathname} onSignOut={handleSignOut} isSigningOut={isSigningOut} />
+        </div>
+      </div>
+
+      {/* Desktop page tabs (mobile uses the bottom tab bar) */}
+      <div className="hidden border-t border-stone-200/60 desktop:block dark:border-stone-700/60">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto px-4 sm:px-6">
+          {navPages.map((page) => {
+            const isActive = pathname === page.link;
+            return (
+              <Link
+                key={page.id}
+                to={page.link}
+                aria-current={isActive ? 'page' : undefined}
+                className={`-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navFocus} ${
+                  isActive
+                    ? `${page.tabUnderline} font-semibold text-stone-900 dark:text-stone-100`
+                    : 'border-transparent font-medium text-stone-500 hover:border-stone-300 hover:text-stone-800 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-200'
+                }`}
+              >
+                {page.iconSmall}
+                {page.label}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </nav>);

@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts';
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
+import { CHART_AXIS, CHART_GOLD, CHART_GRID, CHART_MUTED, CHART_SPENDING } from '../../constants/chartColors';
 
 /* ------------------------------------------------------------------ */
 /*  Custom tooltip                                                     */
@@ -107,7 +108,7 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
   }, [monthlyData]);
 
   /* ---- colour palette for YoY lines ---- */
-  const YOY_COLORS = ['#A8A29E', '#F59E0B']; // stone-400 for older year, amber-500 for current
+  const YOY_COLORS = [CHART_MUTED, CHART_GOLD]; // muted for older year, gold for current
 
   /* ---- render ---- */
   return (
@@ -156,16 +157,16 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
         ) : (
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={yoyData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
               <XAxis
                 dataKey="month"
-                tick={{ fill: '#78716c', fontSize: 12 }}
+                tick={{ fill: CHART_AXIS, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={formatPreMaskedAxisDollar}
-                tick={{ fill: '#78716c', fontSize: 12 }}
+                tick={{ fill: CHART_AXIS, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={70}
@@ -203,24 +204,24 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
             <AreaChart data={areaData} margin={{ top: 8, right: 16, bottom: 4, left: 0 }}>
               <defs>
                 <linearGradient id="gradSpent" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.03} />
+                  <stop offset="0%" stopColor={CHART_SPENDING} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={CHART_SPENDING} stopOpacity={0.03} />
                 </linearGradient>
                 <linearGradient id="gradIncome" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
                   <stop offset="100%" stopColor="#10B981" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+              <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
               <XAxis
                 dataKey="label"
-                tick={{ fill: '#78716c', fontSize: 12 }}
+                tick={{ fill: CHART_AXIS, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={formatPreMaskedAxisDollar}
-                tick={{ fill: '#78716c', fontSize: 12 }}
+                tick={{ fill: CHART_AXIS, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={70}
@@ -246,7 +247,7 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
                 type="monotone"
                 dataKey="spent"
                 name="Spending"
-                stroke="#F59E0B"
+                stroke={CHART_SPENDING}
                 strokeWidth={2.5}
                 fill="url(#gradSpent)"
                 dot={{ r: 4, strokeWidth: 2, fill: '#fff' }}

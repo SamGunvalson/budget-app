@@ -225,7 +225,7 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
               onClick={() => setFilter(f)}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
                 filter === f
-                  ? 'bg-amber-500 text-white shadow-sm'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300'
               }`}
             >
@@ -417,7 +417,7 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
           type="button"
           onClick={() => onConfirm(assignments, excludedRows, transferPairs, { manualOverrides, excludedRows, manualUnpairs })}
           disabled={activeRows.length === 0 || unmatchedCount > 0}
-          className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+          className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
         >
           Import {activeRows.length} Transaction{activeRows.length !== 1 ? 's' : ''}
         </button>

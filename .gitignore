@@ -35,3 +35,6 @@ android/*.jks
 
 # Claude Code personal overrides
 .claude/settings.local.json
+
+# Playwright MCP snapshots/screenshots
+.playwright-mcp/

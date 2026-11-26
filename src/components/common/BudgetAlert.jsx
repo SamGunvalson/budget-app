@@ -3,7 +3,7 @@ import { formatCurrency } from '../../utils/helpers';
 
 /**
  * Visual alert banner for budget status.
- * Shows a red (danger), amber (warning), or green (success) alert.
+ * Shows a red (danger), orange (warning), or green (success) alert.
  *
  * @param {{
  *   type?: 'danger' | 'warning' | 'success',
@@ -33,11 +33,11 @@ export default function BudgetAlert({
       badge: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
     },
     warning: {
-      container: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950',
-      icon: 'text-amber-500 dark:text-amber-400',
-      title: 'text-amber-800 dark:text-amber-300',
-      message: 'text-amber-600 dark:text-amber-400',
-      badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+      container: 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950',
+      icon: 'text-orange-500 dark:text-orange-400',
+      title: 'text-orange-800 dark:text-orange-300',
+      message: 'text-warn',
+      badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
     },
     underBudget: {
       container: 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950',

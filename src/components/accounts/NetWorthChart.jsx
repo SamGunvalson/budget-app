@@ -10,6 +10,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar } from '../../utils/helpers';
+import { CHART_AXIS, CHART_GRID, CHART_MUTED } from '../../constants/chartColors';
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 function NetWorthTooltip({ active, payload, label }) {
@@ -161,7 +162,7 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
       {/* Header row */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <p className="text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
             Net Worth Over Time
           </p>
           {filteredProjected.length > 0 && (
@@ -182,7 +183,7 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
               onClick={() => setRange(opt.key)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                 range === opt.key
-                  ? 'bg-amber-500 text-white shadow-sm shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >
@@ -210,17 +211,17 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
                 <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.01} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" className="dark:stroke-stone-700" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} className="dark:stroke-stone-700" />
             <XAxis
               dataKey="label"
-              tick={{ fill: '#78716c', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               interval={tickInterval}
             />
             <YAxis
               tickFormatter={formatPreMaskedAxisDollar}
-              tick={{ fill: '#78716c', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={72}
@@ -231,10 +232,10 @@ export default function NetWorthChart({ data = [], projectedData = [], projected
             {currentLabel && filteredProjected.length > 0 && (
               <ReferenceLine
                 x={currentLabel}
-                stroke="#a8a29e"
+                stroke={CHART_MUTED}
                 strokeDasharray="3 3"
                 strokeWidth={1.5}
-                label={{ value: 'Today', position: 'insideTopRight', fontSize: 10, fill: '#a8a29e' }}
+                label={{ value: 'Today', position: 'insideTopRight', fontSize: 10, fill: CHART_MUTED }}
               />
             )}
 

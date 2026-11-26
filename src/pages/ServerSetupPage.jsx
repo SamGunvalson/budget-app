@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { configureServer, testServer } from '../services/backend';
 import { getConnectionErrorMessage } from '../utils/connectionErrors';
+import BrandMark from '../components/common/BrandMark';
 
 export default function ServerSetupPage({ serverState, onConfigured }) {
   const navigate = useNavigate();
@@ -59,11 +60,15 @@ export default function ServerSetupPage({ serverState, onConfigured }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/30 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-xl items-center px-4 py-10 sm:px-6">
+    <div className="min-h-screen app-bg">
+      <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center px-4 py-10 sm:px-6">
+        <div className="mb-6 inline-flex items-center gap-2.5 self-center font-display text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+          <BrandMark className="h-8 w-8" />
+          Budget App
+        </div>
         <div className="w-full rounded-2xl border border-stone-200/60 bg-white p-6 shadow-xl shadow-stone-200/50 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
           <div className="mb-5">
-            <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Connect to your server</h1>
+            <h1 className="font-display text-3xl font-medium tracking-tight text-stone-900 dark:text-stone-100">Connect to your server</h1>
             <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
               Enter the server URL before signing in. This should be reachable from this device
               (for example over Tailscale).
@@ -120,7 +125,7 @@ export default function ServerSetupPage({ serverState, onConfigured }) {
               <button
                 type="submit"
                 disabled={isTesting || isSaving}
-                className="flex-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none dark:shadow-amber-900/30"
+                className="flex-1 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none dark:shadow-amber-900/30"
               >
                 {isSaving ? 'Saving…' : 'Save and continue'}
               </button>

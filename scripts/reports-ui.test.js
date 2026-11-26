@@ -170,3 +170,46 @@ test('year options include a selected year outside the list, keeping order', () 
   assert.deepEqual(yearOptionsWithSelected([2026, 2025, 2024], '2022'), [2026, 2025, 2024, 2022]);
   assert.equal(yearOptionsWithSelected(asc, undefined), asc);
 });
+
+// ── Budgets month summary (PR #54 review) ──
+import { monthSpendingSummary } from '../src/utils/budgetCalculations.js';
+
+const pvaRow = (categoryId, categoryType, actual) => ({ categoryId, categoryType, actual });
+
+test('budget summary counts uncategorized and unplanned spending', () => {
+  const actuals = {
+    categories: [
+      pvaRow('groceries', 'needs', 30000),
+      pvaRow('uncategorized', 'expense', 2500),
+      pvaRow('new-hobby', 'wants', 4000),
+      pvaRow('paycheck', 'income', 240000),
+    ],
+    actualIncome: 240000,
+  };
+  const s = monthSpendingSummary(actuals, { plannedSpending: 50000, listedCategoryIds: new Set(['groceries', 'paycheck']) });
+  assert.equal(s.spent, 36500);
+  assert.equal(s.left, 13500);
+  assert.equal(s.outsidePlan, 6500);
+  assert.equal(s.received, 240000);
+  assert.equal(s.usedPct, 73);
+});
+
+test('budget summary lets net refunds reduce spending instead of clamping to zero', () => {
+  const actuals = { categories: [pvaRow('dining', 'wants', 5000), pvaRow('returns', 'wants', -8000)], actualIncome: 0 };
+  const s = monthSpendingSummary(actuals, { plannedSpending: 10000, listedCategoryIds: new Set(['dining', 'returns']) });
+  assert.equal(s.spent, -3000);
+  assert.equal(s.left, 13000);
+});
+
+test('budget summary keeps income out of spending and uses the signed income total', () => {
+  const actuals = { categories: [pvaRow('paycheck', 'income', 240000), pvaRow('refund-of-pay', 'income', -15000)], actualIncome: 225000 };
+  const s = monthSpendingSummary(actuals, { plannedSpending: 0 });
+  assert.equal(s.spent, 0);
+  assert.equal(s.received, 225000);
+  assert.equal(s.usedPct, 0);
+});
+
+test('budget summary with no actuals yet reports zeros without throwing', () => {
+  const s = monthSpendingSummary(null, { plannedSpending: 10000 });
+  assert.deepEqual(s, { spent: 0, received: 0, left: 10000, usedPct: 0, outsidePlan: 0 });
+});

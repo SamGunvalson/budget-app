@@ -5,6 +5,7 @@ import RecurringCalendarView from './RecurringCalendarView';
 import { getOccurrencesInRange, formatSchedule, getNextOccurrence } from '../../utils/recurringCalculations';
 import { formatCurrency, formatDate, toDollars, resolveAmountOverride, maskAccountName } from '../../utils/helpers';
 import { computeTemplateGroupNet } from '../../utils/transactionGrouping';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 
 /**
  * UpcomingRecurring — report widget that shows:
@@ -108,7 +109,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
             date: d,
             dateStr: format(d, 'yyyy-MM-dd'),
             category: t.categories?.name || 'Uncategorized',
-            categoryColor: t.categories?.color || '#A8A29E',
+            categoryColor: t.categories?.color || CATEGORY_FALLBACK_COLOR,
             // Raw name — masked at render so it tracks the safe-mode flag.
             account: t.accounts?.name || '—',
           });
@@ -124,7 +125,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
             date: d,
             dateStr: format(d, 'yyyy-MM-dd'),
             category: t.categories?.name || 'Uncategorized',
-            categoryColor: t.categories?.color || '#A8A29E',
+            categoryColor: t.categories?.color || CATEGORY_FALLBACK_COLOR,
             // Raw names — masked at render so they track the safe-mode flag.
             account: t.accounts?.name || '—',
             toAccount: t.to_account?.name || null,
@@ -357,7 +358,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
                         )}
                         <span
                           className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: t.categories?.color || '#A8A29E' }}
+                          style={{ backgroundColor: t.categories?.color || CATEGORY_FALLBACK_COLOR }}
                         />
                         <span className="truncate text-sm font-medium text-stone-900 dark:text-stone-100">
                           {t.description}
@@ -578,7 +579,7 @@ export default function UpcomingRecurring({ onApplied, onEdit, onEditGroup, onMu
                           <div className="flex items-center gap-2">
                             <span
                               className="inline-block h-2 w-2 rounded-full"
-                              style={{ backgroundColor: child.categories?.color || '#A8A29E' }}
+                              style={{ backgroundColor: child.categories?.color || CATEGORY_FALLBACK_COLOR }}
                             />
                             <span className="text-stone-700 dark:text-stone-300">
                               {child.description}

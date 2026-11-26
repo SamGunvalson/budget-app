@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Budget App brand mark: forest tile, three rising gold bars. Source for scripts/generate-icons.sh -->
+  <rect width="512" height="512" rx="112" fill="#164b3c"/>
+  <g fill="#e7c985">
+    <rect x="124" y="276" width="64" height="112" rx="22"/>
+    <rect x="224" y="212" width="64" height="176" rx="22"/>
+    <rect x="324" y="132" width="64" height="256" rx="22"/>
+  </g>
+</svg>

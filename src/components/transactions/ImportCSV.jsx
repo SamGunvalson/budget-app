@@ -317,7 +317,7 @@ export default function ImportCSV({ categories: allCategories, accounts, onCompl
           <div key={s.key} className="flex items-center gap-2">
             <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${
               isStepActive(s.key)
-                ? 'bg-amber-500 text-white'
+                ? 'bg-amber-500 text-stone-950'
                 : 'bg-stone-200 text-stone-500 dark:bg-stone-700 dark:text-stone-400'
             }`}>
               {i + 1}
@@ -455,7 +455,7 @@ export default function ImportCSV({ categories: allCategories, accounts, onCompl
             <button
               type="button"
               onClick={handleDuplicatesConfirmed}
-              className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               {importCount > 0
                 ? `Import ${importCount} Transaction${importCount === 1 ? '' : 's'}${skippedCount > 0 ? `, Skip ${skippedCount}` : ''}`
@@ -579,7 +579,7 @@ export default function ImportCSV({ categories: allCategories, accounts, onCompl
                 onComplete();
                 onClose();
               }}
-              className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="flex-1 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               Done
             </button>

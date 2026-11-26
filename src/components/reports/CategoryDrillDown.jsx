@@ -129,6 +129,7 @@ export default function CategoryDrillDown({
           selectedIds={mgr.selectedIds}
           onToggleSelect={mgr.handleToggleSelect}
           onSelectAll={() => mgr.handleSelectAll(sorted)}
+          onClearSelection={() => mgr.handleSelectAll([])}
           pendingEdits={mgr.pendingEdits}
           onCellEdit={mgr.handleCellEdit}
           categories={categories}
@@ -156,7 +157,7 @@ export default function CategoryDrillDown({
                 type="button"
                 onClick={mgr.handleSaveAllEdits}
                 disabled={mgr.isSavingEdits}
-                className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 active:scale-[0.98] disabled:opacity-50"
+                className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 active:scale-[0.98] disabled:opacity-50"
               >
                 {mgr.isSavingEdits ? 'Saving…' : 'Save All'}
               </button>

@@ -87,7 +87,7 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
     case 'danger':
       return 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300';
     case 'warning':
-      return 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300';
+      return 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300';
     case 'underBudget':
       return 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300';
     default:
@@ -308,7 +308,7 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
             Under budget (&lt;{thresholds.underBudget}%)
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-900/40" />
+            <span className="inline-block h-3 w-3 rounded border border-orange-300 bg-orange-100 dark:border-orange-700 dark:bg-orange-900/40" />
             Warning ({thresholds.warning}%+)
           </span>
           <span className="flex items-center gap-1.5">

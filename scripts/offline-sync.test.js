@@ -20,6 +20,7 @@ const sources = {
   categories: read("../src/services/categories.js"),
   budgets: read("../src/services/budgets.js"),
   cache: read("../src/services/cache.js"),
+  connectivity: read("../src/services/connectivity.js"),
   splitExpenses: read("../src/services/splitExpenses.js"),
   ids: read("../src/utils/ids.js"),
 };
@@ -197,6 +198,10 @@ async function load(source, dependencies) {
   return module.namespace;
 }
 
+async function loadConnectivity() {
+  return { ...(await load(sources.connectivity, {})) };
+}
+
 async function loadOfflineDb() {
   const notified = [];
   const epochBumps = [];
@@ -231,9 +236,10 @@ async function loadOfflineAware({ services = {}, flush = async () => {}, base, s
   const flushes = [];
   const scheduled = [];
   const cache = realCache
-    ? { ...(await load(sources.cache, {})) }
+    ? { ...(await load(sources.cache, { "./connectivity": await loadConnectivity() })) }
     : { notifyTable: () => {}, swrRead: unexpected("./cache", "swrRead"), getCacheEpoch: () => 0 };
   const offlineAware = await load(sources.offlineAware, {
+    "./connectivity": await loadConnectivity(),
     "./offlineDb": { ...offlineDb },
     "../utils/syncQueue": { ...syncQueue },
     "../utils/ids": { newId: offlineDb.newId },
@@ -3000,7 +3006,7 @@ test("a deletion-only pull keeps the previous watermark", async () => {
 
 test("swrRead neither caches nor shares a fetch from before a wipe", async () => {
   setOnline(true);
-  const cache = await load(sources.cache, {});
+  const cache = await load(sources.cache, { "./connectivity": await loadConnectivity() });
   const written = [];
   let release;
   const oldFetch = new Promise((resolve) => (release = resolve));
@@ -3021,6 +3027,35 @@ test("swrRead neither caches nor shares a fetch from before a wipe", async () =>
   assert.deepEqual(await newRead, [{ id: "b" }]);
   assert.deepEqual(await oldRead, []);
   assert.deepEqual(written, [["new", [{ id: "b" }]]]);
+});
+
+test("swrRead surfaces a server rejection on a cold cache instead of empty data", async () => {
+  setOnline(true);
+  const cache = await load(sources.cache, { "./connectivity": await loadConnectivity() });
+  const rejection = Object.assign(new Error("function get_plan_vs_actual does not exist"), { code: "42883" });
+  await assert.rejects(
+    cache.swrRead({
+      key: "pva:m:2026-11",
+      readCache: async () => null,
+      fetchFresh: async () => { throw rejection; },
+      writeCache: async () => {},
+    }),
+    rejection,
+  );
+});
+
+test("swrRead falls back to the cache when the backend is unreachable on a cold read", async () => {
+  setOnline(true);
+  const cache = await load(sources.cache, { "./connectivity": await loadConnectivity() });
+  for (const err of [new TypeError("Failed to fetch"), Object.assign(new Error("Bad Gateway"), { status: 502 })]) {
+    const result = await cache.swrRead({
+      key: `transactions:11-2026-:${err.message}`,
+      readCache: async () => [],
+      fetchFresh: async () => { throw err; },
+      writeCache: async () => {},
+    });
+    assert.deepEqual(result, []);
+  }
 });
 
 test("split expenses page by id, so concurrent inserts cannot duplicate a row", async () => {

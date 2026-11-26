@@ -32,6 +32,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: [
         "favicon.ico",
+        "favicon.svg",
         "apple-touch-icon-180x180.png",
         "pwa-maskable-512x512.png",
       ],
@@ -39,8 +40,8 @@ export default defineConfig(({ mode }) => ({
         name: "Budget App",
         short_name: "Budget",
         description: "Personal budget tracker with offline support",
-        theme_color: "#1c1917",
-        background_color: "#1c1917",
+        theme_color: "#171c19",
+        background_color: "#171c19",
         display: "standalone",
         orientation: "portrait",
         scope: "/",

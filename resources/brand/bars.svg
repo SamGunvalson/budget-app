@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Bars only (transparent), centred in the 66% safe zone: Android adaptive-icon foreground and maskable PWA icon. -->
+  <g fill="#e7c985" transform="translate(256 256) scale(0.72) translate(-256 -260)">
+    <rect x="124" y="276" width="64" height="112" rx="22"/>
+    <rect x="224" y="212" width="64" height="176" rx="22"/>
+    <rect x="324" y="132" width="64" height="256" rx="22"/>
+  </g>
+</svg>

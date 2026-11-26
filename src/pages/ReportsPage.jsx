@@ -32,6 +32,9 @@ import useSessionState from '../hooks/useSessionState';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
 import IncludePendingToggle from '../components/reports/IncludePendingToggle';
+import { CATEGORY_FALLBACK_COLOR } from '../constants/chartColors';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 // Skeleton placeholder shown while a lazy chart chunk is downloading.
 function ChartFallback() {
@@ -74,8 +77,11 @@ export default function ReportsPage() {
   const pendingReviewCount = pendingQuery.data ?? 0;
   const isLoading =
     ytdQuery.isLoading || categoriesQuery.isLoading || pendingQuery.isLoading;
+  // Summary figures come from the YTD transactions; without them, show
+  // "unavailable" in the Summary view rather than $0 totals.
+  const summaryUnavailable = isQueryUnavailable(ytdQuery);
   const error =
-    ytdQuery.error?.message ||
+    (summaryUnavailable ? '' : ytdQuery.error?.message) ||
     categoriesQuery.error?.message ||
     pendingQuery.error?.message ||
     '';
@@ -123,7 +129,7 @@ export default function ReportsPage() {
 
       const catId = t.category_id || 'uncategorized';
       const catName = t.categories?.name || 'Uncategorized';
-      const catColor = t.categories?.color || '#A8A29E';
+      const catColor = t.categories?.color || CATEGORY_FALLBACK_COLOR;
 
       if (isTrueIncome(t)) {
         ytdInc += t.amount;
@@ -261,7 +267,7 @@ export default function ReportsPage() {
           transactions={txs}
           categories={categories}
           categoryName={categoryName}
-          categoryColor={entry?.color || '#A8A29E'}
+          categoryColor={entry?.color || CATEGORY_FALLBACK_COLOR}
           onClose={() => setExpandedChart(null)}
           onDataChanged={() => {
             // allTransactions state is already updated by setAllTransactions
@@ -275,7 +281,7 @@ export default function ReportsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Reports" />
 
       {/* Content */}
@@ -283,20 +289,7 @@ export default function ReportsPage() {
         {/* Header row */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="animate-fade-in">
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
-              {activeView === 'calendar'
-                ? 'Transaction Calendar'
-                : activeView === 'annualActuals'
-                  ? 'Annual Actuals'
-                  : activeView === 'trends'
-                    ? 'Spending Trends'
-                    : activeView === 'planVsActual'
-                      ? 'Plan vs Actual'
-                      : viewMode === 'monthly'
-                        ? 'Monthly Summary'
-                        : 'YTD Summary'}
-            </h1>
-            <p className="mt-1 text-base text-stone-500 dark:text-stone-400">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
               {activeView === 'calendar'
                 ? `${getMonthName(month)} ${year} daily view`
                 : activeView === 'annualActuals'
@@ -311,6 +304,19 @@ export default function ReportsPage() {
                         ? `${getMonthName(month)} ${year} overview`
                         : `Jan \u2013 ${getMonthName(month)} ${year} overview`}
             </p>
+            <h1 className="font-display text-3xl font-medium leading-tight tracking-tight text-stone-900 sm:text-4xl dark:text-stone-100">
+              {activeView === 'calendar'
+                ? 'Transaction Calendar'
+                : activeView === 'annualActuals'
+                  ? 'Annual Actuals'
+                  : activeView === 'trends'
+                    ? 'Spending Trends'
+                    : activeView === 'planVsActual'
+                      ? 'Plan vs Actual'
+                      : viewMode === 'monthly'
+                        ? 'Monthly Summary'
+                        : 'YTD Summary'}
+            </h1>
             {pendingReviewCount > 0 && (
               <Link
                 to="/app/transactions?status=pending"
@@ -323,9 +329,9 @@ export default function ReportsPage() {
               </Link>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            {/* Unified view tab bar */}
-            <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
+          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
+            {/* Unified view tab bar — full width on phones */}
+            <div className="flex w-full overflow-x-auto rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto dark:border-stone-700/60 dark:bg-stone-800">
               {[
                 { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50' },
                 { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
@@ -338,7 +344,7 @@ export default function ReportsPage() {
                   type="button"
                   title={label}
                   onClick={() => setActiveView(id)}
-                  className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-4 ${
+                  className={`flex-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium transition-all sm:flex-none sm:px-4 ${
                     activeView === id
                       ? activeClass
                       : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
@@ -363,14 +369,14 @@ export default function ReportsPage() {
             )}
             {/* Time-period controls — only for Summary and Plan vs Actual */}
             {(activeView === 'summary' || activeView === 'planVsActual') && (
-              <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
                 <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
                   <button
                     type="button"
                     onClick={() => setViewMode('monthly')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'monthly'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >
@@ -381,7 +387,7 @@ export default function ReportsPage() {
                     onClick={() => setViewMode('ytd')}
                     className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                       viewMode === 'ytd'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
+                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                         : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
                     }`}
                   >
@@ -428,7 +434,7 @@ export default function ReportsPage() {
                   isLoading={trendLoading}
                   error={trendError}
                 />
-                <TrendSummary {...trendSummary} />
+                {!trendError && <TrendSummary {...trendSummary} />}
               </Suspense>
             ) : activeView === 'planVsActual' ? (
               <Suspense fallback={<ChartFallback />}>
@@ -441,6 +447,14 @@ export default function ReportsPage() {
                   asOf={asOf}
                 />
               </Suspense>
+            ) : summaryUnavailable ? (
+              <DataUnavailable
+                eyebrow={viewMode === 'ytd' ? `${year} year to date` : `${getMonthName(month)} ${year}`}
+                title="Summary unavailable"
+                message="Couldn't load transactions for this period, so no totals are shown."
+                onRetry={() => ytdQuery.refetch()}
+                retrying={ytdQuery.isFetching}
+              />
             ) : (
               <>
                 {/* Stat cards + YTD */}

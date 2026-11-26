@@ -29,6 +29,13 @@ not Dexie-mirrored. Provider/imperative preference reads use existing offline
 wrappers. **Do not add direct backend reads to components**; preserve specialized
 existing paths unless their migration is explicitly in scope.
 
+Failed reads: `swrRead` (`src/services/cache.js`) returns the local cache when
+the backend is unreachable (offline, 502–504, expired session). When the
+backend rejects a request (another 4xx/5xx) and nothing is cached, it throws,
+so the query errors. Pages check `isQueryUnavailable(query)` and show
+`DataUnavailable`, never empty or zero figures. Connectivity classification
+lives in `src/services/connectivity.js`.
+
 ### Data flow (writes)
 
 Mutations may be called directly from components via the `*Offline` wrappers in `src/services/offlineAware.js` — no hook layer is required for writes. Each wrapper:
@@ -56,6 +63,14 @@ new reads; non-mirrored tables need their existing explicit invalidation.
 ### Auth & RLS
 
 Auth state is managed by `src/contexts/AuthContext.jsx`. All client auth calls go through `src/services/auth/` (backed by the auth service in `server/auth/`); do not call auth endpoints directly from components. PostgreSQL Row-Level Security, with the auth compatibility shim in `sql_scripts/local/`, scopes database access to the authenticated user — no need to manually filter by `user_id` in reads (but `user_id` must be set on inserts). The PostgREST client (`db`) and server origin live in `src/services/backend.js`; services import `db` from there.
+
+### Mobile layout
+
+Below 1024px, or in the native app, the app uses the mobile shell: a bottom tab
+bar plus floating page actions (`MobileChrome`). Pages register their actions
+with `usePageActions` and hide the matching header buttons with
+`mobile:hidden`. Use the `mobile:` / `desktop:` Tailwind variants rather than
+`sm:`/`lg:` for shell differences. See STYLE_GUIDE → *Mobile layout*.
 
 ### Routing
 
@@ -105,7 +120,7 @@ Each context is split into two files:
 - `src/contexts/FooContext.jsx` — the provider component
 - `src/contexts/fooContextValue.js` — the context object consumed by hooks
 
-Contexts: `AuthContext`, `MonthYearContext`, `SafeModeContext`, `ThemeContext`.
+Contexts: `AuthContext`, `MonthYearContext`, `PageActionsContext`, `SafeModeContext`, `ThemeContext`.
 
 ### Safe mode
 
@@ -114,8 +129,10 @@ Safe mode masks financial values for screenshots/screensharing. It hooks into `f
 ### Styling
 
 - Dark mode is default. All components must support both light and dark variants.
-- Color palette: **stone** neutrals, **amber** primary/CTA, **teal/emerald** income/success, **violet** analytics, **red** errors/expenses.
-- Background: `bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100` (light) / `dark:from-stone-950 dark:via-stone-900 dark:to-stone-950`
+- Palette **Forest & Gold** (tokens in `src/index.css`): `stone-*` is re-tinted to sage/forest neutrals and `amber-*` to gold. Keep using those scales, or the semantic tokens (`paper`, `panel`, `ink`, `soft`, `line`, `tint`, `forest`, `gold`, `income`, `warn`). **teal/emerald** income/success, **violet** analytics, **red** errors and over-budget, **orange** warnings (never amber). Expense amounts in transaction lists are ink, not red.
+- Text on gold (`bg-amber-500`) is `text-stone-950`, never `text-white`. No gradient buttons.
+- Page roots use `app-bg min-h-screen`. Page H1s use `font-display font-medium` (bundled Newsreader serif); do not use the serif for body text.
+- Page titles go through `PageHeader` (eyebrow + serif title). Buttons use `Button` / `buttonClasses()`: at most one gold `primary` per screen; the selected segment in a segmented control is ink, not gold.
 - Use `border-stone-200/60` (translucent) for borders — not solid grays.
 
 ### File naming

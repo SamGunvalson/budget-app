@@ -12,6 +12,7 @@ import UpcomingRecurring from '../components/reports/UpcomingRecurring';
 import Modal, { ConfirmDeleteModal } from '../components/common/Modal';
 import AmountInput from '../components/common/AmountInput';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
 import useTransactionManager from '../hooks/useTransactionManager';
 import {
   createTransactionOffline as createTransaction,
@@ -28,6 +29,7 @@ import {
   useCategories,
   useAccounts,
   useUserPreference,
+  usePendingReviewCount,
 } from '../hooks/queries';
 import BulkEditModal from '../components/transactions/BulkEditModal';
 import {
@@ -43,10 +45,11 @@ import {
   PROJECTION_WINDOW_DAYS,
 } from '../services/recurring';
 import { buildTemplateLookup, groupTransactions } from '../utils/transactionGrouping';
-import { toCents, getTodayString } from '../utils/helpers';
+import { toCents, getTodayString, formatMonthYearLabel } from '../utils/helpers';
 import { getFavoriteAccountIds } from '../services/accounts';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
+import usePageActions from '../hooks/usePageActions';
 import { getPartnership, getPartnerEmail, getPartnerId } from '../services/partnerships';
 import { createSplitExpense, getSplitTransactionIds, getSplitByTransaction, deleteSplitExpense, computeShares } from '../services/splitExpenses';
 import { getCurrentUser } from '../services/backend';
@@ -60,6 +63,9 @@ import {
   QUICK_TRANSACTION_TEMPLATES_KEY,
   normalizeQuickTransactionTemplates,
 } from '../services/quickTransactions';
+import { hapticSuccess, hapticTap } from '../utils/haptics';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 // ================================================
 // TransactionsPage
@@ -71,6 +77,7 @@ export default function TransactionsPage() {
   const [searchParams] = useSearchParams();
   const accountFilterParam = searchParams.get('account') || '';
   const reviewPending = searchParams.get('status') === 'pending';
+  const pendingCount = usePendingReviewCount().data ?? 0;
   const queryClient = useQueryClient();
 
   // Period state
@@ -113,9 +120,11 @@ export default function TransactionsPage() {
     txQuery.isLoading ||
     categoriesQuery.isLoading ||
     accountsQuery.isLoading;
+  // Without the list itself, show "unavailable" instead of "No transactions".
+  const listUnavailable = isQueryUnavailable(txQuery);
   const loadError =
     mutationError ||
-    txQuery.error?.message ||
+    (listUnavailable ? '' : txQuery.error?.message) ||
     categoriesQuery.error?.message ||
     accountsQuery.error?.message ||
     '';
@@ -391,6 +400,7 @@ export default function TransactionsPage() {
     const created = await createTransaction(rest);
     setTransactions((prev) => [created, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
     if (isSplit && partnership) {
       setSplittingTransaction(created);
     }
@@ -400,12 +410,14 @@ export default function TransactionsPage() {
     const [outgoing, incoming] = await createTransfer(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const handleCreateAsymmetricTransfer = async (values) => {
     const [outgoing, incoming] = await createAsymmetricTransferOffline(values);
     setTransactions((prev) => [outgoing, incoming, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const handleCreateLinkedTransfer = async (values) => {
@@ -413,6 +425,7 @@ export default function TransactionsPage() {
     const [mainLeg, companionLeg] = await createLinkedTransfer(rest);
     setTransactions((prev) => [mainLeg, companionLeg, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
     if (isSplit && partnership) {
       setSplittingTransaction(mainLeg);
     }
@@ -422,6 +435,7 @@ export default function TransactionsPage() {
     const created = await createAdjustment(values);
     setTransactions((prev) => [created, ...prev]);
     setShowCreateModal(false);
+    hapticSuccess();
   };
 
   const openQuickModal = () => {
@@ -431,6 +445,44 @@ export default function TransactionsPage() {
     setQuickDate(getTodayString());
     setQuickError('');
   };
+
+  // Mobile action bar (desktop keeps the header buttons below).
+  usePageActions([
+    {
+      id: 'recurring',
+      label: showRecurringPanel ? 'Hide recurring' : 'Show recurring',
+      variant: 'icon',
+      pressed: showRecurringPanel,
+      icon: (
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.183" />
+        </svg>
+      ),
+      onSelect: () => setShowRecurringPanel((open) => !open),
+    },
+    {
+      id: 'quick',
+      label: 'Quick',
+      variant: 'secondary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+        </svg>
+      ),
+      onSelect: openQuickModal,
+    },
+    {
+      id: 'add',
+      label: 'Add transaction',
+      variant: 'primary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+      ),
+      onSelect: () => setShowCreateModal(true),
+    },
+  ]);
 
   const handleQuickSubmit = async (e) => {
     e.preventDefault();
@@ -494,6 +546,7 @@ export default function TransactionsPage() {
       }
 
       setShowQuickModal(false);
+      hapticSuccess();
       setSelectedQuickTemplate(null);
       setQuickAmount('');
       setQuickDate(getTodayString());
@@ -640,6 +693,7 @@ export default function TransactionsPage() {
     const confirmed = await mgr.handleConfirm(txId);
     // A failed confirm leaves the row unposted; do not record a split for it.
     if (!confirmed) return;
+    hapticTap();
     if (tx?.recurring_template_id && partnership && currentUser) {
       try {
         const tpl = await getRecurringTemplateById(tx.recurring_template_id);
@@ -714,33 +768,14 @@ export default function TransactionsPage() {
 
   // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-linear-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Transactions" />
 
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Transactions</h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Track your income and expenses.
-            </p>
-          </div>
-          <div className="flex shrink-0 gap-2 sm:gap-3">
-            <select
-              aria-label="More transaction actions"
-              value=""
-              onChange={(event) => {
-                if (event.target.value === 'quick') openQuickModal();
-                if (event.target.value === 'recurring') setShowRecurringPanel((open) => !open);
-              }}
-              className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-sm font-medium text-stone-700 sm:hidden dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200"
-            >
-              <option value="" disabled>More</option>
-              <option value="quick">Quick transactions</option>
-              <option value="recurring">{showRecurringPanel ? 'Hide recurring' : 'Show recurring'}</option>
-            </select>
+        <PageHeader className="mb-6" eyebrow={reviewPending ? 'Pending review' : showYear ? String(year) : formatMonthYearLabel(month, year)} title="Transactions">
+          <div className="flex shrink-0 gap-2 sm:gap-3 mobile:hidden">
             <button
               type="button"
               title="Recurring"
@@ -776,11 +811,10 @@ export default function TransactionsPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
-              <span className="hidden sm:inline">New Transaction</span>
-              <span className="sm:hidden">Add</span>
+              <span>New Transaction</span>
             </button>
           </div>
-        </div>
+        </PageHeader>
 
         {/* Recurring panel */}
         {showRecurringPanel && (
@@ -820,13 +854,34 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* View mode toggle — always visible so you can switch mid-load */}
-        {reviewPending && (
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold text-stone-800 dark:text-stone-200">Pending review <span className="text-sm font-normal text-stone-500 dark:text-stone-400">· All dates</span></h2>
-            <Link to="/app/transactions" className="text-sm font-medium text-amber-800 underline dark:text-amber-400">Show all transactions</Link>
+        {/* All / Pending status switch */}
+        <nav aria-label="Transaction status" className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-xl border border-stone-200 bg-stone-100/70 p-1 dark:border-stone-700 dark:bg-stone-800">
+            {[
+              { key: 'all', label: 'All', to: '/app/transactions', active: !reviewPending },
+              { key: 'pending', label: 'Pending', to: '/app/transactions?status=pending', active: reviewPending },
+            ].map((tab) => (
+              <Link
+                key={tab.key}
+                to={tab.to}
+                aria-current={tab.active ? 'page' : undefined}
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-4 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                  tab.active
+                    ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                    : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
+                }`}
+              >
+                {tab.label}
+                {tab.key === 'pending' && pendingCount > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+              </Link>
+            ))}
           </div>
-        )}
+          {reviewPending && <span className="text-sm text-stone-500 dark:text-stone-400">All dates</span>}
+        </nav>
         {isLoading && !reviewPending && (
           <div className="mb-6">
             <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50/50 p-1 dark:border-stone-700 dark:bg-stone-700/50">
@@ -837,7 +892,7 @@ export default function TransactionsPage() {
                   onClick={() => setViewMode(mode)}
                   className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
                     viewMode === mode
-                      ? 'bg-amber-500 text-stone-950 shadow-sm'
+                      ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                       : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100'
                   }`}
                 >
@@ -890,6 +945,14 @@ export default function TransactionsPage() {
               </p>
             )}
           </div>
+        ) : listUnavailable ? (
+          <DataUnavailable
+            eyebrow={reviewPending ? 'Pending review' : showYear ? String(year) : formatMonthYearLabel(month, year)}
+            title="Transactions unavailable"
+            message="Couldn't load transactions for this period. Nothing has been changed."
+            onRetry={() => txQuery.refetch()}
+            retrying={txQuery.isFetching}
+          />
         ) : (
           <TransactionList
             transactions={filteredSorted}
@@ -906,6 +969,7 @@ export default function TransactionsPage() {
             selectedIds={visibleSelectedIds}
             onToggleSelect={mgr.handleToggleSelect}
             onSelectAll={() => mgr.handleSelectAll(filteredSorted)}
+            onClearSelection={() => mgr.handleSelectAll([])}
             pendingEdits={mgr.pendingEdits}
             onCellEdit={mgr.handleCellEdit}
             categories={categories}
@@ -956,20 +1020,18 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* Bulk action bar */}
-        <div>
-          <BulkActionBar
-            selectedCount={visibleSelectedIds.size}
-            categories={categories}
-            onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
-            onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
-            onDeselectAll={() => mgr.handleSelectAll([])}
-            isBusy={mgr.isBulkBusy}
-            hasNonPosted={hasNonPostedSelected}
-            onBulkConfirm={() => mgr.handleBulkConfirm(visibleSelectedIds)}
-            onBulkSkip={() => mgr.handleBulkSkip(visibleSelectedIds)}
+        {/* Bulk action bar (direct child so it stays sticky while scrolling the list) */}
+        <BulkActionBar
+          selectedCount={visibleSelectedIds.size}
+          categories={categories}
+          onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
+          onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
+          onDeselectAll={() => mgr.handleSelectAll([])}
+          isBusy={mgr.isBulkBusy}
+          hasNonPosted={hasNonPostedSelected}
+          onBulkConfirm={() => mgr.handleBulkConfirm(visibleSelectedIds)}
+          onBulkSkip={() => mgr.handleBulkSkip(visibleSelectedIds)}
           />
-        </div>
       </div>
 
       {/* Create modal */}

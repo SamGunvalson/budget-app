@@ -5,7 +5,8 @@ import { formatCurrency } from '../../utils/helpers';
 const NetWorthChart = lazy(() => import('./NetWorthChart'));
 
 /**
- * NetWorthSummary — top-level card showing net worth, assets, and liabilities.
+ * NetWorthSummary — forest summary card (net worth, projection, assets vs
+ * liabilities) followed by the net worth history chart in its own panel.
  *
  * Props:
  *  - netWorth: number (cents) — actual
@@ -31,79 +32,79 @@ export default function NetWorthSummary({ netWorth = 0, projectedNetWorth = 0, t
   }
 
   const projectedDiff = projectedNetWorth - netWorth;
+  const signed = (cents) => `${cents < 0 ? '−' : ''}${formatCurrency(Math.abs(cents))}`;
+  // Shares only make sense for non-negative sides: an overdrawn asset total
+  // (or a credit balance on liabilities) counts as zero rather than producing
+  // negative or >100% percentages.
+  const assetShare = Math.max(0, totalAssets);
+  const liabilityShare = Math.max(0, totalLiabilities);
+  const total = assetShare + liabilityShare;
+  const assetPct = total > 0 ? (assetShare / total) * 100 : 0;
+  const tickMask = 'repeating-linear-gradient(90deg, #000 0 calc(2.5% - 2px), transparent calc(2.5% - 2px) 2.5%)';
 
   return (
-    <div className="rounded-2xl border border-stone-200/60 bg-gradient-to-br from-white to-stone-50/50 p-8 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:from-stone-800 dark:to-stone-800/80 dark:shadow-stone-900/50">
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        {/* Net Worth — actual and projected side-by-side */}
-        <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+    <div className="space-y-4">
+      <section
+        aria-label="Net worth"
+        className="rounded-2xl bg-forest p-6 text-[#fbfcf2] shadow-lg shadow-stone-900/10 sm:p-7"
+      >
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">Net Worth</p>
-            <p className={`mt-1 text-4xl font-bold tabular-nums ${netWorth >= 0 ? 'text-stone-900 dark:text-stone-100' : 'text-red-600 dark:text-red-400'}`}>
-              {netWorth < 0 && '−'}{formatCurrency(Math.abs(netWorth))}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#d8e9d8]">Net worth</p>
+            <p className={`mt-1.5 font-display text-5xl font-normal leading-none tracking-tight sm:text-6xl ${netWorth < 0 ? 'text-[#f5b887]' : ''}`}>
+              {signed(netWorth)}
             </p>
-          </div>
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wider text-violet-500 dark:text-violet-400">
-              Projected
-            </p>
-            <div className="mt-1 flex items-baseline gap-2">
-              <p className={`text-2xl font-bold tabular-nums ${projectedNetWorth >= 0 ? 'text-violet-600 dark:text-violet-400' : 'text-red-600 dark:text-red-400'}`}>
-                {projectedNetWorth < 0 && '−'}{formatCurrency(Math.abs(projectedNetWorth))}
-              </p>
+            <p className="mt-2 text-sm text-[#daeadc]">
+              Projected {signed(projectedNetWorth)}
               {projectedDiff !== 0 && (
-                <span className={`text-xs font-semibold ${projectedDiff > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                  {projectedDiff > 0 ? '+' : '−'}{formatCurrency(Math.abs(projectedDiff))}
+                <span className={`ml-1.5 font-semibold ${projectedDiff > 0 ? 'text-[#b8d9ac]' : 'text-[#f5b887]'}`}>
+                  ({projectedDiff > 0 ? '+' : '−'}{formatCurrency(Math.abs(projectedDiff))})
                 </span>
               )}
+            </p>
+          </div>
+
+          <dl className="flex gap-8">
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#d8e9d8]">Assets</dt>
+              <dd className="mt-1 text-xl font-bold tabular-nums">{formatCurrency(totalAssets)}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#d8e9d8]">Liabilities</dt>
+              <dd className="mt-1 text-xl font-bold tabular-nums">{formatCurrency(totalLiabilities)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Assets vs liabilities */}
+        {total > 0 && (
+          <div className="mt-6">
+            <div
+              aria-hidden="true"
+              className="h-4"
+              style={{
+                background: `linear-gradient(to right, #b8d9ac 0 ${assetPct}%, #f5b887 ${assetPct}% 100%)`,
+                maskImage: tickMask,
+                WebkitMaskImage: tickMask,
+              }}
+            />
+            <div className="mt-2 flex justify-between text-xs text-[#ecf4e9]">
+              <span>{Math.round(assetPct)}% assets</span>
+              <span>{Math.round(100 - assetPct)}% liabilities</span>
             </div>
           </div>
-        </div>
-
-        {/* Assets & Liabilities breakdown */}
-        <div className="flex gap-8">
-          <div className="text-center">
-            <p className="text-xs font-medium uppercase tracking-wider text-stone-400 dark:text-stone-500">Assets</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-emerald-600">
-              {formatCurrency(totalAssets)}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs font-medium uppercase tracking-wider text-stone-400 dark:text-stone-500">Liabilities</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-red-600">
-              {formatCurrency(totalLiabilities)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual bar */}
-      {(totalAssets > 0 || totalLiabilities > 0) && (
-        <div className="mt-6">
-          <div className="flex h-3 overflow-hidden rounded-full bg-stone-100 dark:bg-stone-700">
-            {totalAssets > 0 && (
-              <div
-                className="rounded-l-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-500"
-                style={{ width: `${(totalAssets / (totalAssets + totalLiabilities)) * 100}%` }}
-              />
-            )}
-            {totalLiabilities > 0 && (
-              <div
-                className="rounded-r-full bg-gradient-to-r from-red-400 to-red-500 transition-all duration-500"
-                style={{ width: `${(totalLiabilities / (totalAssets + totalLiabilities)) * 100}%` }}
-              />
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </section>
 
       {/* Net worth history chart */}
       <Suspense
         fallback={
-          <div className="mt-6 h-48 animate-pulse rounded-xl bg-stone-100 dark:bg-stone-700/50" />
+          <div className="h-56 animate-pulse rounded-2xl bg-stone-100 dark:bg-stone-700/50" />
         }
       >
-        <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
+        <div className="rounded-2xl border border-stone-200/60 bg-white px-6 pb-6 shadow-sm empty:hidden dark:border-stone-700/60 dark:bg-stone-800">
+          <NetWorthChart data={chartData} projectedData={projectedChartData} projectedNetWorth={projectedNetWorth} isLoading={chartLoading} />
+        </div>
       </Suspense>
     </div>
   );

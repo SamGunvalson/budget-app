@@ -13,6 +13,8 @@ import CashflowSummary from '../components/accounts/CashflowSummary';
 import CashflowAccountSetup from '../components/accounts/CashflowAccountSetup';
 import Modal from '../components/common/Modal';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
+import usePageActions from '../hooks/usePageActions';
 import useSessionState from '../hooks/useSessionState';
 import {
   createAccountOffline as createAccount,
@@ -36,6 +38,8 @@ import { getFavoriteAccountIds, setFavoriteAccountIds } from '../services/accoun
 import { generateProjectedTransactions, PROJECTION_WINDOW_DAYS } from '../services/recurring';
 import { itemLegs, itemSettlementInfo, settlementPayer } from '../utils/cashflowScenario';
 import { toDateString, maskAccountName } from '../utils/helpers';
+import { isQueryUnavailable } from '../utils/queryState';
+import DataUnavailable from '../components/common/DataUnavailable';
 
 const CASHFLOW_SETTINGS_KEY = 'cashflow_settings';
 const EMPTY_SETTINGS = { roles: {}, cushion: 0 };
@@ -216,9 +220,12 @@ export default function AccountsPage() {
     saveCashflowSettings({ ...cashflowSettings, cushion: cents });
   }
 
+  // Both sections are built on account balances; without them, show
+  // "unavailable" instead of a $0 net worth and "No accounts yet".
+  const balancesUnavailable = isQueryUnavailable(balancesQuery);
   const loadError =
     mutationError ||
-    balancesQuery.error?.message ||
+    (balancesUnavailable ? '' : balancesQuery.error?.message) ||
     nwQuery.error?.message ||
     (activeSection === 'cashflow' ? cashflow.error?.message : '') ||
     '';
@@ -335,26 +342,35 @@ export default function AccountsPage() {
   const negativeAssets = accounts.filter((a) => a.is_asset && a.balance < 0 && !a.closed_at);
   const hasNegativeAssets = negativeAssets.length > 0;
 
+  // Mobile action bar (desktop keeps the header button).
+  usePageActions([
+    {
+      id: 'manage-accounts',
+      label: 'Manage accounts',
+      variant: 'primary',
+      icon: (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      ),
+      onSelect: () => setShowManagerModal(true),
+    },
+  ]);
+
   // ---------- Render ----------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="min-h-screen app-bg">
       <TopBar pageName="Accounts" />
 
       {/* Main content */}
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Accounts</h1>
-            <p className="mt-2 text-base text-stone-500 dark:text-stone-400">
-              Track your accounts and monitor your net worth.
-            </p>
-          </div>
+        <PageHeader eyebrow="Net worth & cashflow" title="Accounts">
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
               onClick={() => setShowManagerModal(true)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="flex items-center gap-2 rounded-xl bg-amber-500 mobile:hidden px-5 py-2.5 text-sm font-semibold text-stone-950 transition-all hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -387,7 +403,7 @@ export default function AccountsPage() {
               </div>
             )}
           </div>
-        </div>
+        </PageHeader>
 
         {/* Error banner */}
         {loadError && (
@@ -408,7 +424,7 @@ export default function AccountsPage() {
               onClick={() => setActiveSection(tab.key)}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 activeSection === tab.key
-                  ? 'bg-amber-500 text-white shadow-sm shadow-amber-200/50'
+                  ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
                   : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
               }`}
             >
@@ -417,8 +433,18 @@ export default function AccountsPage() {
           ))}
         </div>
 
+        {balancesUnavailable && (
+          <DataUnavailable
+            eyebrow="Accounts"
+            title="Balances unavailable"
+            message="Couldn't load your accounts and balances, so no totals are shown."
+            onRetry={() => balancesQuery.refetch()}
+            retrying={balancesQuery.isFetching}
+          />
+        )}
+
         {/* ════════════════ Overview section ════════════════ */}
-        {activeSection === 'overview' && (
+        {!balancesUnavailable && activeSection === 'overview' && (
           <>
             {/* Net Worth Summary */}
             <div className="mb-6">
@@ -436,17 +462,17 @@ export default function AccountsPage() {
 
             {/* Negative asset balance warning */}
             {!isLoading && hasNegativeAssets && (
-              <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950">
-                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <div className="mb-6 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 dark:border-orange-800 dark:bg-orange-950">
+                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-orange-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
                 <div>
-                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                  <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
                     {negativeAssets.length === 1
                       ? `"${maskAccountName(negativeAssets[0].name)}" has a negative balance`
                       : `${negativeAssets.length} asset accounts have negative balances`}
                   </p>
-                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1 text-xs text-orange-700 dark:text-orange-400">
                     Asset accounts with negative balances may indicate that imported transactions have income/expense reversed.
                     Review the transactions on {negativeAssets.length === 1 ? 'this account' : 'these accounts'} and consider re-importing with corrected column mapping.
                   </p>
@@ -475,11 +501,11 @@ export default function AccountsPage() {
         )}
 
         {/* ════════════════ Cashflow section ════════════════ */}
-        {activeSection === 'cashflow' && (
+        {!balancesUnavailable && activeSection === 'cashflow' && (
           <>
             {/* Account selector chips */}
             <div className="mb-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-500 dark:text-stone-400">
+              <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300">
                 Chart Accounts
               </p>
               <div className="flex flex-wrap gap-2">
@@ -492,8 +518,8 @@ export default function AccountsPage() {
                       onClick={() => handleCashflowAccountToggle(acct.id)}
                       className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                         isSelected
-                          ? 'bg-teal-500 text-white shadow-sm shadow-teal-200/50'
-                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-teal-300 hover:text-teal-700 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
+                          ? 'bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900'
+                          : 'border border-stone-200/60 bg-white/60 text-stone-600 hover:border-stone-400 hover:text-stone-800 dark:border-stone-700/60 dark:bg-stone-800/60 dark:text-stone-400 dark:hover:border-teal-600 dark:hover:text-teal-400'
                       }`}
                     >
                       {maskAccountName(acct.name)}

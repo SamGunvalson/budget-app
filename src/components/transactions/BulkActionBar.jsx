@@ -23,7 +23,7 @@ export default function BulkActionBar({ selectedCount, categories, onRecategoriz
   if (selectedCount === 0) return null;
 
   return (
-    <div className="sticky bottom-4 z-20 mx-auto max-w-5xl animate-fade-in-up px-2 sm:px-0">
+    <div className="sticky bottom-4 z-20 mx-auto mobile:bottom-[calc(var(--bottom-chrome,0px)+0.5rem)] max-w-5xl animate-fade-in-up px-2 sm:px-0">
       <div className="flex flex-col gap-2 rounded-2xl border border-amber-200/60 bg-amber-50 px-4 py-3 shadow-lg shadow-amber-100/50 sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:border-amber-700/60 dark:bg-amber-950 dark:shadow-amber-900/50">
         {/* Selection count */}
         <div className="flex items-center gap-3">

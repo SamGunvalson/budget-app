@@ -296,7 +296,7 @@ export default function RecurringForm({
             onClick={() => setTxType('expense')}
             className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
               txType === 'expense'
-                ? 'bg-amber-500 text-white shadow-md shadow-amber-200/50'
+                ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
                 : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
             }`}
           >
@@ -832,7 +832,7 @@ export default function RecurringForm({
         <button
           type="submit"
           disabled={isSaving}
-          className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-semibold text-stone-950 shadow-md transition-all hover:bg-amber-600 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isSaving ? 'Saving…' : isEditing ? 'Update Template' : 'Create Template'}
         </button>

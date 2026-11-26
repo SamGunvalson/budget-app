@@ -2,7 +2,9 @@ import { lazy, Suspense, useCallback, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import SwipeableWrapper from './components/common/SwipeableWrapper';
+import MobileChrome from './components/common/MobileChrome';
 import { AuthProvider } from './contexts/AuthContext';
+import { PageActionsProvider } from './contexts/PageActionsContext';
 import { SafeModeProvider } from './contexts/SafeModeContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import useSafeMode from './hooks/useSafeMode';
@@ -30,7 +32,7 @@ const ServerSetupPage = lazy(() => import('./pages/ServerSetupPage'));
 
 function LoadingSpinner() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-stone-50 via-amber-50/20 to-stone-100 dark:from-stone-950 dark:via-stone-900 dark:to-stone-950">
+    <div className="flex min-h-screen items-center justify-center app-bg">
       <div className="h-10 w-10 animate-spin rounded-full border-4 border-stone-200 border-t-amber-500 dark:border-stone-700 dark:border-t-amber-500" />
     </div>
   );
@@ -59,6 +61,7 @@ function ProtectedPage({ fallback, children, serverReady }) {
           <SwipeableWrapper>{children}</SwipeableWrapper>
         </Suspense>
       </SafeModeGate>
+      <MobileChrome />
     </ProtectedRoute>
   );
 }
@@ -178,7 +181,9 @@ function App() {
     <AuthProvider key={clientEpoch} enabled={serverState.status === 'ready'}>
       <SafeModeProvider>
         <ThemeProvider>
-          <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+          <PageActionsProvider>
+            <AppRoutes serverState={serverState} onServerConfigured={handleServerConfigured} />
+          </PageActionsProvider>
         </ThemeProvider>
       </SafeModeProvider>
     </AuthProvider>

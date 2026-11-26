@@ -148,13 +148,14 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
   onSkipAll,
   onEditAll,
   onDeleteAll,
+  showCheckbox = true,
   ...rest
 }, ref) {
   const { label, netAmount, children, isRecurringGroup, categoryColor, date } = group;
   const isPositive = netAmount >= 0;
   const amountColor = isPositive
     ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-500 dark:text-red-400';
+    : 'text-stone-900 dark:text-stone-100';
 
   // Derive status from children
   const hasProjected = children.some((c) => c.status === 'projected');
@@ -249,14 +250,16 @@ const TransactionGroupHeader = forwardRef(function TransactionGroupHeader({
         className={`border-b border-stone-100 transition-colors dark:border-stone-700/50 cursor-pointer ${rowBg}`}
         onClick={onToggleExpand}
       >
-        <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
-          <input type="checkbox" aria-label={`Select ${displayLabel} group`} checked={isSelected}
-            ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
-            onChange={onToggleSelect} />
-        </td>
+        {showCheckbox && (
+          <td className="py-2.5 pl-3 pr-0" onClick={(event) => event.stopPropagation()}>
+            <input type="checkbox" aria-label={`Select ${displayLabel} group`} checked={isSelected}
+              ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
+              onChange={onToggleSelect} />
+          </td>
+        )}
 
         {/* Label + expand + badge */}
-        <td className="overflow-hidden px-1 py-2">
+        <td className={`overflow-hidden py-2.5 pr-1 ${showCheckbox ? 'pl-2' : 'pl-3'}`}>
           <button type="button" aria-expanded={isExpanded} className="flex w-full min-w-0 items-center gap-1.5 text-left">
             {/* Chevron */}
             <svg

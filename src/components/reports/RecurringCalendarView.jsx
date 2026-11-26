@@ -166,7 +166,7 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
               <span
                 className={`mb-0.5 self-end text-xs font-medium leading-none ${
                   isCurrentDay
-                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white'
+                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-stone-950'
                     : inMonth
                       ? 'text-stone-700 dark:text-stone-300'
                       : 'text-stone-300 dark:text-stone-600'

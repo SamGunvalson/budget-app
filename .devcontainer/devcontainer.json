@@ -29,7 +29,10 @@
   "mounts": [
     "source=budget-app-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
     // Persist Claude Code login + session history across container rebuilds.
-    "source=budget-app-claude-config,target=/home/node/.claude,type=volume"
+    "source=budget-app-claude-config,target=/home/node/.claude,type=volume",
+    // Cache the headless Chromium used by the Playwright MCP server (.mcp.json)
+    // so rebuilds only reinstall its apt dependencies, not the browser.
+    "source=budget-app-playwright-cache,target=/home/node/.cache/ms-playwright,type=volume"
   ],
 
   // Keep ~/.claude.json inside the persisted dir too (it normally lives in $HOME).
@@ -37,7 +40,9 @@
     "CLAUDE_CONFIG_DIR": "/home/node/.claude"
   },
 
-  "postCreateCommand": "sudo chown node:node node_modules /home/node/.claude && npm ci && npm --prefix server/auth ci",
+  // The last step installs Chromium + system libs from the same Playwright
+  // build that the pinned @playwright/mcp version in .mcp.json uses; bump both together.
+  "postCreateCommand": "sudo chown node:node node_modules /home/node/.claude && sudo mkdir -p /home/node/.cache/ms-playwright && sudo chown -R node:node /home/node/.cache && npm ci && npm --prefix server/auth ci && npx -y -p @playwright/mcp@0.0.86 playwright-core install --with-deps chromium",
 
   "customizations": {
     "vscode": {

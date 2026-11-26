@@ -88,12 +88,26 @@ An AAB build does not update an existing APK. If the app appears unchanged, chec
 
 For Google Play, complete the app content/privacy, data safety, content rating, and audience forms; upload the AAB to internal testing and validate updates before production.
 
+## Native plugins
+
+The app uses `@capacitor/haptics` for vibration feedback after saves
+([`src/utils/haptics.js`](../src/utils/haptics.js)). After installing or
+upgrading a Capacitor plugin, run `npm run build:android` so Capacitor syncs it
+into the native project.
+
+Launcher icons and splash screens are generated from `resources/brand/` by
+[`scripts/generate-icons.sh`](../scripts/generate-icons.sh). Re-run it after
+changing the brand mark.
+
 ## Device smoke checks
 
 - Sign in and restart the app; confirm session persistence and data loading.
 - Add/edit/delete a transaction, create a write offline, reconnect, and confirm sync.
 - Check refresh on launch, reconnect, foreground resume, and tapping the sync status dot.
 - Check both themes and safe mode.
+- Check the bottom tab bar and floating actions clear the gesture bar (safe area), hide while the keyboard is open, and that swiping between pages still works.
+- Check that adding a transaction, saving a budget, and settling up give a short vibration.
+- Check the new launcher icon (adaptive, round) and the dark splash screen.
 - Check **Archive** and **Show archived** on Categories. Archived categories remain in history/saved entries but not new-entry choices.
 - If archive writes fail with a current UI, verify the [category-archiving migration](./SETUP_GUIDE.md#category-archiving) on the server.
 - Test real-device network/Tailscale access and actionable server-connection errors before release.

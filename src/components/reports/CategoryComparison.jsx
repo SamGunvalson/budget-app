@@ -3,31 +3,12 @@ import { categoryAlert } from '../../utils/budgetCalculations';
 
 const TYPE_ORDER = ['income', 'needs', 'wants', 'savings'];
 
+// Group headings: small uppercase label with the type's colour dot (matches Budgets).
 const TYPE_STYLES = {
-  income: {
-    label: 'Income',
-    headerBg: 'bg-emerald-50 dark:bg-emerald-900/30',
-    headerText: 'text-emerald-800 dark:text-emerald-300',
-    headerBorder: 'border-emerald-200/60 dark:border-emerald-700/60',
-  },
-  needs: {
-    label: 'Needs',
-    headerBg: 'bg-red-50 dark:bg-red-900/30',
-    headerText: 'text-red-800 dark:text-red-300',
-    headerBorder: 'border-red-200/60 dark:border-red-700/60',
-  },
-  wants: {
-    label: 'Wants',
-    headerBg: 'bg-pink-50 dark:bg-pink-900/30',
-    headerText: 'text-pink-800 dark:text-pink-300',
-    headerBorder: 'border-pink-200/60 dark:border-pink-700/60',
-  },
-  savings: {
-    label: 'Savings',
-    headerBg: 'bg-teal-50 dark:bg-teal-900/30',
-    headerText: 'text-teal-800 dark:text-teal-300',
-    headerBorder: 'border-teal-200/60 dark:border-teal-700/60',
-  },
+  income: { label: 'Income', dot: 'bg-emerald-500' },
+  needs: { label: 'Needs', dot: 'bg-red-500' },
+  wants: { label: 'Wants', dot: 'bg-pink-500' },
+  savings: { label: 'Savings', dot: 'bg-teal-500' },
 };
 
 /**
@@ -99,18 +80,16 @@ export default function CategoryComparison({
                 const groupIsOver = groupVariance > 0;
                 const groupVariantGood = isIncomeGroup ? groupIsOver : !groupIsOver;
                 const groupPct = groupPlanned > 0 ? Math.round((groupActual / groupPlanned) * 100) : null;
-                const labelClass = style ? style.headerText : 'text-stone-500 dark:text-stone-400';
-                const bgBorderClass = style
-                  ? `${style.headerBg} ${style.headerBorder}`
-                  : 'border-stone-200/60 bg-stone-50 dark:border-stone-700/60 dark:bg-stone-700/30';
+                const labelClass = 'text-stone-700 dark:text-stone-200';
 
                 return (
                   <div
-                    className={`-mx-2 mb-1 rounded-lg border px-3 py-1.5 ${groupIdx > 0 ? 'mt-4' : 'mt-2'} ${bgBorderClass}`}
+                    className={`mb-1 border-b border-stone-200/60 px-1 pb-1.5 dark:border-stone-700/60 ${groupIdx > 0 ? 'mt-6' : 'mt-2'}`}
                   >
                     <div className="grid grid-cols-12 items-center gap-2">
                       {/* Label spanning icon + name columns */}
-                      <div className={`col-span-6 sm:col-span-4 text-xs font-bold uppercase tracking-wider ${labelClass}`}>
+                      <div className={`col-span-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] sm:col-span-4 ${labelClass}`}>
+                        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${style ? style.dot : 'bg-stone-400'}`} />
                         {style ? style.label : 'Other'}
                       </div>
                       {/* Planned total */}
@@ -155,7 +134,7 @@ export default function CategoryComparison({
               })()}
 
               {/* Category rows */}
-              <div className="divide-y divide-stone-100 dark:divide-stone-700">
+              <div className="divide-y divide-stone-200/60 dark:divide-stone-700/60">
                 {items.map((item) => {
                   const i = rowIndex++;
                   const isIncome = item.categoryType === 'income';
@@ -172,7 +151,7 @@ export default function CategoryComparison({
                     !isIncome && alert?.level === 'danger'
                       ? 'border-l-2 border-l-red-400'
                       : !isIncome && alert?.level === 'warning'
-                        ? 'border-l-2 border-l-amber-400'
+                        ? 'border-l-2 border-l-orange-400'
                         : 'border-l-2 border-l-transparent';
 
                   return (
@@ -244,7 +223,7 @@ export default function CategoryComparison({
                                 : alert?.level === 'danger'
                                   ? 'text-red-600'
                                   : alert?.level === 'warning'
-                                    ? 'text-amber-600'
+                                    ? 'text-warn'
                                     : alert?.level === 'underBudget'
                                       ? 'text-emerald-600'
                                       : 'text-stone-700 dark:text-stone-300'

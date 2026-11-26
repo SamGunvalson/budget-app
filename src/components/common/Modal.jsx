@@ -6,6 +6,8 @@ const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:
  * Reusable modal overlay.
  * Extracted from TransactionsPage for shared use across the app.
  *
+ * On mobile layout it renders as a bottom sheet (slides up, scrolls inside).
+ *
  * Uses a native <dialog> opened with showModal() (same approach as
  * CalculatorModal): the rest of the page is inert, Escape closes, focus moves
  * into the dialog on open and returns to the opener on close.
@@ -73,11 +75,14 @@ export default function Modal({ title, onClose, children, wide = false }) {
           first.focus();
         }
       }}
-      className="fixed inset-0 z-50 m-0 flex h-full max-h-none w-full max-w-none items-start justify-center overflow-y-auto border-0 bg-black/40 p-4 pt-8 text-inherit backdrop-blur-sm backdrop:bg-transparent focus:outline-none"
+      className="fixed inset-0 z-50 m-0 flex h-full max-h-none w-full max-w-none items-start justify-center overflow-y-auto border-0 bg-black/40 p-4 pt-8 text-inherit backdrop-blur-sm backdrop:bg-transparent focus:outline-none mobile:items-end mobile:overflow-hidden mobile:p-0 mobile:pt-0"
     >
       <div
-        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} rounded-2xl border border-stone-200/60 bg-white p-6 shadow-2xl shadow-stone-900/10 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50 mb-8`}
+        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} mb-8 rounded-2xl border border-stone-200/60 bg-white p-6 shadow-2xl shadow-stone-900/10 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50 mobile:mb-0 mobile:max-h-[92dvh] mobile:max-w-none mobile:animate-slide-up-mobile mobile:overflow-y-auto mobile:overscroll-contain mobile:rounded-b-none mobile:border-b-0 mobile:pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]`}
       >
+        <div aria-hidden="true" className="-mt-3 mb-3 hidden justify-center mobile:flex">
+          <span className="h-1 w-10 rounded-full bg-stone-300 dark:bg-stone-600" />
+        </div>
         <div className="mb-5 flex items-center justify-between">
           <h2 id={titleId} className="text-lg font-semibold text-stone-900 dark:text-stone-100">{title}</h2>
           <button

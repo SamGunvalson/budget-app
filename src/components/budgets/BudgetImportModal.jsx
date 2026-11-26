@@ -245,7 +245,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+                className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
               >
                 Choose CSV File
               </button>
@@ -270,7 +270,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
           <div className="space-y-5">
             {/* Warnings */}
             {parseWarnings && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">
+              <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400">
                 <span className="mr-1.5 font-semibold">Warnings:</span>
                 <span className="whitespace-pre-wrap">{parseWarnings}</span>
               </div>
@@ -467,7 +467,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
                 <button
                   type="button"
                   onClick={handleImport}
-                  className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+                  className="rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
                 >
                   Import Budget
                 </button>
@@ -510,7 +510,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
                 onImportComplete();
                 onClose();
               }}
-              className="rounded-xl bg-amber-500 px-8 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
+              className="rounded-xl bg-amber-500 px-8 py-2.5 text-sm font-semibold text-stone-950 shadow-md shadow-amber-200/50 transition-all hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-200/50 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 active:scale-[0.98]"
             >
               Done
             </button>
