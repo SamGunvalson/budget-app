@@ -1,6 +1,8 @@
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
+
 /** Rounded square tinted with the category color, showing its initial. */
 export default function CategoryWell({ category, className = 'h-9 w-9 text-sm' }) {
-  const color = category?.color || '#949f95';
+  const color = category?.color || CATEGORY_FALLBACK_COLOR;
   return (
     <span
       aria-hidden="true"

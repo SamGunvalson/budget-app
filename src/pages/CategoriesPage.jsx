@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CategoryForm from '../components/budgets/CategoryForm';
 import CategoryList from '../components/budgets/CategoryList';
+import CategoryColorsModal from '../components/budgets/CategoryColorsModal';
+import Button from '../components/common/Button';
 import TopBar from '../components/common/TopBar';
 import PageHeader from '../components/common/PageHeader';
 import Modal from '../components/common/Modal';
@@ -64,6 +66,7 @@ function CategoriesPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [archivingCategory, setArchivingCategory] = useState(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [showColors, setShowColors] = useState(false);
 
   const handleArchiveChange = async (category) => {
     setArchiveBusy(true);
@@ -93,6 +96,13 @@ function CategoriesPage() {
     setEditingCategory(null);
   };
 
+  // Sequential so offline edits enqueue in order.
+  const handleRecolor = async (updates) => {
+    for (const { id, color } of updates) {
+      await updateCategory(id, { color });
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!deletingCategory) return;
     setDeletingId(deletingCategory.id);
@@ -114,6 +124,16 @@ function CategoriesPage() {
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {/* Page header */}
         <PageHeader eyebrow="Budget setup" title="Categories" description="Archive unused categories without losing their history.">
+          <Button
+            onClick={() => setShowColors(true)}
+            disabled={isLoading || categories.length === 0}
+            className="flex-shrink-0"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" />
+            </svg>
+            Colors
+          </Button>
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
@@ -167,6 +187,7 @@ function CategoriesPage() {
           <CategoryForm
             onSubmit={handleCreate}
             onCancel={() => setShowCreateModal(false)}
+            categories={categories}
           />
         </Modal>
       )}
@@ -179,6 +200,7 @@ function CategoriesPage() {
             onSubmit={handleUpdate}
             onCancel={() => setEditingCategory(null)}
             isEditing
+            categories={categories}
           />
         </Modal>
       )}
@@ -202,6 +224,13 @@ function CategoriesPage() {
             </button>
           </div>
         </Modal>
+      )}
+      {showColors && (
+        <CategoryColorsModal
+          categories={categories.filter((c) => !c.is_archived)}
+          onRecolor={handleRecolor}
+          onClose={() => setShowColors(false)}
+        />
       )}
       {deletingCategory && (
         <ConfirmDeleteModal

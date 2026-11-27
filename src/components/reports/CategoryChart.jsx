@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toDollars, formatCurrency } from '../../utils/helpers';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 
 /**
  * Single category bar row — hoverable, clickable, with inline tooltip.
@@ -34,7 +35,7 @@ function CategoryBar({ entry, maxValue, isExpanded, isDimmed, onClick }) {
             className="h-full rounded-r-lg transition-all duration-500"
             style={{
               width: `${Math.max(barPct, 1)}%`,
-              backgroundColor: entry.color || '#F59E0B',
+              backgroundColor: entry.color || CATEGORY_FALLBACK_COLOR,
               opacity: isDimmed ? 0.35 : 1,
             }}
           />

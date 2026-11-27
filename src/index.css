@@ -36,6 +36,192 @@
   --color-amber-900: #573a12;
   --color-amber-950: #33220a;
 
+  /* Accent hues re-tinted from the Cashflow chart palette: same families as
+   * Tailwind's defaults (blue, violet, pink …) at lower chroma, so they sit
+   * with forest & gold. 500 is the anchor; other steps follow Tailwind's
+   * OKLCH lightness curve so -50 tints and -700 text keep their contrast.
+   * `yellow` becomes clay (gold is reserved for amber) and `slate` aliases
+   * the sage stone neutrals. Source: src/constants/palette.js. */
+  --color-blue-50: #f1f7ff;
+  --color-blue-100: #e1eefe;
+  --color-blue-200: #c2deff;
+  --color-blue-300: #9dc6f7;
+  --color-blue-400: #73a6e3;
+  --color-blue-500: #4f86c6;
+  --color-blue-600: #3b6fab;
+  --color-blue-700: #2f5d90;
+  --color-blue-800: #264c77;
+  --color-blue-900: #203e61;
+  --color-blue-950: #112740;
+
+  --color-sky-50: #eff9fe;
+  --color-sky-100: #ddf0fc;
+  --color-sky-200: #bfe0f4;
+  --color-sky-300: #98cbe7;
+  --color-sky-400: #6baccf;
+  --color-sky-500: #4a93b8;
+  --color-sky-600: #2f7698;
+  --color-sky-700: #246280;
+  --color-sky-800: #1d5069;
+  --color-sky-900: #194256;
+  --color-sky-950: #0c2a38;
+
+  --color-indigo-50: #f4f6ff;
+  --color-indigo-100: #e7ecff;
+  --color-indigo-200: #cfd9fe;
+  --color-indigo-300: #b0bffe;
+  --color-indigo-400: #8b9def;
+  --color-indigo-500: #5c6bc0;
+  --color-indigo-600: #5765b6;
+  --color-indigo-700: #48549a;
+  --color-indigo-800: #3a457f;
+  --color-indigo-900: #303968;
+  --color-indigo-950: #1d2345;
+
+  --color-violet-50: #f8f5ff;
+  --color-violet-100: #efe9ff;
+  --color-violet-200: #dfd3fd;
+  --color-violet-300: #cab6f5;
+  --color-violet-400: #ac93e0;
+  --color-violet-500: #8b6fc0;
+  --color-violet-600: #775ca8;
+  --color-violet-700: #634c8e;
+  --color-violet-800: #513e75;
+  --color-violet-900: #43335f;
+  --color-violet-950: #2a1f3f;
+
+  --color-purple-50: #fbf4fc;
+  --color-purple-100: #f6e7f7;
+  --color-purple-200: #ead1ec;
+  --color-purple-300: #d9b4db;
+  --color-purple-400: #be91c2;
+  --color-purple-500: #9a6b9e;
+  --color-purple-600: #875b8b;
+  --color-purple-700: #714b74;
+  --color-purple-800: #5d3d60;
+  --color-purple-900: #4c324e;
+  --color-purple-950: #311f33;
+
+  --color-fuchsia-50: #fef3fa;
+  --color-fuchsia-100: #fbe5f4;
+  --color-fuchsia-200: #f3cee7;
+  --color-fuchsia-300: #e5afd4;
+  --color-fuchsia-400: #cc8bb9;
+  --color-fuchsia-500: #a86495;
+  --color-fuchsia-600: #945482;
+  --color-fuchsia-700: #7c456d;
+  --color-fuchsia-800: #663859;
+  --color-fuchsia-900: #542e49;
+  --color-fuchsia-950: #371c2f;
+
+  --color-pink-50: #fff3f6;
+  --color-pink-100: #ffe5ea;
+  --color-pink-200: #ffcbd6;
+  --color-pink-300: #f5aabb;
+  --color-pink-400: #df839a;
+  --color-pink-500: #c0607a;
+  --color-pink-600: #a54b65;
+  --color-pink-700: #8b3d53;
+  --color-pink-800: #723244;
+  --color-pink-900: #5e2a38;
+  --color-pink-950: #3e1823;
+
+  --color-rose-50: #fff4f3;
+  --color-rose-100: #ffe6e5;
+  --color-rose-200: #fdcdcb;
+  --color-rose-300: #f4aeac;
+  --color-rose-400: #dd8886;
+  --color-rose-500: #c46a6a;
+  --color-rose-600: #a35051;
+  --color-rose-700: #8a4242;
+  --color-rose-800: #713536;
+  --color-rose-900: #5d2c2d;
+  --color-rose-950: #3d1a1b;
+
+  --color-teal-50: #edfaf9;
+  --color-teal-100: #d9f3f2;
+  --color-teal-200: #b8e5e3;
+  --color-teal-300: #8bd2ce;
+  --color-teal-400: #55b5b2;
+  --color-teal-500: #2a9d9a;
+  --color-teal-600: #0b7d7b;
+  --color-teal-700: #016967;
+  --color-teal-800: #045654;
+  --color-teal-900: #024745;
+  --color-teal-950: #022d2c;
+
+  --color-cyan-50: #eef9fc;
+  --color-cyan-100: #dbf2f6;
+  --color-cyan-200: #bbe3eb;
+  --color-cyan-300: #91ceda;
+  --color-cyan-400: #60b1c0;
+  --color-cyan-500: #3a98a8;
+  --color-cyan-600: #1a7a89;
+  --color-cyan-700: #106673;
+  --color-cyan-800: #0e545f;
+  --color-cyan-900: #0f454e;
+  --color-cyan-950: #052c32;
+
+  --color-emerald-50: #eefaf3;
+  --color-emerald-100: #dcf4e6;
+  --color-emerald-200: #bde6cf;
+  --color-emerald-300: #95d3b1;
+  --color-emerald-400: #65b78d;
+  --color-emerald-500: #3d9a6e;
+  --color-emerald-600: #248057;
+  --color-emerald-700: #1a6b48;
+  --color-emerald-800: #15583a;
+  --color-emerald-900: #144830;
+  --color-emerald-950: #082e1d;
+
+  --color-green-50: #f2faef;
+  --color-green-100: #e3f2de;
+  --color-green-200: #cae4c1;
+  --color-green-300: #a9d09c;
+  --color-green-400: #82b372;
+  --color-green-500: #5c8f4a;
+  --color-green-600: #4c7c3b;
+  --color-green-700: #3e672f;
+  --color-green-800: #325526;
+  --color-green-900: #2a4620;
+  --color-green-950: #182d11;
+
+  --color-lime-50: #f5f9ed;
+  --color-lime-100: #e9f1d9;
+  --color-lime-200: #d5e1b9;
+  --color-lime-300: #bacb90;
+  --color-lime-400: #99ad61;
+  --color-lime-500: #7a8f3a;
+  --color-lime-600: #637724;
+  --color-lime-700: #52631b;
+  --color-lime-800: #435115;
+  --color-lime-900: #374313;
+  --color-lime-950: #222a08;
+
+  --color-yellow-50: #fdf5f1;
+  --color-yellow-100: #f9e9e2;
+  --color-yellow-200: #eed5c9;
+  --color-yellow-300: #dfb9a8;
+  --color-yellow-400: #c59781;
+  --color-yellow-500: #a0715a;
+  --color-yellow-600: #8d614c;
+  --color-yellow-700: #77503e;
+  --color-yellow-800: #624232;
+  --color-yellow-900: #50362a;
+  --color-yellow-950: #342118;
+
+  --color-slate-50: var(--color-stone-50);
+  --color-slate-100: var(--color-stone-100);
+  --color-slate-200: var(--color-stone-200);
+  --color-slate-300: var(--color-stone-300);
+  --color-slate-400: var(--color-stone-400);
+  --color-slate-500: var(--color-stone-500);
+  --color-slate-600: var(--color-stone-600);
+  --color-slate-700: var(--color-stone-700);
+  --color-slate-800: var(--color-stone-800);
+  --color-slate-900: var(--color-stone-900);
+  --color-slate-950: var(--color-stone-950);
+
   --font-display: "Newsreader Variable", "Iowan Old Style", Baskerville, Georgia, serif;
 
   --animate-slide-up-mobile: slide-up-mobile 0.25s ease-out;
@@ -86,6 +272,15 @@
   --color-income: var(--app-income);
   --color-warn: var(--app-warn);
   --color-warn-bg: var(--app-warn-bg);
+}
+
+/* Horizontal tab strips: scroll if they must, but never show a scrollbar
+ * (Windows draws classic scrollbars even for 1px of overflow). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Page background for every full-screen layout. */

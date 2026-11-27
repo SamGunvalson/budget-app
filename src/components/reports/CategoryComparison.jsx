@@ -6,7 +6,7 @@ const TYPE_ORDER = ['income', 'needs', 'wants', 'savings'];
 // Group headings: small uppercase label with the type's colour dot (matches Budgets).
 const TYPE_STYLES = {
   income: { label: 'Income', dot: 'bg-emerald-500' },
-  needs: { label: 'Needs', dot: 'bg-red-500' },
+  needs: { label: 'Needs', dot: 'bg-rose-500' },
   wants: { label: 'Wants', dot: 'bg-pink-500' },
   savings: { label: 'Savings', dot: 'bg-teal-500' },
 };

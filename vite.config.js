@@ -7,13 +7,20 @@ import { VitePWA } from "vite-plugin-pwa";
 const getDevProxy = (mode) => {
   const env = loadEnv(mode, ".", "");
   const proxyTarget = env.VITE_API_ORIGIN || env.DEV_API_PROXY_TARGET;
+  if (mode === "development" && !proxyTarget) {
+    console.warn(
+      "\n[budget-app] No backend configured: /auth/v1 and /rest/v1 will 404.\n" +
+        "  Set DEV_API_PROXY_TARGET=http://localhost:8085 in .env (see .env.example) and restart.\n",
+    );
+  }
   return env.DEV_API_PROXY_TARGET && proxyTarget
     ? {
         proxy: {
+          // The stack's nginx routes /rest/v1/ to PostgREST and strips the
+          // prefix itself, so forward the path unchanged.
           "/rest/v1": {
             target: proxyTarget,
             changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/rest\/v1/, ""),
           },
           "/auth/v1": {
             target: proxyTarget,

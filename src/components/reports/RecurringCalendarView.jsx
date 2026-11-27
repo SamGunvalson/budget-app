@@ -14,6 +14,7 @@ import {
 } from 'date-fns';
 import { getOccurrencesInRange } from '../../utils/recurringCalculations';
 import { formatCurrency } from '../../utils/helpers';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 import { computeTemplateGroupNet } from '../../utils/transactionGrouping';
 
 const CHIP_LIMIT = 3;
@@ -70,7 +71,7 @@ export default function RecurringCalendarView({ templates, onEdit, onEditGroup }
           is_transfer: t.is_transfer,
           is_group: t.is_group_parent,
           pays_statement: !!t.pays_statement_balance,
-          categoryColor: t.categories?.color || '#8B5CF6',
+          categoryColor: t.categories?.color || CATEGORY_FALLBACK_COLOR,
         });
       }
     }

@@ -3,6 +3,7 @@ import { categoryLabel } from '../../utils/categoryArchive';
 import { parseBudgetCSV, formatCurrency, toCents } from '../../utils/helpers';
 import { planBudgetImportMonth } from '../../utils/reportRules';
 import { useCategories } from '../../hooks/queries';
+import { TYPE_COLORS, DEFAULT_CATEGORY_COLOR } from '../../constants/palette';
 import { createCategoryOffline as createCategory } from '../../services/offlineAware';
 import {
   getBudgetPlan,
@@ -139,7 +140,7 @@ export default function BudgetImportModal({ initialYear, categories, onClose, on
           continue;
         }
         const type = resolution.type || 'needs';
-        const cat = await createCategory({ name, type, color: '#3B82F6' });
+        const cat = await createCategory({ name, type, color: TYPE_COLORS[type] ?? DEFAULT_CATEGORY_COLOR });
         createdCats[key] = cat;
       }
 

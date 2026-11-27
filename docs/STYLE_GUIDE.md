@@ -19,6 +19,20 @@ All colors use Tailwind CSS utilities. The theme lives in `src/index.css`:
   **`amber`** is re-tinted to gold, through `@theme`. Existing `stone-*` and
   `amber-*` classes therefore render in the Forest & Gold palette. Do not swap
   them for `gray`, `slate`, `zinc`, or `neutral`.
+- The **accent hues** (`blue`, `sky`, `indigo`, `violet`, `purple`, `fuchsia`,
+  `pink`, `rose`, `teal`, `cyan`, `emerald`, `green`, `lime`, `yellow`) are
+  re-tinted to muted mid-tones from the Cashflow chart. They keep their
+  Tailwind family but sit with forest & gold. Each `-500` is the anchor; other
+  steps follow Tailwind's OKLCH lightness curve, so `-50` tints and `-700`
+  text keep their usual contrast. `yellow` renders as **clay** (gold belongs
+  to `amber`), and `slate` aliases `stone`. `red` and `orange` keep their
+  defaults for errors and warnings.
+- Hex values for charts and category swatches live in
+  `src/constants/palette.js` (`SERIES_COLORS`, `COLOR_FAMILIES`,
+  `TYPE_COLORS`) and are re-exported for Recharts by
+  `src/constants/chartColors.js`. `scripts/palette.test.js` fails if they
+  drift from `index.css`. Do not hard-code Tailwind default hexes
+  (`#10B981`, `#8B5CF6` …) in components.
 - **Semantic tokens** switch automatically with `.dark`. Prefer them in new code:
 
 | Token (utility suffix) | Light | Dark | Use |
@@ -48,11 +62,11 @@ modifiers work (`bg-forest/10`).
 
 - **Success Teal/Emerald**: `text-teal-500`, `bg-emerald-500`
   - Use for: Positive changes, income, growth indicators, feature icons
-  - RGB: `#14B8A6` (teal), `#10B981` (emerald)
+  - Hex: `#2a9d9a` (teal), `#3d9a6e` (emerald / jade)
 
 - **Secondary Violet**: `text-violet-500`, `bg-violet-500`
   - Use for: Reports, analytics accent
-  - RGB: `#8B5CF6`
+  - Hex: `#8b6fc0`
 
 ### Navigation Accents
 
@@ -92,19 +106,23 @@ The legend must distinguish unbudgeted spending from the normal threshold range.
 
 ### Semantic Colors (Categories)
 
-**Default category colors** (from DATA_MODEL.md):
+Category colors come from `COLOR_FAMILIES` in `src/constants/palette.js`:
+15 families (Rose, Coral, Clay, Gold, Olive, Sage, Jade, Teal, Sky, Blue,
+Indigo, Violet, Plum, Orchid, Stone), each with four shades
+(Pale / Light / Mid / Deep = the `300/400/500/700` steps of its Tailwind
+scale). Users group related categories by giving them shades of one family.
+The picker is `ColorPalettePicker`; bulk recoloring and moving old colors onto
+the palette is `CategoryColorsModal` (Categories → Colors).
 
-- Income (earnings): `#10B981` (emerald)
-- Needs (essential): `#EF4444` (red)
-- Wants (discretionary): `#EC4899` (pink)
-- Savings (goals): `#14B8A6` (teal)
-- Transfer (non-budgeting): `#64748B` (slate)
-- _Additional_:
-  - Groceries: `#10B981` (emerald)
-  - Utilities: `#F59E0B` (amber)
-  - Transportation: `#8B5CF6` (violet)
-  - Entertainment: `#06B6D4` (cyan)
-  - Investments: `#6366F1` (indigo)
+**Type colors** (`TYPE_COLORS`; type dots use the matching `bg-*-500`):
+
+- Income: Jade `#3d9a6e` (`emerald`)
+- Needs: Coral `#c46a6a` (`rose`). Not `red`, which means over budget/error.
+- Wants: Rose `#c0607a` (`pink`)
+- Savings: Teal `#2a9d9a` (`teal`)
+- Transfer: Stone `#647167` (`stone`)
+
+New categories default to their type's color until the user picks one.
 
 ### Neutral Scale (Warm Stone)
 
@@ -341,7 +359,7 @@ The Reports page (`ReportsPage`) uses a tab bar where each section has an assign
 | **Summary**        | `bg-amber-500`                  | `bg-amber-500`                                                   | `shadow-amber-200/50`   |
 | **Plan vs Actual** | `bg-emerald-500`                | `bg-emerald-500`                                                 | `shadow-emerald-200/50` |
 | **Trends**         | `bg-sky-500`                    | `bg-sky-500`                                                     | `shadow-sky-200/50`     |
-| **Annual Actuals** | `bg-violet-500 → bg-purple-500` | Year selector → `border-violet-200/300`, `focus:ring-violet-500` | `shadow-violet-200/50`  |
+| **Annual Actuals** | `bg-violet-500`                 | Year selector → `border-violet-200/300`, `focus:ring-violet-500` | `shadow-violet-200/50`  |
 
 When adding new sub-controls inside a Reports section, reference this table to pick the correct active color.
 

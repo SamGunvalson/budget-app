@@ -331,12 +331,12 @@ export default function ReportsPage() {
           </div>
           <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
             {/* Unified view tab bar — full width on phones */}
-            <div className="flex w-full overflow-x-auto rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto dark:border-stone-700/60 dark:bg-stone-800">
+            <div className="no-scrollbar flex w-full overflow-x-auto rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto dark:border-stone-700/60 dark:bg-stone-800">
               {[
                 { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50' },
                 { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
                 { id: 'trends',        label: 'Trends',         shortLabel: 'Trends',  activeClass: 'bg-sky-500 text-white shadow-md shadow-sky-200/50' },
-                { id: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual',  activeClass: 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md shadow-violet-200/50 dark:shadow-violet-900/30' },
+                { id: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual',  activeClass: 'bg-violet-500 text-white shadow-md shadow-violet-200/50 dark:shadow-violet-900/30' },
                 { id: 'calendar',      label: 'Calendar',       shortLabel: 'Cal',     activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200/50 dark:shadow-rose-900/30' },
               ].map(({ id, label, shortLabel, activeClass }) => (
                 <button

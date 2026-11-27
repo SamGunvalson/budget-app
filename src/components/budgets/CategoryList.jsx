@@ -3,10 +3,10 @@ import { CATEGORY_TYPE_LABELS, CATEGORY_TYPE_ORDER } from '../../utils/helpers';
 // Type colour dots, shared with the Budgets and Reports group headings.
 const TYPE_DOTS = {
   income: 'bg-emerald-500',
-  needs: 'bg-red-500',
+  needs: 'bg-rose-500',
   wants: 'bg-pink-500',
   savings: 'bg-teal-500',
-  transfer: 'bg-slate-400',
+  transfer: 'bg-stone-400',
 };
 
 const TYPE_LABELS = {

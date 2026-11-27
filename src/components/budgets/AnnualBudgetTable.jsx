@@ -57,10 +57,10 @@ const TYPE_STYLES = {
   },
   needs: {
     label: 'Needs',
-    headerBg: 'bg-red-50 dark:bg-red-900/30',
-    stickyBg: 'bg-red-50 dark:bg-red-950',
-    headerText: 'text-red-800 dark:text-red-300',
-    headerBorder: 'border-red-200/60 dark:border-red-700/60',
+    headerBg: 'bg-rose-50 dark:bg-rose-900/30',
+    stickyBg: 'bg-rose-50 dark:bg-rose-950',
+    headerText: 'text-rose-800 dark:text-rose-300',
+    headerBorder: 'border-rose-200/60 dark:border-rose-700/60',
   },
   wants: {
     label: 'Wants',
@@ -1280,6 +1280,7 @@ export default function AnnualBudgetTable() {
             onSubmit={handleUpdateCategory}
             onCancel={() => setEditingCategory(null)}
             isEditing
+            categories={categories}
           />
         </Modal>
       )}

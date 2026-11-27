@@ -28,7 +28,7 @@ import { isQueryUnavailable } from '../../utils/queryState';
 
 const TYPE_DOTS = {
   income: 'bg-emerald-500',
-  needs: 'bg-red-500',
+  needs: 'bg-rose-500',
   wants: 'bg-pink-500',
   savings: 'bg-teal-500',
 };
