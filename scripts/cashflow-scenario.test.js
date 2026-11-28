@@ -342,19 +342,36 @@ test("a stale generated payment is recalculated and later cycles build on the fi
   assert.deepEqual(statements[0].replaced.map((tx) => tx.id), ["stmt-card"]);
 });
 
-test("a hand-edited payment is kept and only the rest is paid", () => {
+test("a hand-edited payment settles its statement; the rest rolls into the next one", () => {
   const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [
-    { date: "2026-11-03", delta: 80000 },
-    { date: "2026-12-05", delta: -50000 },
+    { date: "2026-11-03", delta: 80000 }, // estimated $800 statement
+    { date: "2026-12-05", delta: -50000 }, // the user's real $500 payment
+    { date: "2026-12-08", delta: 10000 }, // a new charge before the Dec 10 close
   ]);
   const [card] = placeholder("stmt", "2026-12-05", 50000, { status: "projected" });
   const { statements } = computeStatementPayments({
     card: card10, dates, balances, todayStr: TODAY,
     transactions: [{ ...card, amount_locked: true }],
   });
-  assert.deepEqual(summarize(statements), [["2026-11-10", "2026-12-05", true, 30000]]);
-  assert.equal(statements[0].alreadyPaid, 50000);
-  assert.deepEqual(statements[0].replaced, []);
+  // No extra payment for November; December's statement carries the $300
+  // left over plus the new $100 charge.
+  assert.deepEqual(summarize(statements), [["2026-12-10", "2027-01-05", false, 40000]]);
+});
+
+test("a hand-edited payment moved past the next close still belongs to its statement", () => {
+  const { dates, balances } = cardSeries("2026-10-01", "2027-01-31", [
+    { date: "2026-11-03", delta: 80000 },
+    { date: "2026-12-12", delta: -50000 },
+  ]);
+  const [card] = placeholder("stmt", "2026-12-12", 50000, { status: "pending" });
+  const { statements } = computeStatementPayments({
+    card: card10, dates, balances, todayStr: TODAY,
+    transactions: [{ ...card, amount_locked: true, recurring_occurrence_date: "2026-12-05" }],
+  });
+  // November is settled by the edit (no extra Dec 5 payment). December's
+  // statement shows the $800 still owed at its close, less the $500 paid
+  // after it: $300.
+  assert.deepEqual(summarize(statements), [["2026-12-10", "2027-01-05", false, 30000]]);
 });
 
 test("the forecast keeps a hand-edited projected payment", () => {
@@ -365,9 +382,12 @@ test("the forecast keeps a hand-edited projected payment", () => {
     { date: "2026-12-15", id: "chk", delta: -5000 },
   ]);
   const result = buildCashflowScenario({ accounts: [checking, cardA], series, transactions: tx, todayStr: TODAY });
-  const [s] = result.baseline.settlements;
-  assert.equal(s.alreadyPaid, 5000);
-  assert.equal(s.amount, 75000);
-  assert.equal(s.paymentDate, "2026-12-17");
-  assert.equal(at(result, "baseline", "chk", "2026-12-31"), 420000);
+  // The edited $50 is the payment for that statement: no extra forecast
+  // payment, and the $750 still owed rolls into the next statement.
+  assert.deepEqual(
+    result.baseline.settlements.map((s) => [s.closeDate, s.paymentDate, s.amount]),
+    [["2026-12-22", "2027-01-17", 75000]],
+  );
+  assert.equal(at(result, "baseline", "chk", "2026-12-31"), 495000);
+  assert.equal(at(result, "baseline", "visa", "2026-12-31"), 75000);
 });

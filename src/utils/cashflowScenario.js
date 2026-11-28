@@ -274,7 +274,15 @@ export function computeStatementPayments({
       + extraPayments
         .filter((p) => inWindow(p.date))
         .reduce((sum, p) => sum + Math.abs(Number(p.amount) || 0), 0);
-    const amount = Math.max(0, statement - alreadyPaid);
+    // A hand-edited payment is the user's answer for this statement (the real
+    // statement often differs from the estimate: charges near the close date
+    // land on either side, pending charges post late). Nothing more is paid
+    // for this cycle; whatever is still owed stays on the card and rolls into
+    // the next statement. A generated payment answers the statement it was
+    // generated for, even when the user moved its date past the next close.
+    const settled = recorded.some((tx) =>
+      tx.amount_locked && inWindow(tx.recurring_occurrence_date ?? tx.transaction_date));
+    const amount = settled ? 0 : Math.max(0, statement - alreadyPaid);
 
     // Reverse each replaced row; the computed payment takes its place.
     for (const tx of replaced) {

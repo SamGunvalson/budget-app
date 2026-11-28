@@ -422,7 +422,7 @@ export async function getCardPayments({ accountIds, startDate }) {
   if (!accountIds?.length || !startDate) return [];
   const { data, error } = await db
     .from("transactions")
-    .select("id, account_id, amount, is_income, transfer_group_id, status, transaction_date")
+    .select("id, account_id, amount, is_income, transfer_group_id, status, transaction_date, recurring_template_id, recurring_occurrence_date, amount_locked")
     .in("account_id", accountIds)
     .is("deleted_at", null)
     .eq("is_income", true)
