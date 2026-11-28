@@ -1,11 +1,13 @@
-import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import TopBar from '../components/common/TopBar';
+import PageHeader from '../components/common/PageHeader';
+import SegmentedControl from '../components/common/SegmentedControl';
+import YearSelector from '../components/common/YearSelector';
 import MonthYearSelector from '../components/common/MonthYearSelector';
 import MonthlyStats from '../components/reports/MonthlyStats';
 import CategoryChart from '../components/reports/CategoryChart';
-import CategoryDrillDown from '../components/reports/CategoryDrillDown';
 // Phase 5: defer recharts-bound charts until the user opens those tabs.
 // Each lazy import becomes its own JS chunk; they pull in `recharts` only
 // when first rendered, keeping the Reports route's first-paint bundle small.
@@ -29,6 +31,8 @@ import {
 } from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
+import useCategoryDrillDown from '../hooks/useCategoryDrillDown';
+import { monthKey, txMonthKey } from '../utils/reportAggregations';
 import AnnualActualsTable from '../components/reports/AnnualActualsTable';
 import CalendarView from '../components/reports/CalendarView';
 import IncludePendingToggle from '../components/reports/IncludePendingToggle';
@@ -43,13 +47,66 @@ function ChartFallback() {
   );
 }
 
+const VIEWS = [
+  { value: 'summary', label: 'Summary' },
+  { value: 'planVsActual', label: 'Plan vs Actual', shortLabel: 'Plan' },
+  { value: 'trends', label: 'Trends' },
+  { value: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual' },
+  { value: 'calendar', label: 'Calendar', shortLabel: 'Cal' },
+];
+const VIEW_IDS = new Set(VIEWS.map((v) => v.value));
+
+const PERIOD_OPTIONS = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'ytd', label: 'YTD' },
+];
+
+const TREND_RANGE_OPTIONS = [
+  { value: '6m', label: '6 Months', shortLabel: '6M' },
+  { value: '12m', label: '12 Months', shortLabel: '12M' },
+  { value: 'yoy', label: 'Year over Year', shortLabel: 'YoY' },
+];
+
+/** Eyebrow and title for the active view. */
+function viewHeading(view, viewMode, month, year) {
+  const monthLabel = `${getMonthName(month)} ${year}`;
+  const ytdLabel = `Jan \u2013 ${getMonthName(month)} ${year}`;
+  switch (view) {
+    case 'calendar':
+      return { eyebrow: `${monthLabel} daily view`, title: 'Transaction Calendar' };
+    case 'annualActuals':
+      return { eyebrow: `${year} actual spending by category`, title: 'Annual Actuals' };
+    case 'trends':
+      return { eyebrow: 'Track your spending patterns over time', title: 'Spending Trends' };
+    case 'planVsActual':
+      return { eyebrow: `${viewMode === 'ytd' ? ytdLabel : monthLabel} budget comparison`, title: 'Plan vs Actual' };
+    default:
+      return viewMode === 'ytd'
+        ? { eyebrow: `${ytdLabel} overview`, title: 'YTD Summary' }
+        : { eyebrow: `${monthLabel} overview`, title: 'Monthly Summary' };
+  }
+}
+
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useSessionState('reportsViewMode', 'monthly'); // 'monthly' | 'ytd'
-  // 'summary' | 'planVsActual' | 'trends' | 'annualActuals'
-  // 'summary' | 'planVsActual' | 'trends' | 'annualActuals' | 'calendar'
-  const [activeView, setActiveView] = useSessionState('reportsActiveView', 'summary');
+  // 'summary' | 'planVsActual' | 'trends' | 'annualActuals' | 'calendar'.
+  // A valid `?view=` deep link wins until the user picks a tab.
+  const [sessionView, setSessionView] = useSessionState('reportsActiveView', 'summary');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get('view');
+  const activeView = VIEW_IDS.has(viewParam) ? viewParam : VIEW_IDS.has(sessionView) ? sessionView : 'summary';
+  const setActiveView = useCallback((view) => {
+    setSessionView(view);
+    if (searchParams.has('view')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('view');
+        return next;
+      }, { replace: true });
+    }
+  }, [setSessionView, searchParams, setSearchParams]);
 
   // Trend-specific state — owned here so TrendSummary stays in sync
   const [trendRange, setTrendRange] = useSessionState('reportsTrendRange', '6m'); // '6m' | '12m' | 'yoy'
@@ -59,9 +116,6 @@ export default function ReportsPage() {
   // tab except Calendar, which always shows upcoming items.
   const [includePending, setIncludePending] = useSessionState('reportsIncludePending', false);
   const asOf = includePending ? null : getTodayString();
-
-  // Drill-down state: { name: string, type: 'income' | 'expense' } or null
-  const [expandedChart, setExpandedChart] = useState(null);
 
   // Raw transaction & category data for drill-down + pending count.
   // react-query (Phase 2) handles loading + auto-refresh on table changes.
@@ -100,15 +154,6 @@ export default function ReportsPage() {
   };
 
   useEffect(() => { document.title = 'Budget App | Reports'; }, []);
-
-  // Reset drill-down when the selected period changes.  We use a render-time
-  // transient state comparison instead of an effect to avoid the cascading
-  // render that `setState` inside `useEffect` would cause.
-  const [periodKey, setPeriodKey] = useState(`${year}-${month}`);
-  if (periodKey !== `${year}-${month}`) {
-    setPeriodKey(`${year}-${month}`);
-    if (expandedChart !== null) setExpandedChart(null);
-  }
 
   // Derive all report data from raw transactions (so edits propagate)
   const reportData = useMemo(() => {
@@ -207,78 +252,43 @@ export default function ReportsPage() {
     [trendMonthlyData],
   );
 
-  // ---------- Drill-down helpers ----------
+  // ---------- Summary drill-down ----------
 
-  // Toggle category expansion on a chart (income or expense)
-  const handleChartCategoryClick = useCallback(
-    (categoryName, chartType) => {
-      setExpandedChart((prev) => {
-        if (prev?.name === categoryName && prev?.type === chartType) return null;
-        return { name: categoryName, type: chartType };
-      });
-    },
-    [],
-  );
+  const incomeCategoryData = viewMode === 'ytd' ? reportData.ytdIncomeCategoryData : reportData.incomeCategoryData;
+  const expenseCategoryData = viewMode === 'ytd' ? reportData.ytdExpenseCategoryData : reportData.expenseCategoryData;
 
-  // Filter transactions for the expanded category
-  const getDrillDownTransactions = useCallback(
-    (categoryName, isIncome) => {
-      // Find categoryId by name from the chart data
-      const chartData = isIncome
-        ? (viewMode === 'ytd' ? reportData.ytdIncomeCategoryData : reportData.incomeCategoryData)
-        : (viewMode === 'ytd' ? reportData.ytdExpenseCategoryData : reportData.expenseCategoryData);
-      const entry = chartData.find((d) => d.name === categoryName);
-      const categoryId = entry?.categoryId;
+  // Transactions in the Summary period (the YTD query already ends at `month`).
+  const periodTransactions = useMemo(() => {
+    if (viewMode === 'ytd') return reportTransactions;
+    const key = monthKey(year, month);
+    return reportTransactions.filter((t) => txMonthKey(t) === key);
+  }, [reportTransactions, viewMode, year, month]);
 
-      const inSelectedMonth = (t) => {
-        const d = new Date(t.transaction_date);
-        return d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month;
-      };
+  const drill = useCategoryDrillDown({
+    transactions: periodTransactions,
+    categories,
+    setTransactions: setAllTransactions,
+    resetKey: `${year}-${month}-${viewMode}`,
+  });
 
-      return reportTransactions.filter((t) => {
-        if (t.categories?.type === 'transfer') return false;
-        // Match income/expense — spending credits belong with expenses, not income
-        const txBelongsToIncome = isTrueIncome(t) || isIncomeDebit(t);
-        if (isIncome && !txBelongsToIncome) return false;
-        if (!isIncome && txBelongsToIncome) return false;
-        // Match category
-        const txCatId = t.category_id || 'uncategorized';
-        if (txCatId !== categoryId) return false;
-        // Match time range
-        if (viewMode === 'monthly' && !inSelectedMonth(t)) return false;
-        return true;
-      });
-    },
-    [reportTransactions, viewMode, month, year, reportData],
-  );
+  // CategoryChart identifies rows by name; map back to the category id.
+  const chartDrillProps = (data) => {
+    const byName = (name) => data.find((d) => d.name === name);
+    return {
+      expandedCategory: data.find((d) => d.categoryId === drill.expandedId)?.name ?? null,
+      onCategoryClick: (name) => {
+        const entry = byName(name);
+        if (entry) drill.toggle(entry.categoryId);
+      },
+      renderDrillDown: (name) => {
+        const entry = byName(name);
+        return entry ? drill.render(entry.categoryId, { name: entry.name, color: entry.color }) : null;
+      },
+    };
+  };
 
-  // Render function passed to CategoryChart
-  const renderChartDrillDown = useCallback(
-    (categoryName, chartType) => {
-      const isIncome = chartType === 'income';
-      const txs = getDrillDownTransactions(categoryName, isIncome);
-      const chartData = isIncome
-        ? (viewMode === 'ytd' ? reportData.ytdIncomeCategoryData : reportData.incomeCategoryData)
-        : (viewMode === 'ytd' ? reportData.ytdExpenseCategoryData : reportData.expenseCategoryData);
-      const entry = chartData.find((d) => d.name === categoryName);
-
-      return (
-        <CategoryDrillDown
-          transactions={txs}
-          categories={categories}
-          categoryName={categoryName}
-          categoryColor={entry?.color || CATEGORY_FALLBACK_COLOR}
-          onClose={() => setExpandedChart(null)}
-          onDataChanged={() => {
-            // allTransactions state is already updated by setAllTransactions
-            // in the hook — useMemo on reportData will recompute automatically
-          }}
-          setAllTransactions={setAllTransactions}
-        />
-      );
-    },
-    [getDrillDownTransactions, categories, viewMode, reportData, setAllTransactions],
-  );
+  const heading = viewHeading(activeView, viewMode, month, year);
+  const showPeriod = activeView === 'summary' || activeView === 'planVsActual';
 
   return (
     <div className="min-h-screen app-bg">
@@ -286,118 +296,44 @@ export default function ReportsPage() {
 
       {/* Content */}
       <div className={`mx-auto px-4 py-8 sm:px-6 ${activeView === 'annualActuals' || activeView === 'calendar' ? 'max-w-full' : 'max-w-6xl'}`}>
-        {/* Header row */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="animate-fade-in">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
-              {activeView === 'calendar'
-                ? `${getMonthName(month)} ${year} daily view`
-                : activeView === 'annualActuals'
-                  ? `${year} actual spending by category`
-                  : activeView === 'trends'
-                    ? 'Track your spending patterns over time'
-                    : activeView === 'planVsActual'
-                      ? (viewMode === 'ytd'
-                          ? `Jan \u2013 ${getMonthName(month)} ${year} budget comparison`
-                          : `${getMonthName(month)} ${year} budget comparison`)
-                      : viewMode === 'monthly'
-                        ? `${getMonthName(month)} ${year} overview`
-                        : `Jan \u2013 ${getMonthName(month)} ${year} overview`}
-            </p>
-            <h1 className="font-display text-3xl font-medium leading-tight tracking-tight text-stone-900 sm:text-4xl dark:text-stone-100">
-              {activeView === 'calendar'
-                ? 'Transaction Calendar'
-                : activeView === 'annualActuals'
-                  ? 'Annual Actuals'
-                  : activeView === 'trends'
-                    ? 'Spending Trends'
-                    : activeView === 'planVsActual'
-                      ? 'Plan vs Actual'
-                      : viewMode === 'monthly'
-                        ? 'Monthly Summary'
-                        : 'YTD Summary'}
-            </h1>
-            {pendingReviewCount > 0 && (
-              <Link
-                to="/app/transactions?status=pending"
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50"
-              >
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
-                  {pendingReviewCount > 99 ? '99+' : pendingReviewCount}
-                </span>
-                Needs Review
-              </Link>
-            )}
-          </div>
-          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
-            {/* Unified view tab bar — full width on phones */}
-            <div className="no-scrollbar flex w-full overflow-x-auto rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto dark:border-stone-700/60 dark:bg-stone-800">
-              {[
-                { id: 'summary',       label: 'Summary',        shortLabel: 'Summary', activeClass: 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50' },
-                { id: 'planVsActual',  label: 'Plan vs Actual', shortLabel: 'Plan',    activeClass: 'bg-emerald-500 text-white shadow-md shadow-emerald-200/50' },
-                { id: 'trends',        label: 'Trends',         shortLabel: 'Trends',  activeClass: 'bg-sky-500 text-white shadow-md shadow-sky-200/50' },
-                { id: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual',  activeClass: 'bg-violet-500 text-white shadow-md shadow-violet-200/50 dark:shadow-violet-900/30' },
-                { id: 'calendar',      label: 'Calendar',       shortLabel: 'Cal',     activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200/50 dark:shadow-rose-900/30' },
-              ].map(({ id, label, shortLabel, activeClass }) => (
-                <button
-                  key={id}
-                  type="button"
-                  title={label}
-                  onClick={() => setActiveView(id)}
-                  className={`flex-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium transition-all sm:flex-none sm:px-4 ${
-                    activeView === id
-                      ? activeClass
-                      : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
-                  }`}
-                >
-                  <span className="sm:hidden">{shortLabel}</span>
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-              ))}
-            </div>
-            {/* Pending/upcoming toggle — every tab except Calendar */}
-            {activeView !== 'calendar' && (
+        <PageHeader
+          eyebrow={heading.eyebrow}
+          title={heading.title}
+          className="mb-4"
+          description={pendingReviewCount > 0 && (
+            <Link
+              to="/app/transactions?status=pending"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400 dark:hover:bg-violet-900/50"
+            >
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
+                {pendingReviewCount > 99 ? '99+' : pendingReviewCount}
+              </span>
+              Needs Review
+            </Link>
+          )}
+        >
+          <SegmentedControl ariaLabel="Report view" options={VIEWS} value={activeView} onChange={setActiveView} />
+        </PageHeader>
+
+        {/* Shared control row: only the controls that apply to this view */}
+        <div className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
+          {showPeriod && (
+            <SegmentedControl ariaLabel="Period" options={PERIOD_OPTIONS} value={viewMode} onChange={setViewMode} />
+          )}
+          {activeView === 'trends' && (
+            <SegmentedControl ariaLabel="Trend range" size="sm" options={TREND_RANGE_OPTIONS} value={trendRange} onChange={setTrendRange} />
+          )}
+          {activeView === 'annualActuals' ? (
+            <YearSelector year={year} onChange={(y) => setMonthYear(month, y)} />
+          ) : (
+            <MonthYearSelector month={month} year={year} onChange={handleMonthChange} />
+          )}
+          {/* Pending/upcoming toggle — every view except Calendar */}
+          {activeView !== 'calendar' && (
+            <div className="sm:ml-auto">
               <IncludePendingToggle checked={includePending} onChange={setIncludePending} />
-            )}
-            {/* Month/year selector for Trends view */}
-            {activeView === 'trends' && (
-              <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent="sky" />
-            )}
-            {/* Month/year selector for Calendar view */}
-            {activeView === 'calendar' && (
-              <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent="rose" />
-            )}
-            {/* Time-period controls — only for Summary and Plan vs Actual */}
-            {(activeView === 'summary' || activeView === 'planVsActual') && (
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
-                <div className="inline-flex rounded-xl border border-stone-200/60 bg-white p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-800">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('monthly')}
-                    className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
-                      viewMode === 'monthly'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
-                        : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
-                    }`}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('ytd')}
-                    className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-all ${
-                      viewMode === 'ytd'
-                        ? activeView === 'planVsActual' ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-200/50' : 'bg-amber-500 text-stone-950 shadow-md shadow-amber-200/50'
-                        : 'text-stone-600 hover:bg-stone-50 dark:text-stone-400 dark:hover:bg-stone-700'
-                    }`}
-                  >
-                    YTD
-                  </button>
-                </div>
-                <MonthYearSelector month={month} year={year} onChange={handleMonthChange} accent={activeView === 'planVsActual' ? 'emerald' : 'amber'} />
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Error */}
@@ -429,7 +365,6 @@ export default function ReportsPage() {
               <Suspense fallback={<ChartFallback />}>
                 <TrendChart
                   range={trendRange}
-                  setRange={setTrendRange}
                   monthlyData={trendMonthlyData}
                   isLoading={trendLoading}
                   error={trendError}
@@ -466,23 +401,19 @@ export default function ReportsPage() {
 
                 {/* Income by category chart */}
                 <CategoryChart
-                  data={viewMode === 'ytd' ? reportData.ytdIncomeCategoryData : reportData.incomeCategoryData}
+                  data={incomeCategoryData}
                   title="Income by Category"
                   emptyMessage={viewMode === 'ytd' ? 'No income recorded year to date.' : 'No income recorded this month.'}
                   cursorColor="rgba(16, 185, 129, 0.08)"
-                  onCategoryClick={(name) => handleChartCategoryClick(name, 'income')}
-                  expandedCategory={expandedChart?.type === 'income' ? expandedChart.name : null}
-                  renderDrillDown={(name) => renderChartDrillDown(name, 'income')}
+                  {...chartDrillProps(incomeCategoryData)}
                 />
 
                 {/* Spending by category chart */}
                 <CategoryChart
-                  data={viewMode === 'ytd' ? reportData.ytdExpenseCategoryData : reportData.expenseCategoryData}
+                  data={expenseCategoryData}
                   title="Spending by Category"
                   emptyMessage={viewMode === 'ytd' ? 'No expenses recorded year to date.' : 'No expenses recorded this month.'}
-                  onCategoryClick={(name) => handleChartCategoryClick(name, 'expense')}
-                  expandedCategory={expandedChart?.type === 'expense' ? expandedChart.name : null}
-                  renderDrillDown={(name) => renderChartDrillDown(name, 'expense')}
+                  {...chartDrillProps(expenseCategoryData)}
                 />
 
               </>

@@ -9,7 +9,6 @@ import {
 import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
-import useAvailableYears from '../../hooks/useAvailableYears';
 import { budgetCategoryIds } from '../../utils/categoryArchive';
 import {
   useAnnualBudgetData,
@@ -106,10 +105,9 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
  * before it; null/omitted counts every live transaction.
  */
 export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
-  const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
+  const { year: ctxYear } = useMonthYear();
   const year = yearProp ?? ctxYear;
   const { thresholds } = useThresholds();
-  const { years } = useAvailableYears();
   const transactionsQuery = useTransactionsForYear(year);
   const transactions = useMemo(
     () => (transactionsQuery.data ?? []).filter((tx) => isSettledTransaction(tx, asOf)),
@@ -253,12 +251,6 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
   if (isLoading) {
     return (
       <div className="space-y-4 animate-fade-in">
-        {/* Year selector skeleton */}
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-stone-200 dark:bg-stone-700" />
-          <div className="h-10 w-24 animate-pulse rounded-xl bg-stone-200 dark:bg-stone-700" />
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-stone-200 dark:bg-stone-700" />
-        </div>
         {/* Table skeleton */}
         <div className="h-96 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
       </div>
@@ -267,42 +259,9 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
 
   return (
     <div className="space-y-4 animate-fade-in-up">
-      {/* Year selector */}
+      {/* Legend (the year picker lives in the Reports control row) */}
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => { const ny = year - 1; setMonthYear(ctxMonth, ny); }}
-          className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
-          aria-label="Previous year"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-          </svg>
-        </button>
-
-        <select
-          value={year}
-          onChange={(e) => { const ny = Number(e.target.value); setMonthYear(ctxMonth, ny); }}
-          className="rounded-xl border border-violet-300 bg-stone-50/50 px-4 py-2 text-sm font-semibold text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-violet-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-
-        <button
-          type="button"
-          onClick={() => { const ny = year + 1; setMonthYear(ctxMonth, ny); }}
-          className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
-          aria-label="Next year"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-          </svg>
-        </button>
-
-        {/* Legend */}
-        <div className="ml-auto flex flex-wrap items-center gap-4 text-[10px] text-stone-500 dark:text-stone-400">
+        <div className="flex flex-wrap items-center gap-4 text-[10px] text-stone-500 dark:text-stone-400">
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40" />
             Under budget (&lt;{thresholds.underBudget}%)

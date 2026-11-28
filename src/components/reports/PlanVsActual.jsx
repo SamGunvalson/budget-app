@@ -1,11 +1,10 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import MonthYearSelector from '../common/MonthYearSelector';
 import BudgetAlert from '../common/BudgetAlert';
 import StatCards from './StatCards';
 import PlanVsActualChart from './PlanVsActualChart';
 import CategoryComparison from './CategoryComparison';
-import CategoryDrillDown from './CategoryDrillDown';
 import {
   useTransactions,
   useTransactionsYTD,
@@ -17,9 +16,9 @@ import { formatCurrency, getMonthName, isSettledTransaction } from '../../utils/
 import useMonthYear from '../../hooks/useMonthYear';
 import { overallAlert, flaggedCategories, formatVariance } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
-import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 import DataUnavailable from '../common/DataUnavailable';
 import { isQueryUnavailable } from '../../utils/queryState';
+import useCategoryDrillDown from '../../hooks/useCategoryDrillDown';
 
 /**
  * Main "Plan vs Actual" comparison view.
@@ -55,8 +54,6 @@ export default function PlanVsActual({
   const month = externalMonth ?? ctxMonth;
   const year = externalYear ?? ctxYear;
 
-  const [expandedCategoryId, setExpandedCategoryId] = useState(null);
-
   // Plan-vs-actual aggregated server-side (Phase 3 RPC), exactly one of the
   // two hooks runs based on viewMode.  React Query handles loading state and
   // background invalidation when transactions or budget items mutate.
@@ -69,16 +66,6 @@ export default function PlanVsActual({
   const isPlanLoading = pvaQuery.isLoading;
   // Shown by the unavailable panel instead of the generic error banner.
   const planError = pvaUnavailable ? '' : pvaQuery.error?.message || '';
-
-  // Collapse drill-down whenever the period or view mode changes.  The
-  // expanded state stops being meaningful for the new dataset, so we drop
-  // it during render rather than in an effect (avoids a cascading render).
-  const periodKey = `${year}-${month}-${isYTD ? 'ytd' : 'm'}`;
-  const [drillKey, setDrillKey] = useState(periodKey);
-  if (drillKey !== periodKey) {
-    setDrillKey(periodKey);
-    if (expandedCategoryId !== null) setExpandedCategoryId(null);
-  }
 
   // Raw transactions + categories for drill-down (cached via react-query).
   const monthlyTxQuery = useTransactions({ month, year }, { enabled: !isYTD });
@@ -150,45 +137,34 @@ export default function PlanVsActual({
   const dangerCategories = flagged.filter((c) => c.alert.level === 'danger');
   const warningCategories = flagged.filter((c) => c.alert.level === 'warning');
 
-  // Drill-down: toggle category expansion
-  const handleCategoryClick = useCallback((categoryId) => {
-    setExpandedCategoryId((prev) => (prev === categoryId ? null : categoryId));
-  }, []);
-
-  // Drill-down: filter transactions for expanded category
+  // Drill-down: one category at a time expands into its editable transactions.
+  // Collapses whenever the period or view mode changes.
+  const handleDrillDataChanged = useCallback(() => {
+    // Invalidate the PvA query so the panel rebuilds after edits. The bridge
+    // usually does this when transactions mutate, but calling it explicitly
+    // shows fresh numbers even when an offline edit batched its notifyTable.
+    queryClient.invalidateQueries({
+      queryKey: ['budget_items', isYTD ? 'planVsActualYTD' : 'planVsActual'],
+      refetchType: 'active',
+    });
+  }, [queryClient, isYTD]);
+  const {
+    expandedId: expandedCategoryId,
+    toggle: toggleCategory,
+    render: renderCategory,
+  } = useCategoryDrillDown({
+    transactions: rawTransactions,
+    categories: allCategories,
+    setTransactions: setRawTransactions,
+    onDataChanged: handleDrillDataChanged,
+    resetKey: `${year}-${month}-${isYTD ? 'ytd' : 'm'}`,
+  });
   const renderDrillDown = useCallback(
     (categoryId) => {
       const catData = categories.find((c) => c.categoryId === categoryId);
-
-      const catTx = rawTransactions.filter((t) => {
-        if (t.categories?.type === 'transfer') return false;
-        const txCatId = t.category_id || 'uncategorized';
-        return txCatId === categoryId;
-      });
-
-      return (
-        <CategoryDrillDown
-          transactions={catTx}
-          categories={allCategories}
-          categoryName={catData?.categoryName || 'Unknown'}
-          categoryColor={catData?.categoryColor || CATEGORY_FALLBACK_COLOR}
-          onClose={() => setExpandedCategoryId(null)}
-          onDataChanged={() => {
-            // Invalidate the PvA query so the panel rebuilds after edits.
-            // The bridge usually does this when transactions mutate, but
-            // calling it explicitly ensures the user sees fresh numbers
-            // immediately even when an offline-only edit batched its
-            // notifyTable.
-            queryClient.invalidateQueries({
-              queryKey: ['budget_items', isYTD ? 'planVsActualYTD' : 'planVsActual'],
-              refetchType: 'active',
-            });
-          }}
-          setAllTransactions={setRawTransactions}
-        />
-      );
+      return renderCategory(categoryId, { name: catData?.categoryName, color: catData?.categoryColor });
     },
-    [rawTransactions, categories, allCategories, isYTD, queryClient, setRawTransactions],
+    [categories, renderCategory],
   );
 
   return (
@@ -313,7 +289,7 @@ export default function PlanVsActual({
           {/* Category comparison table — includes income categories */}
           <CategoryComparison
             data={categories}
-            onCategoryClick={handleCategoryClick}
+            onCategoryClick={toggleCategory}
             expandedCategoryId={expandedCategoryId}
             renderDrillDown={renderDrillDown}
             thresholds={thresholds}

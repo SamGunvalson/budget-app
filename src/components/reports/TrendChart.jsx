@@ -62,13 +62,12 @@ function YoYTooltip({ active, payload, label }) {
  *
  * @param {{
  *   range: '6m' | '12m' | 'yoy',
- *   setRange: (r: string) => void,
  *   monthlyData: Array<{ label: string, year: number, month: number, spent: number, income: number }>,
  *   isLoading: boolean,
  *   error: string,
  * }} props
  */
-export default function TrendChart({ range, setRange, monthlyData = [], isLoading, error }) {
+export default function TrendChart({ range, monthlyData = [], isLoading, error }) {
   // Safe mode: chart values are masked ONCE here (toDollars) so the drawn
   // shapes stay scrambled; tooltips and axes therefore use the
   // formatPreMasked* helpers, which do not mask a second time.
@@ -113,30 +112,8 @@ export default function TrendChart({ range, setRange, monthlyData = [], isLoadin
   /* ---- render ---- */
   return (
     <div className="animate-fade-in rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50">
-      {/* header + range toggle */}
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Spending Trends</h3>
-        <div className="inline-flex rounded-xl border border-stone-200/60 bg-stone-50 p-1 shadow-sm dark:border-stone-700/60 dark:bg-stone-700/30">
-          {[
-            { key: '6m', label: '6 Months' },
-            { key: '12m', label: '12 Months' },
-            { key: 'yoy', label: 'Year over Year' },
-          ].map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => setRange(opt.key)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all sm:text-sm ${
-                range === opt.key
-                  ? 'bg-sky-500 text-white shadow-md shadow-sky-200/50'
-                  : 'text-stone-600 hover:bg-white dark:text-stone-400 dark:hover:bg-stone-600'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* The range toggle lives in the Reports control row. */}
+      <h3 className="mb-6 text-lg font-semibold text-stone-900 dark:text-stone-100">Income vs spending</h3>
 
       {/* error */}
       {error && (

@@ -340,9 +340,9 @@ common one becomes `secondary`.
 **Segmented controls** (Monthly / Yearly, Overview / Cashflow, 1Y / 3Y, filter
 chips): the selected segment is **ink**, not gold:
 `bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900`.
-Unselected segments use `text-stone-500 hover:text-stone-700`. Exception: the
-Reports view tabs and their Monthly/YTD toggle keep their per-view colors (see
-the matrix below).
+Unselected segments use `text-stone-500 hover:text-stone-700`. Use the shared
+`SegmentedControl` component (`src/components/common/SegmentedControl.jsx`),
+which also supports a `shortLabel` for narrow screens.
 
 **Button States**:
 
@@ -350,18 +350,17 @@ the matrix below).
 - **Loading**: Change the label (e.g. "Saving…") or show a spinner inside the button
 - **Press feedback**: `active:scale-[0.98]` (built into `Button`)
 
-#### Reports Page — Tab & Sub-Button Color Matrix
+#### Reports Page — Tabs and control row
 
-The Reports page (`ReportsPage`) uses a tab bar where each section has an assigned accent color. **Sub-buttons within a section must use that same accent for their active state**, so the UI feels cohesive when navigating between views.
+The Reports view tabs and every sub-control (Monthly / YTD, the trend range)
+use the ink segmented control like the rest of the app. There are no colors
+per tab. Violet, the Reports page accent, is kept for the nav, the "Needs
+Review" badge and the Include-upcoming switch.
 
-| Section            | Tab active color                | Sub-button active color                                          | Shadow token            |
-| ------------------ | ------------------------------- | ---------------------------------------------------------------- | ----------------------- |
-| **Summary**        | `bg-amber-500`                  | `bg-amber-500`                                                   | `shadow-amber-200/50`   |
-| **Plan vs Actual** | `bg-emerald-500`                | `bg-emerald-500`                                                 | `shadow-emerald-200/50` |
-| **Trends**         | `bg-sky-500`                    | `bg-sky-500`                                                     | `shadow-sky-200/50`     |
-| **Annual Actuals** | `bg-violet-500`                 | Year selector → `border-violet-200/300`, `focus:ring-violet-500` | `shadow-violet-200/50`  |
-
-When adding new sub-controls inside a Reports section, reference this table to pick the correct active color.
+All views share one control row under the page header, and each view shows
+only the controls that apply to it: period, month or year picker, trend range
+and Include upcoming. Month and year pickers are `MonthYearSelector` and
+`YearSelector`, with the standard gold focus ring.
 
 ### Form Inputs
 

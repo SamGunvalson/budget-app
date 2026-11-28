@@ -209,7 +209,7 @@ export default function CalendarView({ month, year }) {
             <div
               key={key}
               onClick={() => rawItems.length > 0 && setSelectedDay(key)}
-              className={`flex min-h-22 cursor-pointer flex-col gap-0.5 p-1.5 transition-colors hover:bg-rose-50/50 dark:hover:bg-rose-950/20 ${
+              className={`flex min-h-22 cursor-pointer flex-col gap-0.5 p-1.5 transition-colors hover:bg-violet-50/50 dark:hover:bg-violet-950/20 ${
                 inMonth
                   ? isCurrentDay
                     ? 'bg-amber-50 dark:bg-amber-950/30'
