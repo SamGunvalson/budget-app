@@ -47,13 +47,19 @@ export const SHADE_LABELS = ['Pale', 'Light', 'Mid', 'Deep'];
 
 const byId = Object.fromEntries(COLOR_FAMILIES.map((f) => [f.id, f]));
 const mid = (id) => byId[id].shades[2];
+const deep = (id) => byId[id].shades[3];
 
-/** Default color for each category type (matches the type dots). */
+/**
+ * Color for each category type: the type dots and headers
+ * (constants/typeStyles.js), new categories' default color, and type series
+ * in charts. Jade / ochre / orchid / blue is the only palette set that passed
+ * the dataviz validator with all pairs compared in both themes.
+ */
 export const TYPE_COLORS = {
-  income: mid('jade'),
-  needs: mid('coral'),
-  wants: mid('rose'),
-  savings: mid('teal'),
+  income: mid('jade'), // emerald-500
+  needs: deep('gold'), // amber-700, ochre
+  wants: mid('orchid'), // fuchsia-500
+  savings: mid('blue'), // blue-500
   transfer: mid('stone'),
 };
 

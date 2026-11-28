@@ -114,15 +114,25 @@ scale). Users group related categories by giving them shades of one family.
 The picker is `ColorPalettePicker`; bulk recoloring and moving old colors onto
 the palette is `CategoryColorsModal` (Categories → Colors).
 
-**Type colors** (`TYPE_COLORS`; type dots use the matching `bg-*-500`):
+**Type colors** (`TYPE_COLORS` in `palette.js`; the dot and group-header
+classes live in `src/constants/typeStyles.js`, never copied into components):
 
-- Income: Jade `#3d9a6e` (`emerald`)
-- Needs: Coral `#c46a6a` (`rose`). Not `red`, which means over budget/error.
-- Wants: Rose `#c0607a` (`pink`)
-- Savings: Teal `#2a9d9a` (`teal`)
+- Income: Jade `#3d9a6e` (`bg-emerald-500`)
+- Needs: Ochre `#8f5f16` (`bg-amber-700`). The deep step reads brown, not the
+  gold of primary buttons (`amber-500`).
+- Wants: Orchid `#a86495` (`bg-fuchsia-500`)
+- Savings: Blue `#4f86c6` (`bg-blue-500`)
 - Transfer: Stone `#647167` (`stone`)
 
+Type dots sit side by side, so this set was chosen with the dataviz palette
+validator comparing **all pairs** in both themes; it is the only palette set
+that passed. (The old coral needs / rose wants were ΔE 4 apart even with full
+color vision.) Separation is in the colorblind floor band, so always show a
+type color with its name. `scripts/palette.test.js` checks that each dot class
+renders the `TYPE_COLORS` hex. Re-run the validator before changing any of them.
+
 New categories default to their type's color until the user picks one.
+Existing categories keep the colors they have.
 
 ### Neutral Scale (Warm Stone)
 
@@ -620,11 +630,10 @@ panels).
 **Chart series:** income is emerald (`CHART_INCOME`). Spending is **violet**
 (`CHART_SPENDING`, the Reports accent), never amber or orange, which mean
 primary action and warning. Category charts keep each category's own color.
-Charts that put several category *types* side by side (needs / wants /
-saved, fixed / flexible) use `MIX_COLORS` and `FIXED_FLEX_COLORS` from
-`chartColors.js`, not `TYPE_COLORS`: needs and wants are too close to tell
-apart in adjacent marks. Those sets passed the dataviz palette validator in
-both themes; re-run it before changing them. One y-axis per chart (savings
+Charts that put category *types* side by side use `MIX_COLORS` from
+`chartColors.js` (the type colors, plus olive for "Left in checking");
+fixed / flexible use `FIXED_FLEX_COLORS`. Those sets passed the dataviz
+palette validator in both themes; re-run it before changing them. One y-axis per chart (savings
 rate gets its own small chart, not a second axis), legend text in the axis
 color, legend items in stack order, and a 2px `CHART_SURFACE` stroke between
 stacked segments.

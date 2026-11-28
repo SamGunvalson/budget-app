@@ -176,8 +176,10 @@ moved), so the server `get_monthly_spending_trend` RPC is no longer read
    the latest 3 months with the 3 before. Clicking one charts it above.
 
 Chart colors are the validated `MIX_COLORS` / `FIXED_FLEX_COLORS` in
-`chartColors.js`: the category type colors fail side by side (needs coral vs
-wants rose, ΔE 4). Overview's "Where it went" bar uses the same set.
+`chartColors.js`. Type series use the app-wide type colors (jade / ochre /
+orchid / blue, re-chosen after the old coral needs vs rose wants failed at
+ΔE 4; see STYLE_GUIDE → Type colors). Overview's "Where it went" bar uses
+the same set.
 
 ### 4. Annual (small changes)
 

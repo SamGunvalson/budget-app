@@ -20,18 +20,16 @@ export const CHART_SPENDING = '#8b6fc0'; // violet-500
 export const CHART_NEGATIVE = '#ef4444'; // red-500
 
 /*
- * Multi-series report charts. The category TYPE_COLORS are too close to tell
- * apart in a chart (needs coral vs wants rose: ΔE 4 even with full color
- * vision), so stacked type charts use these instead. Each set passed the
- * dataviz palette validator (lightness band, chroma floor, CVD and
- * normal-vision separation, contrast) on both the light (#fffefa) and dark
- * (#202722) panel surfaces, in the order listed (adjacent stack order).
+ * Multi-series report charts. Type series use the category TYPE_COLORS (see
+ * constants/typeStyles.js for how they were validated); `leftOver` (Overview's
+ * "Left in checking") is olive, which passed after blue savings in stack order
+ * on both panel surfaces (#fffefa light, #202722 dark).
  */
 export const MIX_COLORS = {
-  needs: TYPE_COLORS.needs, // coral #c46a6a
-  wants: SERIES_COLORS[5], // indigo #5c6bc0
-  saved: TYPE_COLORS.income, // jade #3d9a6e
-  leftOver: SERIES_COLORS[0], // blue #4f86c6
+  needs: TYPE_COLORS.needs, // ochre #8f5f16
+  wants: TYPE_COLORS.wants, // orchid #a86495
+  saved: TYPE_COLORS.savings, // blue #4f86c6
+  leftOver: SERIES_COLORS[4], // olive #7a8f3a
 };
 export const FIXED_FLEX_COLORS = {
   fixed: SERIES_COLORS[4], // olive #7a8f3a

@@ -55,3 +55,11 @@ test('normalizeHex handles case, shorthand, and junk', () => {
   assert.equal(normalizeHex('#4f86c'), null);
   assert.equal(normalizeHex(null), null);
 });
+
+test('type dot classes render the same hex as TYPE_COLORS', async () => {
+  const { TYPE_DOT_CLASSES } = await import('../src/constants/typeStyles.js');
+  for (const type of ['income', 'needs', 'wants', 'savings']) {
+    const [, scale, step] = TYPE_DOT_CLASSES[type].match(/^bg-([a-z]+)-(\d+)$/);
+    assert.equal(cssVar(scale, step), TYPE_COLORS[type], `${type}: ${TYPE_DOT_CLASSES[type]}`);
+  }
+});

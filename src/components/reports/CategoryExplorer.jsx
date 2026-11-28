@@ -21,16 +21,12 @@ import {
   resolveCompareMode,
   txMonthKey,
 } from '../../utils/reportAggregations';
+import { TYPE_DOT_CLASSES } from '../../constants/typeStyles';
 
 const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
 
-const TYPE_DOTS = {
-  income: 'bg-emerald-500',
-  needs: 'bg-rose-500',
-  wants: 'bg-pink-500',
-  savings: 'bg-teal-500',
-  other: 'bg-stone-400',
-};
+// Type colors live in one place: constants/typeStyles.js.
+const TYPE_DOTS = TYPE_DOT_CLASSES;
 
 /** Short phrase naming what a row is compared against. */
 function compareNoun(mode) {
