@@ -103,17 +103,22 @@ test('typeMixByMonth reports every requested month', () => {
   ]);
 });
 
-test('fixedFlexibleByMonth splits recurring-generated spending from the rest', () => {
+test('fixedFlexibleByMonth splits bills from flexible consumption spending', () => {
   const rows = [
     tx('rent', 150000, '2026-01-01', { recurring_template_id: 'r1' }),
     tx('groceries', 20000, '2026-01-05'),
     tx('dining', 1000, '2026-01-06', { is_income: true }), // refund lowers flexible
     tx('salary', 400000, '2026-01-15', { recurring_template_id: 'r2' }), // income skipped
+    tx('invest', 50000, '2026-01-15'), // savings skipped
     tx('transfer', 5000, '2026-01-20', { recurring_template_id: 'r3' }), // transfer skipped
     tx('groceries', 7000, '2025-12-30'), // outside range
+    // Hand-entered phone bill, same amount 3 months running: fixed.
+    tx('rent', 6000, '2025-11-10', { payee: 'FiberNet' }),
+    tx('rent', 6000, '2025-12-10', { payee: 'FiberNet' }),
+    tx('rent', 6000, '2026-01-10', { payee: 'FiberNet' }),
   ];
   assert.deepEqual(fixedFlexibleByMonth(rows, ['2026-01']), [
-    { key: '2026-01', fixed: 150000, flexible: 19000 },
+    { key: '2026-01', fixed: 156000, flexible: 19000 },
   ]);
 });
 
@@ -431,4 +436,47 @@ test('periodSummary adds budgeted and transferred savings and reports what is le
   assert.equal(s.saved, 210000);
   assert.equal(s.leftOver, 140000);
   assert.equal(s.savingsRate, 0.35);
+});
+
+// ── Trends tab ──
+import { biggestChanges, categorySeries, monthLabel, trendSeries } from '../src/utils/reportAggregations.js';
+
+test('trendSeries adds spending, savings and chart labels per month', () => {
+  const m = categoryMonthMatrix([
+    tx('salary', 10000, '2026-01-01'),
+    tx('rent', 4000, '2026-01-01'),
+    tx('dining', 1000, '2026-01-02'),
+    tx('invest', 2000, '2026-01-03'),
+  ]);
+  const [jan, feb] = trendSeries(m, ['2026-01', '2026-02']);
+  assert.equal(monthLabel('2026-01'), 'Jan 2026');
+  assert.deepEqual(
+    { label: jan.label, year: jan.year, month: jan.month, spending: jan.spending, spent: jan.spent, saved: jan.saved, savingsRate: jan.savingsRate },
+    { label: 'Jan 2026', year: 2026, month: 1, spending: 5000, spent: 5000, saved: 2000, savingsRate: 0.2 },
+  );
+  assert.equal(feb.spending, 0);
+  assert.equal(feb.savingsRate, null);
+});
+
+test('categorySeries follows a category or a type, with zero months in the average', () => {
+  const m = categoryMonthMatrix([
+    tx('groceries', 300, '2026-01-02'),
+    tx('rent', 900, '2026-01-01'),
+    tx('groceries', 600, '2026-03-02'),
+  ]);
+  const keys = ['2026-01', '2026-02', '2026-03'];
+  const gro = categorySeries(m, keys, { kind: 'category', id: 'gro' });
+  assert.deepEqual(gro.points.map((p) => p.value), [300, 0, 600]);
+  assert.equal(gro.average, 300);
+  assert.deepEqual(categorySeries(m, keys, { kind: 'type', id: 'needs' }).points.map((p) => p.value), [1200, 0, 600]);
+  assert.deepEqual(categorySeries(m, keys, { kind: 'category', id: 'nope' }).points.map((p) => p.value), [0, 0, 0]);
+});
+
+test('biggestChanges compares the latest 3 months with the 3 before', () => {
+  const rows = [];
+  for (const mo of ['01', '02', '03']) rows.push(tx('dining', 3000, `2026-${mo}-05`), tx('groceries', 60000, `2026-${mo}-05`));
+  for (const mo of ['04', '05', '06']) rows.push(tx('dining', 9000, `2026-${mo}-05`), tx('groceries', 45000, `2026-${mo}-05`), tx('salary', 999999, `2026-${mo}-01`));
+  const { risers, fallers } = biggestChanges(categoryMonthMatrix(rows), 2026, 6, { minChange: 1000 });
+  assert.deepEqual(risers.map((r) => [r.categoryId, r.actual, r.compare, r.change]), [['din', 9000, 3000, 6000]]);
+  assert.deepEqual(fallers.map((r) => [r.categoryId, r.change]), [['gro', -15000]]);
 });

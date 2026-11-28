@@ -191,18 +191,22 @@ export function typeMixByMonth(matrix, keys) {
 }
 
 /**
- * Spending split into fixed (generated from a recurring template) and
- * flexible (everything else), per month. Income and transfers are skipped.
+ * Consumption spending (needs, wants, other; not income, savings or
+ * transfers) split into fixed bills and flexible spending, per month. A bill
+ * is a row generated from a recurring template or a repeating same-amount
+ * charge (see `billMatcher`), judged across all of `transactions`.
  * @returns {Array<{ key: string, fixed: number, flexible: number }>}
  */
 export function fixedFlexibleByMonth(transactions, keys) {
+  const isBill = billMatcher(transactions);
   const totals = Object.fromEntries(keys.map((key) => [key, { fixed: 0, flexible: 0 }]));
   for (const tx of transactions) {
     const value = signedAmount(tx);
-    if (value === null || txType(tx) === 'income') continue;
+    const type = txType(tx);
+    if (value === null || type === 'income' || type === 'savings') continue;
     const bucket = totals[txMonthKey(tx)];
     if (!bucket) continue;
-    if (tx.recurring_template_id) bucket.fixed += value;
+    if (isBill(tx)) bucket.fixed += value;
     else bucket.flexible += value;
   }
   return keys.map((key) => ({ key, ...totals[key] }));
@@ -567,6 +571,15 @@ export function repeatingChargeKeys(transactions, minMonths = 3) {
 }
 
 /**
+ * A predicate telling whether a transaction is a bill: generated from a
+ * recurring template, or a repeating same-amount charge in `transactions`.
+ */
+export function billMatcher(transactions) {
+  const repeating = repeatingChargeKeys(transactions);
+  return (tx) => !!tx.recurring_template_id || repeating.has(`${payeeKey(tx)}|${Math.abs(tx.amount)}`);
+}
+
+/**
  * The largest spending transactions (refunds, income and transfers excluded)
  * in `keys`. With `excludeBills`, rows generated from a recurring template and
  * repeating same-amount charges (see `repeatingChargeKeys`, judged across all
@@ -574,9 +587,7 @@ export function repeatingChargeKeys(transactions, minMonths = 3) {
  */
 export function largestTransactions(transactions, keys, limit = 5, { excludeBills = false } = {}) {
   const inPeriod = new Set(keys);
-  const repeating = excludeBills ? repeatingChargeKeys(transactions) : new Set();
-  const isBill = (tx) => !!tx.recurring_template_id
-    || repeating.has(`${payeeKey(tx)}|${Math.abs(tx.amount)}`);
+  const isBill = excludeBills ? billMatcher(transactions) : () => false;
   return transactions
     .filter((tx) => inPeriod.has(txMonthKey(tx)) && txType(tx) !== 'income' && (signedAmount(tx) ?? 0) > 0)
     .filter((tx) => !excludeBills || !isBill(tx))
@@ -636,4 +647,75 @@ export function toggleIgnoredPayee(list, key) {
   if (set.has(key)) set.delete(key);
   else set.add(key);
   return [...set].sort();
+}
+
+// ── Trends tab ──────────────────────────────────────────────────────────────
+
+const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Nov 2026" for a `YYYY-MM` key. */
+export function monthLabel(key) {
+  return `${SHORT_MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+}
+
+/**
+ * One row per month for the Trends charts: income, consumption spending,
+ * the type mix, savings (budgeted + moved) and the savings rate. `label`,
+ * `year`, `month` and `spent` keep the shape TrendChart expects.
+ */
+export function trendSeries(matrix, keys) {
+  return typeMixByMonth(matrix, keys).map((row) => {
+    const other = matrix.byType.other?.[row.key] ?? 0;
+    const spending = row.needs + row.wants + other;
+    return {
+      ...row,
+      other,
+      spending,
+      spent: spending,
+      label: monthLabel(row.key),
+      year: Number(row.key.slice(0, 4)),
+      month: Number(row.key.slice(5, 7)),
+    };
+  });
+}
+
+/**
+ * Monthly totals for one category (`{ kind: 'category', id }`) or one type
+ * (`{ kind: 'type', id: 'needs' }`) over `keys`, with their average.
+ * @returns {{ points: Array<{ key: string, label: string, value: number }>, average: number }}
+ */
+export function categorySeries(matrix, keys, selection) {
+  const row = selection?.kind === 'type'
+    ? selection.id === 'saved'
+      ? Object.fromEntries(keys.map((k) => [k, (matrix.byType.savings?.[k] ?? 0) + (matrix.transferSavings?.[k] ?? 0)]))
+      : matrix.byType[selection.id]
+    : matrix.byCategory[selection?.id];
+  const points = keys.map((key) => ({ key, label: monthLabel(key), value: row?.[key] ?? 0 }));
+  return { points, average: averageMonths(row, keys) };
+}
+
+/**
+ * Spending categories whose monthly average over the latest `window` months
+ * (ending at endYear/endMonth) moved most against the `window` months before.
+ * Changes under `minChange` cents are ignored.
+ * @returns {{ risers: Array<object>, fallers: Array<object> }} rows from
+ *   categoryComparisonGroups (actual = recent average, compare = prior average)
+ */
+export function biggestChanges(matrix, endYear, endMonth, { window = 3, limit = 5, minChange = 1000, categories = [] } = {}) {
+  const recentKeys = monthRange(endYear, endMonth, window);
+  const priorEnd = shiftMonth(endYear, endMonth, -window);
+  const priorKeys = monthRange(priorEnd.year, priorEnd.month, window);
+  const rows = categoryComparisonGroups({
+    actual: categoryTotals(matrix, recentKeys, window),
+    compare: categoryTotals(matrix, priorKeys, window),
+    categories,
+    meta: matrix.meta,
+  })
+    .filter((g) => g.type !== 'income')
+    .flatMap((g) => g.rows)
+    .filter((r) => Math.abs(r.change) >= minChange);
+  return {
+    risers: rows.filter((r) => r.change > 0).sort((a, b) => b.change - a.change).slice(0, limit),
+    fallers: rows.filter((r) => r.change < 0).sort((a, b) => a.change - b.change).slice(0, limit),
+  };
 }

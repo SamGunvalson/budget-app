@@ -1,6 +1,6 @@
 # Reports Redesign Plan
 
-Status: PRs 1–3 done · PR 4 (Payees) done, uncommitted · PRs 5–6 pending · 2026-11-28
+Status: PRs 1–4 done · PR 5 (Trends) done, uncommitted · PR 6 pending · 2026-11-28
 Follows: [UI_OVERHAUL_PLAN.md](UI_OVERHAUL_PLAN.md) (Phase 5 Overview moves here, inside Reports; `/app` keeps landing on Transactions)
 
 ## Goals
@@ -151,16 +151,27 @@ One explorer for the period, with three views (segmented):
 
 ### 3. Trends (rebuilt)
 
-Range stays 6m / 12m / YoY. Sections:
+Built in `TrendsView.jsx`. Range stays 6m / 12m / YoY (24 months). Everything
+is computed on the device from the year transactions, with Overview's
+definitions (spending excludes savings and transfers; saved = budgeted +
+moved), so the server `get_monthly_spending_trend` RPC is no longer read
+(the function stays in the database). Sections:
 
 1. **Income vs spending:** the existing chart. Average, highest and lowest
-   become one caption line instead of three cards.
-2. **Mix over time:** stacked monthly bars for needs/wants/savings, with a
-   savings-rate line.
-3. **Fixed vs flexible:** monthly recurring vs discretionary spending.
-4. **Category trend:** pick a category or type to see its monthly line against
-   its average. Below it, **Biggest changes**: risers and fallers, comparing the
-   latest 3 months with the 3 before.
+   are one caption line instead of three cards. YoY compares the two most
+   recent years (older muted, current gold), never cycling colors.
+2. **Where income went:** stacked monthly bars for needs / wants / saved, and
+   a separate small savings-rate chart below it (no dual axis).
+3. **Fixed bills vs flexible spending:** bills are rows from a recurring
+   template or a payee charging the same amount in 3+ months (`billMatcher`).
+4. **Category trend:** pick a category, a type total, or Saved to see its
+   monthly line against the range average.
+5. **Biggest changes:** risers and fallers, comparing the monthly average of
+   the latest 3 months with the 3 before. Clicking one charts it above.
+
+Chart colors are the validated `MIX_COLORS` / `FIXED_FLEX_COLORS` in
+`chartColors.js`: the category type colors fail side by side (needs coral vs
+wants rose, ΔE 4). Overview's "Where it went" bar uses the same set.
 
 ### 4. Annual (small changes)
 
@@ -192,7 +203,8 @@ views still use. Keep `BudgetAlert` if other pages import it.
    **Savings rate** = (budgeted + moved) ÷ true income. **Kept** = income −
    needs − wants − other; kept minus saved is what is still in checking.
    Leftover moved in the following month counts in that month.
-2. **Fixed** = any non-transfer transaction generated from a recurring template.
+2. **Fixed** = a bill: a row generated from a recurring template, or the same
+   payee charging the same amount in 3+ months (hand-entered bills).
 3. **Payee normalization:** trim, lowercase, collapse whitespace, drop trailing
    store numbers (`#1234`, `STORE 0042`). Fall back to `description` when
    `payee` is null. A payee is "mixed" when it has ≥3 transactions in more than
@@ -208,7 +220,7 @@ views still use. Keep `BudgetAlert` if other pages import it.
 2. ✅ **Categories › List** with compare-to. Removes Summary and Plan vs Actual.
 3. ✅ **Overview** tab (default).
 4. ✅ **Categories › Payees** and the ignore list.
-5. **Trends** rebuild (mix, fixed/flexible, category trend).
+5. ✅ **Trends** rebuild (mix, fixed/flexible, category trend).
 6. **Categories › Flow** (Sankey) and Annual cell drill-down.
 
 Each PR: screenshots in light and dark at mobile and desktop widths,

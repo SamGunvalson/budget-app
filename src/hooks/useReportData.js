@@ -1,16 +1,16 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAnnualBudgetData, useCategories, useTransactionsForYear } from './queries';
+import { useAnnualBudgetData, useCategories, useTransactionsForYears } from './queries';
 import { isSettledTransaction } from '../utils/helpers';
 import { isQueryUnavailable } from '../utils/queryState';
 import { categoryMonthMatrix, yearsForKeys } from '../utils/reportAggregations';
 
 /**
- * Data shared by the client-computed Reports tabs (Overview, Categories):
- * settled transactions for `year` (plus `year - 1` when any key in `keyLists`
- * falls there), their category × month matrix, categories, and optionally the
- * annual budget for `year`. Reads go through the offline-capable hooks, so the
- * tabs work offline like Annual Actuals.
+ * Data shared by the client-computed Reports tabs (Overview, Categories,
+ * Payees, Trends): settled transactions for every calendar year that `year`
+ * or any key in `keyLists` falls in, their category × month matrix,
+ * categories, and optionally the annual budget for `year`. Reads go through
+ * the offline-capable hooks, so the tabs work offline like Annual Actuals.
  *
  * @param {{
  *   year: number,
@@ -21,40 +21,40 @@ import { categoryMonthMatrix, yearsForKeys } from '../utils/reportAggregations';
  */
 export default function useReportData({ year, keyLists, asOf, withBudget = false }) {
   const queryClient = useQueryClient();
-  const needPrevYear = yearsForKeys(...keyLists).includes(year - 1);
+  const yearsKey = [...new Set([year, ...yearsForKeys(...keyLists)])].sort((a, b) => a - b).join(',');
+  const years = useMemo(() => yearsKey.split(',').map(Number), [yearsKey]);
 
-  const currentQuery = useTransactionsForYear(year);
-  const prevQuery = useTransactionsForYear(year - 1, { enabled: needPrevYear });
+  const yearQueries = useTransactionsForYears(years);
   const budgetQuery = useAnnualBudgetData(year, { enabled: withBudget });
   const categoriesQuery = useCategories();
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
 
-  const settled = useMemo(() => {
-    const rows = needPrevYear
-      ? [...(prevQuery.data ?? []), ...(currentQuery.data ?? [])]
-      : currentQuery.data ?? [];
-    return rows.filter((t) => isSettledTransaction(t, asOf));
-  }, [currentQuery.data, prevQuery.data, needPrevYear, asOf]);
+  // useQueries returns a new array every render, so key the memo on when each
+  // year's data last changed (optimistic setQueryData bumps it too).
+  const dataVersion = yearQueries.map((q) => `${q.dataUpdatedAt}:${q.data ? 1 : 0}`).join(',');
+  const settled = useMemo(
+    () => yearQueries.flatMap((q) => q.data ?? []).filter((t) => isSettledTransaction(t, asOf)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersion tracks yearQueries' data
+    [dataVersion, asOf],
+  );
 
   const matrix = useMemo(() => categoryMonthMatrix(settled), [settled]);
 
-  // Optimistic edits from a drill-down. Its rows can span both loaded years,
-  // so the updater runs on each year's cache. useTransactionManager's
-  // updaters map/filter by transaction id, so rows from the other year pass
+  // Optimistic edits from a drill-down. Its rows can span several loaded
+  // years, so the updater runs on each year's cache. useTransactionManager's
+  // updaters map/filter by transaction id, so rows from other years pass
   // through unchanged. A plain array (no updater) only replaces `year`.
   const setYearTransactions = useCallback((updater) => {
     if (typeof updater !== 'function') {
       queryClient.setQueryData(['transactions', 'year', year], updater);
       return;
     }
-    const years = needPrevYear ? [year, year - 1] : [year];
     for (const y of years) {
       queryClient.setQueryData(['transactions', 'year', y], (prev) => (prev ? updater(prev) : prev));
     }
-  }, [queryClient, year, needPrevYear]);
+  }, [queryClient, year, years]);
 
-  const queries = [currentQuery, categoriesQuery];
-  if (needPrevYear) queries.push(prevQuery);
+  const queries = [...yearQueries, categoriesQuery];
   if (withBudget) queries.push(budgetQuery);
 
   return {

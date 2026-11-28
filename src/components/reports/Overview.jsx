@@ -4,6 +4,7 @@ import CategoryWell from '../common/CategoryWell';
 import DataUnavailable from '../common/DataUnavailable';
 import EmptyState from '../common/EmptyState';
 import ChangeChip from './ChangeChip';
+import { MIX_COLORS } from '../../constants/chartColors';
 import { usePendingReviewCount, useUserPreference } from '../../hooks/queries';
 import useReportData from '../../hooks/useReportData';
 import { formatCurrency, getMonthName } from '../../utils/helpers';
@@ -33,11 +34,13 @@ const ROW_LINK = 'flex items-center gap-3 rounded-xl px-2 py-2 -mx-2 transition-
 // "Where it went": how the period's income was used. `saved` covers budgeted
 // savings and money moved to savings accounts; `leftOver` is what is still in
 // checking (shown only when positive).
+// Colors are the validated MIX_COLORS (the category type colors are too
+// close to tell apart side by side).
 const MIX = [
-  { key: 'needs', label: 'Needs', bar: 'bg-rose-500' },
-  { key: 'wants', label: 'Wants', bar: 'bg-pink-500' },
-  { key: 'saved', label: 'Saved', bar: 'bg-teal-500' },
-  { key: 'leftOver', label: 'Left in checking', bar: 'bg-stone-400 dark:bg-stone-500' },
+  { key: 'needs', label: 'Needs' },
+  { key: 'wants', label: 'Wants' },
+  { key: 'saved', label: 'Saved' },
+  { key: 'leftOver', label: 'Left in checking' },
 ];
 
 /** Link into another Reports tab, keeping the selected month in context. */
@@ -339,14 +342,14 @@ export default function Overview({ month, year, viewMode, asOf }) {
           </div>
           <div className="mt-4 flex h-3 gap-0.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700" aria-hidden="true">
             {mixParts.map((m) => (
-              <div key={m.key} className={m.bar} style={{ width: `${(summary[m.key] / mixTotal) * 100}%` }} />
+              <div key={m.key} style={{ width: `${(summary[m.key] / mixTotal) * 100}%`, backgroundColor: MIX_COLORS[m.key] }} />
             ))}
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {MIX.filter((m) => m.key !== 'leftOver' || summary.leftOver > 0).map((m) => (
               <div key={m.key}>
                 <dt className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
-                  <span aria-hidden="true" className={`h-2 w-2 rounded-full ${m.bar}`} />
+                  <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ backgroundColor: MIX_COLORS[m.key] }} />
                   {m.label}
                 </dt>
                 <dd className="mt-0.5 text-sm font-semibold tabular-nums text-stone-900 dark:text-stone-100">

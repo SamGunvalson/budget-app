@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import TopBar from '../components/common/TopBar';
 import PageHeader from '../components/common/PageHeader';
@@ -11,10 +11,8 @@ import PayeeExplorer from '../components/reports/PayeeExplorer';
 // Defer recharts-bound charts until the user opens those tabs. Each lazy
 // import becomes its own JS chunk that pulls in `recharts` only when first
 // rendered, keeping the Reports route's first-paint bundle small.
-const TrendChart = lazy(() => import('../components/reports/TrendChart'));
-import TrendSummary from '../components/reports/TrendSummary';
-import { usePendingReviewCount, useMonthlySpendingTrend } from '../hooks/queries';
-import { computeTrendSummary } from '../services/analytics';
+const TrendsView = lazy(() => import('../components/reports/TrendsView'));
+import { usePendingReviewCount } from '../hooks/queries';
 import { getMonthName, getTodayString } from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
 import useSessionState from '../hooks/useSessionState';
@@ -144,18 +142,6 @@ export default function ReportsPage() {
 
   useEffect(() => { document.title = 'Budget App | Reports'; }, []);
 
-  // Trend data: server-side aggregation RPCs via React Query. All three ranges
-  // return monthly buckets (yoy = 24 months) so TrendChart and
-  // computeTrendSummary share one shape.
-  const trendMonths = trendRange === 'yoy' ? 24 : trendRange === '12m' ? 12 : 6;
-  const trendQuery = useMonthlySpendingTrend(
-    { months: trendMonths, endMonth: month, endYear: year, asOf },
-    { enabled: activeView === 'trends' },
-  );
-  const trendMonthlyData = useMemo(() => trendQuery.data ?? [], [trendQuery.data]);
-  const trendError = trendQuery.error?.message || '';
-  const trendSummary = useMemo(() => computeTrendSummary(trendMonthlyData), [trendMonthlyData]);
-
   const heading = viewHeading(activeView, viewMode, month, year, lens);
 
   return (
@@ -219,13 +205,7 @@ export default function ReportsPage() {
             <AnnualActualsTable year={year} asOf={asOf} />
           ) : activeView === 'trends' ? (
             <Suspense fallback={<ChartFallback />}>
-              <TrendChart
-                range={trendRange}
-                monthlyData={trendMonthlyData}
-                isLoading={trendQuery.isLoading}
-                error={trendError}
-              />
-              {!trendError && <TrendSummary {...trendSummary} />}
+              <TrendsView month={month} year={year} range={trendRange} asOf={asOf} />
             </Suspense>
           ) : showPayees ? (
             <PayeeExplorer month={month} year={year} asOf={asOf} />
