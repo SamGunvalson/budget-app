@@ -82,7 +82,7 @@ export default defineConfig(({ mode }) => ({
           "assets/vendor-*.js", // react, react-dom, react-router
           "assets/postgrest-*.js", // API client needed at boot
           "assets/utils-*.js", // date-fns, dexie (offline layer)
-          "assets/TopBar-*.js", // app shell nav
+          "assets/shell-*.js", // app shell nav (TopBar; pinned in manualChunks)
           "**/*.{svg,png,ico,woff,woff2}",
         ],
         navigateFallback: "index.html",
@@ -148,6 +148,10 @@ export default defineConfig(({ mode }) => ({
             "@dnd-kit/modifiers",
           ],
           utils: ["date-fns", "dexie"],
+          // Pinned so the precache glob above has a stable name: as a plain
+          // shared chunk, Rollup names it after whichever module it groups
+          // TopBar with, which changes as pages share more components.
+          shell: ["./src/components/common/TopBar.jsx"],
         },
       },
     },

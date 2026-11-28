@@ -15,6 +15,7 @@ import {
   signedAmount,
   sumMonths,
   typeMixByMonth,
+  withCurrentCategories,
 } from '../src/utils/reportAggregations.js';
 
 const CATS = {
@@ -178,15 +179,41 @@ test('flowGraph routes income through types to categories with a left-over node'
     tx('rent', 500, '2026-01-01'),
     tx('groceries', 100, '2026-01-01'),
     tx('dining', 150, '2026-01-01'),
-    tx('dining', 200, '2026-01-02', { is_income: true }), // net negative: dropped
+    tx('dining', 200, '2026-01-02', { is_income: true }), // net refund of 50: a source
     tx('transfer', 50, '2026-01-01'),
   ]);
   assert.deepEqual(flowSummary(graph), [
     'Salary>Income:1000',
+    'Dining refunds>Income:50',
     'Income>Needs:600',
     'Needs>Rent:500',
     'Needs>Groceries:100',
-    'Income>Left in checking:400',
+    'Income>Left in checking:450',
+  ]);
+});
+
+test('flowGraph leaves the same remainder as Overview when a refund is in its own category', () => {
+  // $1,000 income, $200 of purchases, a $50 refund in a separate category.
+  const graph = flowGraph([
+    tx('salary', 100000, '2026-01-01'),
+    tx('rent', 20000, '2026-01-01'),
+    tx('dining', 5000, '2026-01-02', { is_income: true }),
+  ]);
+  const leftover = graph.links.find((l) => graph.nodes[l.target].kind === 'leftover');
+  assert.equal(leftover.value, 85000);
+  assert.equal(graph.nodes.find((n) => n.kind === 'credit').id, 'din');
+});
+
+test('flowGraph routes a net-negative income category out of the hub', () => {
+  const debit = flowGraph([
+    tx('salary', 300, '2026-01-01', { is_income: false }),
+    tx('rent', 100, '2026-01-01'),
+  ]);
+  assert.deepEqual(flowSummary(debit), [
+    'From savings & other>Income:400',
+    'Income>Needs:100',
+    'Needs>Rent:100',
+    'Income>Salary reversals:300',
   ]);
 });
 
@@ -312,6 +339,7 @@ test('largestTransactions lists the biggest spending rows in the period only', (
     tx('groceries', 20000, '2026-03-06', { is_income: true }), // refund
     tx('salary', 500000, '2026-03-15'),
     tx('transfer', 900000, '2026-03-20'),
+    tx('invest', -500000, '2026-03-21'), // savings contribution, not a purchase
     tx('dining', -300000, '2026-02-10'), // other month
   ];
   assert.deepEqual(largestTransactions(rows, ['2026-03'], 5).map((t) => t.amount), [-150000, -8000]);
@@ -523,4 +551,13 @@ test('flowGraph treats a net withdrawal from savings as a source', () => {
   ]);
   const [into, out] = hubBalance(graph);
   assert.equal(into, out);
+});
+
+test('withCurrentCategories applies the current name and color, keeping type', () => {
+  const rows = [tx('rent', 500, '2026-01-01'), tx('dining', 100, '2026-01-01')];
+  assert.equal(withCurrentCategories(rows, [{ id: 'rent', name: 'Rent', color: '#a00' }]), rows);
+  const next = withCurrentCategories(rows, [{ id: 'rent', name: 'Housing', color: '#123456', type: 'wants' }]);
+  assert.deepEqual(next[0].categories, { id: 'rent', name: 'Housing', type: 'needs', color: '#123456' });
+  assert.equal(next[1], rows[1]);
+  assert.equal(CATS.rent.color, '#a00'); // input not mutated
 });

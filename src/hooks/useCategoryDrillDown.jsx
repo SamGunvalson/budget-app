@@ -13,6 +13,7 @@ const noop = () => {};
  *   transactions: Array,        // already limited to the report's period and settled rule
  *   categories: Array,          // all categories, for the recategorize picker
  *   setTransactions: Function,  // optimistic setter for the backing query cache
+ *   companionSource?: Array,    // rows holding the other leg of an edited transfer
  *   onDataChanged?: () => void,
  *   resetKey: string,           // collapse the drill-down whenever this changes
  *   initialExpandedId?: string | null, // category open on first render (deep links)
@@ -28,6 +29,7 @@ export default function useCategoryDrillDown({
   transactions,
   categories,
   setTransactions,
+  companionSource,
   onDataChanged = noop,
   resetKey,
   initialExpandedId = null,
@@ -56,9 +58,10 @@ export default function useCategoryDrillDown({
         onClose={close}
         onDataChanged={onDataChanged}
         setAllTransactions={setTransactions}
+        companionSource={companionSource}
       />
     ),
-    [transactions, categories, close, onDataChanged, setTransactions],
+    [transactions, categories, close, onDataChanged, setTransactions, companionSource],
   );
 
   return { expandedId, toggle, close, render };

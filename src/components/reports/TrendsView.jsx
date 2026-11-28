@@ -56,7 +56,8 @@ const PANEL_SUB = 'text-xs text-stone-500 dark:text-stone-400';
 const AXIS = { tick: { fill: CHART_AXIS, fontSize: 12 }, axisLine: false, tickLine: false };
 
 /**
- * Legend props: labels in the axis text color (the dot carries identity) and
+ * Legend props: labels in theme-aware secondary text (the dot carries
+ * identity; the fixed axis gray is too faint on the dark panel) and
  * items in series order. Recharts sorts legend items by name by default;
  * `order` lists dataKeys in stack order instead.
  */
@@ -65,7 +66,7 @@ const legendProps = (order) => ({
   align: 'right',
   iconType: 'circle',
   wrapperStyle: { fontSize: 13, paddingBottom: 8 },
-  formatter: (value) => <span style={{ color: CHART_AXIS }}>{value}</span>,
+  formatter: (value) => <span className="text-stone-600 dark:text-stone-300">{value}</span>,
   itemSorter: (item) => order.indexOf(item.dataKey),
 });
 

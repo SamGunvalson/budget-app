@@ -19,6 +19,9 @@ const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
 const premasked = (dollars) => formatPreMaskedDollars(dollars, 'USD', { hideCents: true });
 const PANEL = 'animate-fade-in rounded-2xl border border-stone-200/60 bg-white p-6 shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50';
 
+/** Nodes that stand for one category and open its transactions. */
+const isCategoryNode = (node) => node.kind === 'category' || node.kind === 'credit' || node.kind === 'debit';
+
 /** Fill for a flowGraph node: type nodes use the validated MIX_COLORS. */
 function nodeColor(node) {
   switch (node.kind) {
@@ -39,7 +42,7 @@ function nodeColor(node) {
  */
 function FlowNode({ x, y, width, height, payload, onPick }) {
   const isLeaf = !(payload.targetLinks?.length);
-  const clickable = payload.kind === 'category' && onPick;
+  const clickable = isCategoryNode(payload) && onPick;
   const labelX = isLeaf ? x - 8 : x + width + 8;
   return (
     <g
@@ -94,7 +97,11 @@ function FlowTooltip({ active, payload }) {
  */
 function FlowList({ graph, onPick }) {
   const { nodes, links } = graph;
-  const income = links.filter((l) => l.target === 0).reduce((s, l) => s + l.value, 0);
+  // Actual income only: the hub's other sources (refunds, the shortfall from
+  // savings & other) would make spending look like a smaller share.
+  const income = links
+    .filter((l) => l.target === 0 && nodes[l.source].kind === 'income')
+    .reduce((s, l) => s + l.value, 0);
   const branches = links.filter((l) => l.source === 0).map((l) => ({
     node: nodes[l.target],
     value: l.value,
@@ -102,9 +109,10 @@ function FlowList({ graph, onPick }) {
   }));
   const sources = links.filter((l) => l.target === 0).map((l) => ({ node: nodes[l.source], value: l.value }));
   const pct = (v) => (income > 0 ? `${Math.round((v / income) * 100)}%` : '');
+  const barWidth = (v) => (income > 0 ? `${Math.min(100, (v / income) * 100)}%` : '0%');
 
   const Row = ({ node, value, indent = false }) => {
-    const clickable = node.kind === 'category';
+    const clickable = isCategoryNode(node);
     const body = (
       <>
         <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: nodeColor(node) }} />
@@ -131,10 +139,10 @@ function FlowList({ graph, onPick }) {
         <section key={b.node.name}>
           <div className="mb-1 flex items-baseline justify-between">
             <h4 className="text-[11px] font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">{b.node.name}</h4>
-            <span className="text-xs text-stone-500 dark:text-stone-400">{pct(b.value)} of income</span>
+            {income > 0 && <span className="text-xs text-stone-500 dark:text-stone-400">{pct(b.value)} of income</span>}
           </div>
           <div className="mb-1 h-1.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700" aria-hidden="true">
-            <div className="h-full rounded-full" style={{ width: pct(b.value) || '0%', backgroundColor: nodeColor(b.node) }} />
+            <div className="h-full rounded-full" style={{ width: barWidth(b.value), backgroundColor: nodeColor(b.node) }} />
           </div>
           {b.children.length === 0
             ? <Row node={b.node} value={b.value} />

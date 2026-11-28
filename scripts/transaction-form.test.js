@@ -8,6 +8,7 @@ import {
   isValidInlineDate,
   isValidInlineEdit,
   toAmountForAccountError,
+  transferEditProps,
 } from '../src/utils/transactionFormRules.js';
 
 // UI-2 — inline cell edits that the database would reject are not queued.
@@ -128,4 +129,15 @@ test('debounced search emits nothing when the text is already current', () => {
   assert.equal(filtersWithSearchText({ type: 'all' }, ''), null);
   assert.equal(filtersWithSearchText({ searchText: 'tea', type: 'all' }, 'tea'), null);
   assert.deepEqual(filtersWithSearchText({ searchText: 'tea', type: 'all' }, ''), { searchText: '', type: 'all' });
+});
+
+// Editing one leg of a transfer from a report drill-down must see the other leg.
+test('transferEditProps finds the companion leg of a linked or plain transfer', () => {
+  const xfer = { type: 'transfer' };
+  const main = { id: 'm', transfer_group_id: 'g', account_id: 'chk', amount: -50000, categories: { type: 'savings' } };
+  const companion = { id: 'c', transfer_group_id: 'g', account_id: 'ret', amount: 50000, categories: xfer };
+  const rows = [main, companion, { id: 'z', transfer_group_id: 'other', account_id: 'x', categories: xfer }];
+  assert.deepEqual(transferEditProps(main, rows), { transferCompanionAmount: 50000, linkedAccountId: 'ret' });
+  assert.deepEqual(transferEditProps(companion, rows), { transferCompanionAccountId: 'chk', transferCompanionAmount: -50000 });
+  assert.deepEqual(transferEditProps({ id: 'solo', categories: { type: 'needs' } }, rows), {});
 });

@@ -156,7 +156,7 @@ export default function Overview({ month, year, viewMode, asOf }) {
     },
     plan.overCount > 0 && {
       key: 'over',
-      to: reportsLink({ view: 'categories', compare: 'plan', ...(plan.overCount === 1 ? { category: plan.overIds[0] } : {}) }),
+      to: reportsLink({ view: 'categories', lens: 'list', compare: 'plan', ...(plan.overCount === 1 ? { category: plan.overIds[0] } : {}) }),
       text: plan.overCount === 1
         ? `${categoryName(plan.overIds[0])} is over plan`
         : `${plan.overCount} categories over plan`,
@@ -281,7 +281,7 @@ export default function Overview({ month, year, viewMode, asOf }) {
             <ul className="mt-3 space-y-1">
               {movers.map((row) => (
                 <li key={row.categoryId}>
-                  <Link to={reportsLink({ view: 'categories', category: row.categoryId, compare: moverBasis.mode })} className={ROW_LINK}>
+                  <Link to={reportsLink({ view: 'categories', lens: 'list', category: row.categoryId, compare: moverBasis.mode })} className={ROW_LINK}>
                     <CategoryWell category={{ name: row.name, color: row.color }} className="h-8 w-8 text-xs" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-stone-900 dark:text-stone-100">{row.name}</span>
@@ -308,7 +308,7 @@ export default function Overview({ month, year, viewMode, asOf }) {
             <ul className="mt-3 space-y-1">
               {largest.map((tx) => (
                 <li key={tx.id}>
-                  <Link to={reportsLink({ view: 'categories', category: tx.category_id })} className={ROW_LINK}>
+                  <Link to={reportsLink({ view: 'categories', lens: 'list', category: tx.category_id })} className={ROW_LINK}>
                     <CategoryWell category={tx.categories} className="h-8 w-8 text-xs" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-stone-900 dark:text-stone-100">{tx.payee || tx.description}</span>

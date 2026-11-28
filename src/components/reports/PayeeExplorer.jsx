@@ -47,13 +47,16 @@ export default function PayeeExplorer({ month, year, asOf }) {
   const [saveError, setSaveError] = useState('');
 
   const windowKeys = useMemo(() => payeeWindowKeys(year, month), [year, month]);
-  const { settled, categories, setYearTransactions, isLoading, failed } = useReportData({
+  const { allTransactions, settled, categories, setYearTransactions, isLoading, failed } = useReportData({
     year,
     keyLists: [windowKeys],
     asOf,
   });
   const prefQuery = useUserPreference(IGNORED_PAYEES_PREF);
   const ignored = useMemo(() => ignoredPayeesFrom(prefQuery.data), [prefQuery.data]);
+  // Ignoring writes the whole list, so it needs the saved list first: while it
+  // loads, or if its read failed, the empty fallback would erase it.
+  const ignoreReady = prefQuery.isSuccess;
 
   const windowTransactions = useMemo(() => {
     const keys = new Set(windowKeys);
@@ -90,6 +93,7 @@ export default function PayeeExplorer({ month, year, asOf }) {
   }, [isLoading, focusPayee]);
 
   const handleToggleIgnore = async (key) => {
+    if (!ignoreReady) return;
     const next = { payees: toggleIgnoredPayee(ignored, key) };
     const queryKey = ['user_preferences', IGNORED_PAYEES_PREF];
     const previous = queryClient.getQueryData(queryKey);
@@ -211,7 +215,9 @@ export default function PayeeExplorer({ month, year, asOf }) {
                   {(group.mixed || group.ignored) && <button
                     type="button"
                     onClick={() => handleToggleIgnore(group.key)}
-                    className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
+                    disabled={!ignoreReady}
+                    title={ignoreReady ? undefined : (prefQuery.isError ? 'Ignored payees could not be loaded' : 'Loading ignored payees…')}
+                    className="shrink-0 rounded-lg disabled:cursor-not-allowed disabled:opacity-50 px-2.5 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-200"
                   >
                     {group.ignored ? 'Unignore' : 'Ignore'}
                   </button>}
@@ -226,6 +232,7 @@ export default function PayeeExplorer({ month, year, asOf }) {
                       onClose={() => setExpandedKey(null)}
                       onDataChanged={() => {}}
                       setAllTransactions={setYearTransactions}
+                      companionSource={allTransactions}
                     />
                   </div>
                 )}

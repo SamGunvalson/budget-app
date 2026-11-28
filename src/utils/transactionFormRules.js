@@ -82,3 +82,30 @@ export function filtersWithSearchText(latestFilters, searchText) {
   if ((latestFilters.searchText || '') === searchText) return null;
   return { ...latestFilters, searchText };
 }
+
+/**
+ * Companion-leg props for editing a transaction in TransactionForm. Without
+ * them the form treats a transfer leg or a linked transfer's main leg as a
+ * standalone row and saves only that side.
+ *
+ * @param {object} tx           the transaction being edited
+ * @param {Array} transactions  rows to search for the other leg(s)
+ * @returns {{ transferCompanionAccountId?: string, transferCompanionAmount?: number, linkedAccountId?: string }}
+ */
+export function transferEditProps(tx, transactions) {
+  if (!tx?.transfer_group_id) return {};
+  const others = (transactions ?? []).filter(
+    (t) => t.transfer_group_id === tx.transfer_group_id && t.id !== tx.id,
+  );
+  const companion = others[0];
+  if (tx.categories?.type === 'transfer') {
+    return {
+      transferCompanionAccountId: companion?.account_id,
+      transferCompanionAmount: companion?.amount,
+    };
+  }
+  return {
+    transferCompanionAmount: companion?.amount,
+    linkedAccountId: others.find((t) => t.categories?.type === 'transfer')?.account_id,
+  };
+}

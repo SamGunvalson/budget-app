@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAnnualBudgetData, useCategories, useTransactionsForYears } from './queries';
 import { isSettledTransaction } from '../utils/helpers';
 import { isQueryUnavailable } from '../utils/queryState';
-import { categoryMonthMatrix, yearsForKeys } from '../utils/reportAggregations';
+import { categoryMonthMatrix, withCurrentCategories, yearsForKeys } from '../utils/reportAggregations';
 
 /**
  * Data shared by the client-computed Reports tabs (Overview, Categories,
@@ -32,10 +32,16 @@ export default function useReportData({ year, keyLists, asOf, withBudget = false
   // useQueries returns a new array every render, so key the memo on when each
   // year's data last changed (optimistic setQueryData bumps it too).
   const dataVersion = yearQueries.map((q) => `${q.dataUpdatedAt}:${q.data ? 1 : 0}`).join(',');
-  const settled = useMemo(
-    () => yearQueries.flatMap((q) => q.data ?? []).filter((t) => isSettledTransaction(t, asOf)),
+  const allTransactions = useMemo(
+    () => yearQueries.flatMap((q) => q.data ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dataVersion tracks yearQueries' data
-    [dataVersion, asOf],
+    [dataVersion],
+  );
+  // Current category names/colors, so Flow, the matrix and List agree right
+  // after a recolor instead of waiting for the transaction queries to refetch.
+  const settled = useMemo(
+    () => withCurrentCategories(allTransactions.filter((t) => isSettledTransaction(t, asOf)), categories),
+    [allTransactions, asOf, categories],
   );
 
   const matrix = useMemo(() => categoryMonthMatrix(settled), [settled]);
@@ -58,6 +64,8 @@ export default function useReportData({ year, keyLists, asOf, withBudget = false
   if (withBudget) queries.push(budgetQuery);
 
   return {
+    /** Every loaded row, unfiltered: the drill-down finds transfer legs here. */
+    allTransactions,
     settled,
     matrix,
     categories,
