@@ -305,9 +305,9 @@ export default function MyPage() {
 
 1. Never call `getCurrentMonthYear()` directly in a page/component to initialize month/year state — use `useMonthYear()` instead.
 2. Always call `setMonthYear(m, y)` when the user changes the period so the context and `sessionStorage` stay in sync.
-3. Components that accept month/year as props from a parent (e.g. `PlanVsActual` embedded in `ReportsPage`) should fall back to the context value when no prop is provided.
+3. Components that accept month/year as props from a parent (e.g. `AnnualActualsTable` embedded in `ReportsPage`) should fall back to the context value when no prop is provided.
 
-**Files following this pattern:** `ReportsPage`, `TransactionsPage`, `BudgetForm`, `PlanVsActual`, `AnnualActualsTable`, `AnnualBudgetTable`.
+**Files following this pattern:** `ReportsPage`, `TransactionsPage`, `BudgetForm`, `AnnualActualsTable`, `AnnualBudgetTable`.
 
 ---
 
@@ -875,7 +875,7 @@ Call them after the save succeeds, never before.
   `DataUnavailable` (`src/components/common/DataUnavailable.jsx`) with a Try
   again button instead of the figures, and leave that query's error out of the
   page's red banner so it isn't reported twice. Used by Transactions, Accounts,
-  Budgets, and Reports' Summary and Plan vs Actual. Cached data always wins:
+  Budgets, and Reports' Categories tab. Cached data always wins:
   the card only appears when there's nothing to show.
 - **Page loading:** `PageSkeletons.jsx` mirrors each page's real layout (top
   bar, eyebrow + title, forest summary card, hairline list panels). When a

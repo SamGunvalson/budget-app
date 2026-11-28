@@ -1,6 +1,6 @@
 # Reports Redesign Plan
 
-Status: PR 1 (shell + data layer) done, uncommitted · PRs 2–6 pending · 2026-11-28
+Status: PR 1 done · PR 2 (Categories list) done, uncommitted · PRs 3–6 pending · 2026-11-28
 Follows: [UI_OVERHAUL_PLAN.md](UI_OVERHAUL_PLAN.md) (Phase 5 Overview moves here, inside Reports; `/app` keeps landing on Transactions)
 
 ## Goals
@@ -112,11 +112,14 @@ hero or Accounts' Coming up.
 
 One explorer for the period, with three views (segmented):
 
-- **List** (default): rows grouped by type with subtotals (reuse the grouping in
-  `CategoryComparison`). Income comes first.
-  - **Compare to:** Plan | Last month | 3-mo average. Columns: Actual, the
-    comparison value, the change, and a thin bar. Plan uses the existing
-    `usePlanVsActual(YTD)` hooks. The other two come from `categoryMonthMatrix`.
+- **List** (default): rows grouped by type with subtotals. Income comes first.
+  Built in `CategoryExplorer.jsx`.
+  - **Compare to:** Monthly offers Plan | Last month | 3-mo average. YTD offers
+    Plan | Last year (the same months a year earlier), because a 3-month
+    average means little against a year to date. Each row shows the actual,
+    the comparison value, the change, and a thin bar. Everything comes from
+    `categoryMonthMatrix` and `useAnnualBudgetData`, so it works offline,
+    like Annual Actuals; the server `usePlanVsActual` RPC is no longer used here.
   - Threshold coloring (warning and danger) only in Plan mode, using the same
     `categoryAlert` rules as Budgets.
   - Every row expands into the editable drill-down.
@@ -179,7 +182,7 @@ views still use. Keep `BudgetAlert` if other pages import it.
 1. ✅ **Shell + data layer:** `PageHeader`, ink tabs, shared control row,
    `reportAggregations.js` with tests, `useCategoryDrillDown`. No new
    user-facing reports yet.
-2. **Categories › List** with compare-to. Removes Summary and Plan vs Actual.
+2. ✅ **Categories › List** with compare-to. Removes Summary and Plan vs Actual.
 3. **Overview** tab (default).
 4. **Categories › Payees** and the ignore list.
 5. **Trends** rebuild (mix, fixed/flexible, category trend).

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import LoginForm from '../components/common/LoginForm';
 import SignupForm from '../components/common/SignupForm';
-import { getSession, onAuthStateChange } from '../services/auth';
+import { getSession } from '../services/auth';
+import useAuth from '../hooks/useAuth';
 import { getConnectionErrorMessage, isLikelyConnectionError } from '../utils/connectionErrors';
 import BrandMark from '../components/common/BrandMark';
 
@@ -35,67 +36,40 @@ const features = [
 
 function AuthPage() {
   const [mode, setMode] = useState('login');
-  const [isChecking, setIsChecking] = useState(true);
   const [connectionError, setConnectionError] = useState('');
-  const navigate = useNavigate();
+  // Redirect only from the shared AuthProvider session, the same source
+  // ProtectedRoute reads. The provider exposes a new session only after the
+  // offline mirror is claimed for that user; redirecting on the adapter's
+  // session before then made the two routes bounce /auth <-> /app until React
+  // aborted with "Maximum update depth exceeded".
+  const { session, isChecking } = useAuth();
 
   useEffect(() => { document.title = 'Budget App | Sign In'; }, []);
 
+  // Surface an unreachable server on the sign-in page.
   useEffect(() => {
     let isMounted = true;
+    getSession()
+      .then(({ error }) => {
+        if (!isMounted || !error) return;
+        if (isLikelyConnectionError(error)) setConnectionError(getConnectionErrorMessage(error));
+        else console.error('AuthPage: session check failed', error);
+      })
+      .catch((error) => {
+        if (isMounted) setConnectionError(getConnectionErrorMessage(error));
+      });
+    return () => { isMounted = false; };
+  }, []);
 
-    const checkSession = async () => {
-      try {
-        const { session, error } = await getSession();
-        if (!isMounted) return;
-
-        if (error) {
-          if (isLikelyConnectionError(error)) {
-            setConnectionError(getConnectionErrorMessage(error));
-          } else {
-            console.error('AuthPage: session check failed', error);
-          }
-        }
-
-        if (session) {
-          navigate('/app', { replace: true });
-          return;
-        }
-
-        setIsChecking(false);
-      } catch (error) {
-        if (!isMounted) return;
-        setConnectionError(getConnectionErrorMessage(error));
-        setIsChecking(false);
-      }
-    };
-
-    checkSession();
-
-    const unsubscribe = onAuthStateChange(
-      (_event, session) => {
-        if (!isMounted) return;
-
-        if (session) {
-          navigate('/app', { replace: true });
-        }
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      unsubscribe?.();
-    };
-  }, [navigate]);
-
-  const handleSuccess = (session) => {
-    if (session) {
-      navigate('/app', { replace: true });
-      return;
-    }
-
-    setMode('login');
+  // A signed-in session arrives through the AuthProvider and redirects below.
+  // Sign-up without a session (e.g. email confirmation) returns to sign-in.
+  const handleSuccess = (nextSession) => {
+    if (!nextSession) setMode('login');
   };
+
+  if (session) {
+    return <Navigate to="/app" replace />;
+  }
 
   if (isChecking) {
     return (

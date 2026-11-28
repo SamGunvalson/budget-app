@@ -95,13 +95,9 @@ export function ReportsSkeleton() {
   return (
     <Shell>
       <HeaderSkeleton />
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6">
-        <div className="col-span-2 h-32 animate-pulse rounded-2xl bg-forest/85 sm:col-span-1" />
-        <div className={`h-32 ${panel}`} />
-        <div className={`h-32 ${panel}`} />
-      </div>
-      <div className={`mb-6 h-64 ${panel}`} />
-      <ListPanel rows={5} well={false} />
+      {/* Categories tab: totals panel, then grouped category rows */}
+      <div className={`mb-6 h-28 ${panel}`} />
+      <ListPanel rows={5} />
     </Shell>
   );
 }

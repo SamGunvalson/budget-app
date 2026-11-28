@@ -195,3 +195,72 @@ test('flowGraph adds a shortfall source when spending exceeds income', () => {
   ]);
   assert.deepEqual(flowGraph([]), { nodes: [], links: [] });
 });
+
+// ── Categories tab ──
+import {
+  categoryComparisonGroups,
+  categoryTotals,
+  comparisonPeriod,
+  plannedByCategory,
+  reportPeriodKeys,
+  resolveCompareMode,
+  yearsForKeys,
+} from '../src/utils/reportAggregations.js';
+
+test('compare modes fall back to plan when not offered for the period', () => {
+  assert.equal(resolveCompareMode('monthly', 'avg3'), 'avg3');
+  assert.equal(resolveCompareMode('ytd', 'avg3'), 'plan');
+  assert.equal(resolveCompareMode('monthly', 'lastYear'), 'plan');
+  assert.equal(resolveCompareMode('ytd', 'lastYear'), 'lastYear');
+});
+
+test('period and comparison keys cross year boundaries', () => {
+  assert.deepEqual(reportPeriodKeys(2026, 3, 'monthly'), ['2026-03']);
+  assert.deepEqual(reportPeriodKeys(2026, 3, 'ytd'), ['2026-01', '2026-02', '2026-03']);
+  assert.deepEqual(comparisonPeriod(2026, 1, 'monthly', 'lastMonth'), { keys: ['2025-12'], divisor: 1, plan: false });
+  assert.deepEqual(comparisonPeriod(2026, 2, 'monthly', 'avg3'), { keys: ['2025-11', '2025-12', '2026-01'], divisor: 3, plan: false });
+  assert.deepEqual(comparisonPeriod(2026, 2, 'ytd', 'lastYear'), { keys: ['2025-01', '2025-02'], divisor: 1, plan: false });
+  assert.deepEqual(comparisonPeriod(2026, 2, 'ytd', 'avg3'), { keys: ['2026-01', '2026-02'], divisor: 1, plan: true });
+  assert.deepEqual(yearsForKeys(['2026-02'], ['2025-11', '2025-12', '2026-01']), [2025, 2026]);
+});
+
+test('plannedByCategory sums allocations over the period months of one year', () => {
+  const annual = { 1: { allocations: { a: 100, b: 50 } }, 2: { allocations: { a: 120 } } };
+  assert.deepEqual(plannedByCategory(annual, ['2026-01', '2026-02', '2026-03'], 2026), { a: 220, b: 50 });
+  assert.deepEqual(plannedByCategory(annual, ['2025-12'], 2026), {});
+  assert.deepEqual(plannedByCategory(undefined, ['2026-01'], 2026), {});
+});
+
+test('categoryTotals averages over the divisor and drops zero rows', () => {
+  const m = categoryMonthMatrix([
+    tx('groceries', 300, '2026-01-02'),
+    tx('groceries', 400, '2026-02-02'),
+    tx('dining', 100, '2026-01-03'),
+    tx('dining', 100, '2026-01-04', { is_income: true }),
+  ]);
+  assert.deepEqual(categoryTotals(m, ['2026-01', '2026-02', '2026-03'], 3), { gro: 233 });
+  assert.deepEqual(categoryTotals(m, ['2026-01']), { gro: 300 });
+});
+
+test('categoryComparisonGroups orders types, totals groups and skips transfers and empty rows', () => {
+  const categories = [
+    { id: 'sal', name: 'Salary', type: 'income', color: '#0a0' },
+    { id: 'rent', name: 'Rent', type: 'needs', color: '#a00' },
+    { id: 'gro', name: 'Groceries', type: 'needs', color: '#aa0', is_archived: true },
+    { id: 'din', name: 'Dining', type: 'wants', color: '#00a' },
+    { id: 'xfer', name: 'Transfer', type: 'transfer' },
+  ];
+  const groups = categoryComparisonGroups({
+    actual: { sal: 5000, gro: 800, rent: 1500, xfer: 999, din: 0 },
+    compare: { sal: 5000, rent: 1500, gro: 600, din: 0, ghost: 40 },
+    categories,
+    meta: { ghost: { name: 'Old', color: null, type: 'wants' } },
+  });
+  assert.deepEqual(groups.map((g) => [g.type, g.actual, g.compare]), [
+    ['income', 5000, 5000],
+    ['needs', 2300, 2100],
+    ['wants', 0, 40],
+  ]);
+  assert.deepEqual(groups[1].rows.map((r) => [r.categoryId, r.change, r.archived]), [['rent', 0, false], ['gro', 200, true]]);
+  assert.equal(groups[2].rows[0].name, 'Old');
+});

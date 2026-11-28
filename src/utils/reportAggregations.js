@@ -318,3 +318,140 @@ export function flowGraph(transactions) {
 
   return links.length > 0 ? { nodes, links } : { nodes: [], links: [] };
 }
+
+// ── Categories tab: period + comparison ─────────────────────────────────────
+
+/** Comparison choices per period mode. The first entry is the default. */
+export const COMPARE_OPTIONS = {
+  monthly: [
+    { value: 'plan', label: 'Plan' },
+    { value: 'lastMonth', label: 'Last month' },
+    { value: 'avg3', label: '3-mo avg' },
+  ],
+  ytd: [
+    { value: 'plan', label: 'Plan' },
+    { value: 'lastYear', label: 'Last year' },
+  ],
+};
+
+/** A compare mode valid for `viewMode` ('monthly' | 'ytd'), falling back to 'plan'. */
+export function resolveCompareMode(viewMode, mode) {
+  const options = COMPARE_OPTIONS[viewMode] ?? COMPARE_OPTIONS.monthly;
+  return options.some((o) => o.value === mode) ? mode : 'plan';
+}
+
+/** Month keys covered by the selected period. YTD runs January through `month`. */
+export function reportPeriodKeys(year, month, viewMode) {
+  return viewMode === 'ytd' ? monthRange(year, month, month) : [monthKey(year, month)];
+}
+
+/**
+ * Month keys whose actuals form the comparison value, and the divisor that
+ * turns their sum into it (3 for a 3-month average). Plan mode compares
+ * against the plan for the period's own months.
+ * @returns {{ keys: string[], divisor: number, plan: boolean }}
+ */
+export function comparisonPeriod(year, month, viewMode, mode) {
+  const resolved = resolveCompareMode(viewMode, mode);
+  if (resolved === 'lastMonth') {
+    const prev = shiftMonth(year, month, -1);
+    return { keys: [monthKey(prev.year, prev.month)], divisor: 1, plan: false };
+  }
+  if (resolved === 'avg3') {
+    const prev = shiftMonth(year, month, -1);
+    return { keys: monthRange(prev.year, prev.month, 3), divisor: 3, plan: false };
+  }
+  if (resolved === 'lastYear') {
+    return { keys: monthRange(year - 1, month, month), divisor: 1, plan: false };
+  }
+  return { keys: reportPeriodKeys(year, month, viewMode), divisor: 1, plan: true };
+}
+
+/** Calendar years whose transactions the period and its comparison need. */
+export function yearsForKeys(...keyLists) {
+  const years = new Set();
+  for (const keys of keyLists) for (const key of keys) years.add(Number(key.slice(0, 4)));
+  return [...years].sort((a, b) => a - b);
+}
+
+/**
+ * Planned cents per category over `keys`, from `useAnnualBudgetData` output
+ * (`{ [month]: { allocations: { [categoryId]: cents } } }`) for `year`.
+ * Keys outside `year` are ignored.
+ */
+export function plannedByCategory(annualBudget, keys, year) {
+  const totals = {};
+  for (const key of keys) {
+    if (Number(key.slice(0, 4)) !== year) continue;
+    const allocations = annualBudget?.[Number(key.slice(5, 7))]?.allocations ?? {};
+    for (const [id, cents] of Object.entries(allocations)) {
+      totals[id] = (totals[id] ?? 0) + (cents ?? 0);
+    }
+  }
+  return totals;
+}
+
+/** Per-category totals over `keys` divided by `divisor` (rounded to cents). */
+export function categoryTotals(matrix, keys, divisor = 1) {
+  const totals = {};
+  for (const [id, row] of Object.entries(matrix.byCategory)) {
+    const sum = sumMonths(row, keys);
+    if (sum !== 0) totals[id] = Math.round(sum / divisor);
+  }
+  return totals;
+}
+
+const GROUP_ORDER = ['income', ...SPENDING_TYPES, 'other'];
+
+/**
+ * Category rows grouped by type (income, needs, wants, savings, other) with
+ * group subtotals. Rows with neither an actual nor a comparison value are
+ * left out; transfers never appear. Rows sort by the larger of actual and
+ * comparison, descending.
+ *
+ * @param {{
+ *   actual: Record<string, number>,
+ *   compare: Record<string, number>,
+ *   categories?: Array<{ id: string, name: string, color?: string, type: string, is_archived?: boolean }>,
+ *   meta?: Record<string, { name: string, color: string | null, type: string }>,
+ * }} input
+ * @returns {Array<{ type: string, actual: number, compare: number, rows: Array<{
+ *   categoryId: string, name: string, color: string | null, type: string,
+ *   archived: boolean, actual: number, compare: number, change: number }> }>}
+ */
+export function categoryComparisonGroups({ actual, compare, categories = [], meta = {} }) {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const ids = new Set([...Object.keys(actual), ...Object.keys(compare)]);
+  const groups = new Map();
+
+  for (const id of ids) {
+    const cat = byId.get(id);
+    const info = meta[id];
+    const rawType = cat?.type ?? info?.type ?? 'other';
+    if (rawType === 'transfer') continue;
+    const type = GROUP_ORDER.includes(rawType) ? rawType : 'other';
+    const a = actual[id] ?? 0;
+    const c = compare[id] ?? 0;
+    if (a === 0 && c === 0) continue;
+
+    if (!groups.has(type)) groups.set(type, { type, actual: 0, compare: 0, rows: [] });
+    const group = groups.get(type);
+    group.actual += a;
+    group.compare += c;
+    group.rows.push({
+      categoryId: id,
+      name: cat?.name ?? info?.name ?? 'Uncategorized',
+      color: cat?.color ?? info?.color ?? null,
+      type,
+      archived: !!cat?.is_archived,
+      actual: a,
+      compare: c,
+      change: a - c,
+    });
+  }
+
+  for (const group of groups.values()) {
+    group.rows.sort((x, y) => Math.max(y.actual, y.compare) - Math.max(x.actual, x.compare) || x.name.localeCompare(y.name));
+  }
+  return GROUP_ORDER.filter((type) => groups.has(type)).map((type) => groups.get(type));
+}
