@@ -19,6 +19,20 @@ All colors use Tailwind CSS utilities. The theme lives in `src/index.css`:
   **`amber`** is re-tinted to gold, through `@theme`. Existing `stone-*` and
   `amber-*` classes therefore render in the Forest & Gold palette. Do not swap
   them for `gray`, `slate`, `zinc`, or `neutral`.
+- The **accent hues** (`blue`, `sky`, `indigo`, `violet`, `purple`, `fuchsia`,
+  `pink`, `rose`, `teal`, `cyan`, `emerald`, `green`, `lime`, `yellow`) are
+  re-tinted to muted mid-tones from the Cashflow chart. They keep their
+  Tailwind family but sit with forest & gold. Each `-500` is the anchor; other
+  steps follow Tailwind's OKLCH lightness curve, so `-50` tints and `-700`
+  text keep their usual contrast. `yellow` renders as **clay** (gold belongs
+  to `amber`), and `slate` aliases `stone`. `red` and `orange` keep their
+  defaults for errors and warnings.
+- Hex values for charts and category swatches live in
+  `src/constants/palette.js` (`SERIES_COLORS`, `COLOR_FAMILIES`,
+  `TYPE_COLORS`) and are re-exported for Recharts by
+  `src/constants/chartColors.js`. `scripts/palette.test.js` fails if they
+  drift from `index.css`. Do not hard-code Tailwind default hexes
+  (`#10B981`, `#8B5CF6` …) in components.
 - **Semantic tokens** switch automatically with `.dark`. Prefer them in new code:
 
 | Token (utility suffix) | Light | Dark | Use |
@@ -48,11 +62,11 @@ modifiers work (`bg-forest/10`).
 
 - **Success Teal/Emerald**: `text-teal-500`, `bg-emerald-500`
   - Use for: Positive changes, income, growth indicators, feature icons
-  - RGB: `#14B8A6` (teal), `#10B981` (emerald)
+  - Hex: `#2a9d9a` (teal), `#3d9a6e` (emerald / jade)
 
 - **Secondary Violet**: `text-violet-500`, `bg-violet-500`
   - Use for: Reports, analytics accent
-  - RGB: `#8B5CF6`
+  - Hex: `#8b6fc0`
 
 ### Navigation Accents
 
@@ -92,19 +106,33 @@ The legend must distinguish unbudgeted spending from the normal threshold range.
 
 ### Semantic Colors (Categories)
 
-**Default category colors** (from DATA_MODEL.md):
+Category colors come from `COLOR_FAMILIES` in `src/constants/palette.js`:
+15 families (Rose, Coral, Clay, Gold, Olive, Sage, Jade, Teal, Sky, Blue,
+Indigo, Violet, Plum, Orchid, Stone), each with four shades
+(Pale / Light / Mid / Deep = the `300/400/500/700` steps of its Tailwind
+scale). Users group related categories by giving them shades of one family.
+The picker is `ColorPalettePicker`; bulk recoloring and moving old colors onto
+the palette is `CategoryColorsModal` (Categories → Colors).
 
-- Income (earnings): `#10B981` (emerald)
-- Needs (essential): `#EF4444` (red)
-- Wants (discretionary): `#EC4899` (pink)
-- Savings (goals): `#14B8A6` (teal)
-- Transfer (non-budgeting): `#64748B` (slate)
-- _Additional_:
-  - Groceries: `#10B981` (emerald)
-  - Utilities: `#F59E0B` (amber)
-  - Transportation: `#8B5CF6` (violet)
-  - Entertainment: `#06B6D4` (cyan)
-  - Investments: `#6366F1` (indigo)
+**Type colors** (`TYPE_COLORS` in `palette.js`; the dot and group-header
+classes live in `src/constants/typeStyles.js`, never copied into components):
+
+- Income: Jade `#3d9a6e` (`bg-emerald-500`)
+- Needs: Ochre `#8f5f16` (`bg-amber-700`). The deep step reads brown, not the
+  gold of primary buttons (`amber-500`).
+- Wants: Orchid `#a86495` (`bg-fuchsia-500`)
+- Savings: Blue `#4f86c6` (`bg-blue-500`)
+- Transfer: Stone `#647167` (`stone`)
+
+Type dots sit side by side, so this set was chosen with the dataviz palette
+validator comparing **all pairs** in both themes; it is the only palette set
+that passed. (The old coral needs / rose wants were ΔE 4 apart even with full
+color vision.) Separation is in the colorblind floor band, so always show a
+type color with its name. `scripts/palette.test.js` checks that each dot class
+renders the `TYPE_COLORS` hex. Re-run the validator before changing any of them.
+
+New categories default to their type's color until the user picks one.
+Existing categories keep the colors they have.
 
 ### Neutral Scale (Warm Stone)
 
@@ -287,9 +315,9 @@ export default function MyPage() {
 
 1. Never call `getCurrentMonthYear()` directly in a page/component to initialize month/year state — use `useMonthYear()` instead.
 2. Always call `setMonthYear(m, y)` when the user changes the period so the context and `sessionStorage` stay in sync.
-3. Components that accept month/year as props from a parent (e.g. `PlanVsActual` embedded in `ReportsPage`) should fall back to the context value when no prop is provided.
+3. Components that accept month/year as props from a parent (e.g. `AnnualActualsTable` embedded in `ReportsPage`) should fall back to the context value when no prop is provided.
 
-**Files following this pattern:** `ReportsPage`, `TransactionsPage`, `BudgetForm`, `PlanVsActual`, `AnnualActualsTable`, `AnnualBudgetTable`.
+**Files following this pattern:** `ReportsPage`, `TransactionsPage`, `BudgetForm`, `AnnualActualsTable`, `AnnualBudgetTable`.
 
 ---
 
@@ -322,9 +350,9 @@ common one becomes `secondary`.
 **Segmented controls** (Monthly / Yearly, Overview / Cashflow, 1Y / 3Y, filter
 chips): the selected segment is **ink**, not gold:
 `bg-stone-900 text-stone-50 shadow-sm dark:bg-stone-100 dark:text-stone-900`.
-Unselected segments use `text-stone-500 hover:text-stone-700`. Exception: the
-Reports view tabs and their Monthly/YTD toggle keep their per-view colors (see
-the matrix below).
+Unselected segments use `text-stone-500 hover:text-stone-700`. Use the shared
+`SegmentedControl` component (`src/components/common/SegmentedControl.jsx`),
+which also supports a `shortLabel` for narrow screens.
 
 **Button States**:
 
@@ -332,18 +360,17 @@ the matrix below).
 - **Loading**: Change the label (e.g. "Saving…") or show a spinner inside the button
 - **Press feedback**: `active:scale-[0.98]` (built into `Button`)
 
-#### Reports Page — Tab & Sub-Button Color Matrix
+#### Reports Page — Tabs and control row
 
-The Reports page (`ReportsPage`) uses a tab bar where each section has an assigned accent color. **Sub-buttons within a section must use that same accent for their active state**, so the UI feels cohesive when navigating between views.
+The Reports view tabs and every sub-control (Monthly / YTD, the trend range)
+use the ink segmented control like the rest of the app. There are no colors
+per tab. Violet, the Reports page accent, is kept for the nav, the "Needs
+Review" badge and the Include-upcoming switch.
 
-| Section            | Tab active color                | Sub-button active color                                          | Shadow token            |
-| ------------------ | ------------------------------- | ---------------------------------------------------------------- | ----------------------- |
-| **Summary**        | `bg-amber-500`                  | `bg-amber-500`                                                   | `shadow-amber-200/50`   |
-| **Plan vs Actual** | `bg-emerald-500`                | `bg-emerald-500`                                                 | `shadow-emerald-200/50` |
-| **Trends**         | `bg-sky-500`                    | `bg-sky-500`                                                     | `shadow-sky-200/50`     |
-| **Annual Actuals** | `bg-violet-500 → bg-purple-500` | Year selector → `border-violet-200/300`, `focus:ring-violet-500` | `shadow-violet-200/50`  |
-
-When adding new sub-controls inside a Reports section, reference this table to pick the correct active color.
+All views share one control row under the page header, and each view shows
+only the controls that apply to it: period, month or year picker, trend range
+and Include upcoming. Month and year pickers are `MonthYearSelector` and
+`YearSelector`, with the standard gold focus ring.
 
 ### Form Inputs
 
@@ -595,8 +622,7 @@ Used by: Budgets (left in plan), Accounts (net worth), Accounts → Cashflow
 card per screen.
 
 **Report stat rows** use `StatCards` (`src/components/reports/StatCards.jsx`):
-the first card is the forest headline (Net, Left in / Over budget, Average
-spending), and the rest are plain panels with an eyebrow label and an **ink**
+the first card is the forest headline, and the rest are plain panels with an eyebrow label and an **ink**
 figure. Don't color figures by meaning (no orange "actual", no red
 "highest"); `negative: true` marks a bad outcome (peach on forest, red on
 panels).
@@ -604,6 +630,13 @@ panels).
 **Chart series:** income is emerald (`CHART_INCOME`). Spending is **violet**
 (`CHART_SPENDING`, the Reports accent), never amber or orange, which mean
 primary action and warning. Category charts keep each category's own color.
+Charts that put category *types* side by side use `MIX_COLORS` from
+`chartColors.js` (the type colors, plus olive for "Left in checking");
+fixed / flexible use `FIXED_FLEX_COLORS`. Those sets passed the dataviz
+palette validator in both themes; re-run it before changing them. One y-axis per chart (savings
+rate gets its own small chart, not a second axis), legend text in the axis
+color, legend items in stack order, and a 2px `CHART_SURFACE` stroke between
+stacked segments.
 
 **Section labels** above panels and lists use
 `px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 dark:text-stone-300`.
@@ -858,7 +891,7 @@ Call them after the save succeeds, never before.
   `DataUnavailable` (`src/components/common/DataUnavailable.jsx`) with a Try
   again button instead of the figures, and leave that query's error out of the
   page's red banner so it isn't reported twice. Used by Transactions, Accounts,
-  Budgets, and Reports' Summary and Plan vs Actual. Cached data always wins:
+  Budgets, and Reports' Categories tab. Cached data always wins:
   the card only appears when there's nothing to show.
 - **Page loading:** `PageSkeletons.jsx` mirrors each page's real layout (top
   bar, eyebrow + title, forest summary card, hairline list panels). When a

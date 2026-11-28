@@ -1,6 +1,11 @@
-import { useMemo, Fragment } from 'react';
+import { useCallback, useMemo, useState, Fragment } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import Modal from '../common/Modal';
+import CategoryDrillDown from './CategoryDrillDown';
+import { drillDownTransactions, monthKey, txMonthKey } from '../../utils/reportAggregations';
 import {
   formatCurrency,
+  getMonthName,
   isTrueIncome,
   isSpendingCredit,
   isIncomeDebit,
@@ -9,7 +14,6 @@ import {
 import useMonthYear from '../../hooks/useMonthYear';
 import { percentUsed, alertLevel } from '../../utils/budgetCalculations';
 import useThresholds from '../../hooks/useThresholds';
-import useAvailableYears from '../../hooks/useAvailableYears';
 import { budgetCategoryIds } from '../../utils/categoryArchive';
 import {
   useAnnualBudgetData,
@@ -17,6 +21,7 @@ import {
   useTransactionsForYear,
   useUserPreference,
 } from '../../hooks/queries';
+import { TYPE_HEADER_STYLES } from '../../constants/typeStyles';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const SHORT_MONTHS = MONTHS.map((m) =>
@@ -25,36 +30,8 @@ const SHORT_MONTHS = MONTHS.map((m) =>
 
 const DEFAULT_TYPE_ORDER = ['income', 'needs', 'wants', 'savings'];
 
-const TYPE_STYLES = {
-  income: {
-    label: 'Income',
-    headerBg: 'bg-emerald-50 dark:bg-emerald-900/30',
-    stickyBg: 'bg-emerald-50 dark:bg-emerald-950',
-    headerText: 'text-emerald-800 dark:text-emerald-300',
-    headerBorder: 'border-emerald-200/60 dark:border-emerald-700/60',
-  },
-  needs: {
-    label: 'Needs',
-    headerBg: 'bg-red-50 dark:bg-red-900/30',
-    stickyBg: 'bg-red-50 dark:bg-red-950',
-    headerText: 'text-red-800 dark:text-red-300',
-    headerBorder: 'border-red-200/60 dark:border-red-700/60',
-  },
-  wants: {
-    label: 'Wants',
-    headerBg: 'bg-pink-50 dark:bg-pink-900/30',
-    stickyBg: 'bg-pink-50 dark:bg-pink-950',
-    headerText: 'text-pink-800 dark:text-pink-300',
-    headerBorder: 'border-pink-200/60 dark:border-pink-700/60',
-  },
-  savings: {
-    label: 'Savings',
-    headerBg: 'bg-teal-50 dark:bg-teal-900/30',
-    stickyBg: 'bg-teal-50 dark:bg-teal-950',
-    headerText: 'text-teal-800 dark:text-teal-300',
-    headerBorder: 'border-teal-200/60 dark:border-teal-700/60',
-  },
-};
+// Type colors live in one place: constants/typeStyles.js.
+const TYPE_STYLES = TYPE_HEADER_STYLES;
 
 /**
  * Returns Tailwind classes for a cell based on threshold alert level.
@@ -106,15 +83,29 @@ function getCellHighlight(actualCents, plannedCents, thresholds, categoryType) {
  * before it; null/omitted counts every live transaction.
  */
 export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
-  const { month: ctxMonth, year: ctxYear, setMonthYear } = useMonthYear();
+  const { year: ctxYear } = useMonthYear();
   const year = yearProp ?? ctxYear;
   const { thresholds } = useThresholds();
-  const { years } = useAvailableYears();
   const transactionsQuery = useTransactionsForYear(year);
   const transactions = useMemo(
     () => (transactionsQuery.data ?? []).filter((tx) => isSettledTransaction(tx, asOf)),
     [transactionsQuery.data, asOf],
   );
+
+  // Cell drill-down: { categoryId, month } of the open cell, or null. Edits
+  // update the year query cache optimistically, as the other drill-downs do.
+  const queryClient = useQueryClient();
+  const [openCell, setOpenCell] = useState(null);
+  const setYearTransactions = useCallback((updater) => {
+    queryClient.setQueryData(['transactions', 'year', year], (prev) =>
+      typeof updater === 'function' ? updater(prev ?? []) : updater,
+    );
+  }, [queryClient, year]);
+  const cellTransactions = useMemo(() => {
+    if (!openCell) return [];
+    const key = monthKey(year, openCell.month);
+    return drillDownTransactions(transactions, openCell.categoryId).filter((tx) => txMonthKey(tx) === key);
+  }, [openCell, transactions, year]);
   const categoriesQuery = useCategories();
   const typeOrderQuery = useUserPreference('type_group_order');
   const budgetQuery = useAnnualBudgetData(year);
@@ -253,12 +244,6 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
   if (isLoading) {
     return (
       <div className="space-y-4 animate-fade-in">
-        {/* Year selector skeleton */}
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-stone-200 dark:bg-stone-700" />
-          <div className="h-10 w-24 animate-pulse rounded-xl bg-stone-200 dark:bg-stone-700" />
-          <div className="h-10 w-10 animate-pulse rounded-lg bg-stone-200 dark:bg-stone-700" />
-        </div>
         {/* Table skeleton */}
         <div className="h-96 animate-pulse rounded-2xl border border-stone-200/60 bg-white shadow-md shadow-stone-200/30 dark:border-stone-700/60 dark:bg-stone-800 dark:shadow-stone-900/50" />
       </div>
@@ -267,42 +252,9 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
 
   return (
     <div className="space-y-4 animate-fade-in-up">
-      {/* Year selector */}
+      {/* Legend (the year picker lives in the Reports control row) */}
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => { const ny = year - 1; setMonthYear(ctxMonth, ny); }}
-          className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
-          aria-label="Previous year"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-          </svg>
-        </button>
-
-        <select
-          value={year}
-          onChange={(e) => { const ny = Number(e.target.value); setMonthYear(ctxMonth, ny); }}
-          className="rounded-xl border border-violet-300 bg-stone-50/50 px-4 py-2 text-sm font-semibold text-stone-900 transition-colors focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 dark:border-violet-600 dark:bg-stone-700/50 dark:text-stone-100 dark:focus:bg-stone-700"
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-
-        <button
-          type="button"
-          onClick={() => { const ny = year + 1; setMonthYear(ctxMonth, ny); }}
-          className="rounded-lg border border-violet-200 bg-white p-2 text-stone-500 shadow-sm transition-all hover:bg-stone-50 hover:text-stone-700 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-700 dark:bg-stone-800 dark:text-stone-400 dark:hover:bg-stone-700 dark:hover:text-stone-300"
-          aria-label="Next year"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-          </svg>
-        </button>
-
-        {/* Legend */}
-        <div className="ml-auto flex flex-wrap items-center gap-4 text-[10px] text-stone-500 dark:text-stone-400">
+        <div className="flex flex-wrap items-center gap-4 text-[10px] text-stone-500 dark:text-stone-400">
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-3 w-3 rounded border border-emerald-300 bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40" />
             Under budget (&lt;{thresholds.underBudget}%)
@@ -466,9 +418,20 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
                                 key={m}
                                 className={`px-0.5 py-1 text-center text-[11px] ${highlight} ${futureClass(m)}`}
                               >
-                                <span className={`${actualCents === 0 ? 'text-stone-300 dark:text-stone-600' : !highlight ? 'text-stone-800 dark:text-stone-200' : ''}`}>
-                                  {formatCurrency(actualCents, 'USD', { hideCents: true })}
-                                </span>
+                                {actualCents === 0 ? (
+                                  <span className="text-stone-300 dark:text-stone-600">
+                                    {formatCurrency(actualCents, 'USD', { hideCents: true })}
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenCell({ categoryId: cat.id, month: m })}
+                                    aria-label={`${cat.name}, ${getMonthName(m)}: view transactions`}
+                                    className={`w-full rounded px-0.5 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${!highlight ? 'text-stone-800 dark:text-stone-200' : ''}`}
+                                  >
+                                    {formatCurrency(actualCents, 'USD', { hideCents: true })}
+                                  </button>
+                                )}
                               </td>
                             );
                           })}
@@ -573,6 +536,24 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
           </table>
         </div>
       )}
+
+      {openCell && (() => {
+        const cat = categories.find((c) => c.id === openCell.categoryId);
+        return (
+          <Modal title={`${cat?.name ?? 'Category'} · ${getMonthName(openCell.month)} ${year}`} onClose={() => setOpenCell(null)} wide>
+            <CategoryDrillDown
+              transactions={cellTransactions}
+              categories={categories}
+              categoryName={cat?.name ?? 'Category'}
+              categoryColor={cat?.color}
+              onClose={() => setOpenCell(null)}
+              onDataChanged={() => {}}
+              setAllTransactions={setYearTransactions}
+              embedded
+            />
+          </Modal>
+        );
+      })()}
     </div>
   );
 }

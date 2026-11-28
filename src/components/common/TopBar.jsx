@@ -187,7 +187,7 @@ export default function TopBar() {
 
       {/* Desktop page tabs (mobile uses the bottom tab bar) */}
       <div className="hidden border-t border-stone-200/60 desktop:block dark:border-stone-700/60">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto px-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 overflow-x-auto overflow-y-hidden no-scrollbar px-4 sm:px-6">
           {navPages.map((page) => {
             const isActive = pathname === page.link;
             return (
@@ -195,7 +195,7 @@ export default function TopBar() {
                 key={page.id}
                 to={page.link}
                 aria-current={isActive ? 'page' : undefined}
-                className={`-mb-px flex items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navFocus} ${
+                className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-0.5 py-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${page.navFocus} ${
                   isActive
                     ? `${page.tabUnderline} font-semibold text-stone-900 dark:text-stone-100`
                     : 'border-transparent font-medium text-stone-500 hover:border-stone-300 hover:text-stone-800 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-200'

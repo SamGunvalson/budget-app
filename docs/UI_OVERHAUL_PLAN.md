@@ -185,6 +185,9 @@ Order these by how often each page is used:
 
 ## Phase 5: Overview home page (optional, new feature)
 
+> Superseded (2026-11-28): Overview becomes a Reports tab, and `/app` keeps
+> landing on Transactions. See [REPORTS_REDESIGN_PLAN.md](REPORTS_REDESIGN_PLAN.md).
+
 This is the `monthly-overview` mockup: a forest hero card ("$X left in your
 spending plan" with the tick progress bar), *Coming up* (upcoming recurring),
 *Category watch* (top 3 categories by % used), and *Recent activity*. All of

@@ -96,13 +96,18 @@ export default function TransactionList({
   onDeleteAll,
   scrollKey,
   scrollToTransactionId = null,
+  // false: always scroll inside the list's own box, even in the mobile
+  // layout. Lists inside a modal/sheet need this: the window doesn't scroll
+  // there, so page-scroll virtualization would never render lower rows.
+  pageScroll = true,
 }) {
   const parentRef = useRef(null);
   const [isCompact, setIsCompact] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [scrollMargin, setScrollMargin] = useState(0);
   // In mobile layout the page scrolls (no nested scroll box under the tab bar).
-  const windowScroll = useLayoutMode() === 'mobile';
+  const layoutMode = useLayoutMode();
+  const windowScroll = pageScroll && layoutMode === 'mobile';
   const hasRows = transactions.length > 0;
   useLayoutEffect(() => {
     const list = parentRef.current;

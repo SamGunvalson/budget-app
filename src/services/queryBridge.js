@@ -86,10 +86,6 @@ export function initQueryBridge() {
       queryKey: ["budget_items", "planVsActual"],
       refetchType: "active",
     });
-    queryClient.invalidateQueries({
-      queryKey: ["budget_items", "planVsActualYTD"],
-      refetchType: "active",
-    });
   });
 
   // The annual budget grid is keyed under `budget_plans` (it is assembled

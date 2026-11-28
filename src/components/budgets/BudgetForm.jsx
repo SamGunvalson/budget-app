@@ -25,13 +25,10 @@ import { monthSpendingSummary } from '../../utils/budgetCalculations';
 import { hapticSuccess } from '../../utils/haptics';
 import DataUnavailable from '../common/DataUnavailable';
 import { isQueryUnavailable } from '../../utils/queryState';
+import { TYPE_DOT_CLASSES } from '../../constants/typeStyles';
 
-const TYPE_DOTS = {
-  income: 'bg-emerald-500',
-  needs: 'bg-red-500',
-  wants: 'bg-pink-500',
-  savings: 'bg-teal-500',
-};
+// Type colors live in one place: constants/typeStyles.js.
+const TYPE_DOTS = TYPE_DOT_CLASSES;
 
 /**
  * Full budget-planning form.

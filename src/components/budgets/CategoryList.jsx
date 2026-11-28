@@ -1,13 +1,9 @@
 import { CATEGORY_TYPE_LABELS, CATEGORY_TYPE_ORDER } from '../../utils/helpers';
+import { TYPE_DOT_CLASSES } from '../../constants/typeStyles';
 
 // Type colour dots, shared with the Budgets and Reports group headings.
-const TYPE_DOTS = {
-  income: 'bg-emerald-500',
-  needs: 'bg-red-500',
-  wants: 'bg-pink-500',
-  savings: 'bg-teal-500',
-  transfer: 'bg-slate-400',
-};
+// Type colors live in one place: constants/typeStyles.js.
+const TYPE_DOTS = TYPE_DOT_CLASSES;
 
 const TYPE_LABELS = {
   income: { label: CATEGORY_TYPE_LABELS.income, description: 'Salary, freelance & other earnings' },

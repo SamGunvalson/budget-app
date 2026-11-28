@@ -39,6 +39,7 @@ import CategoryWell from '../common/CategoryWell';
 import useLayoutMode from '../../hooks/useLayoutMode';
 import AmountInput from '../common/AmountInput';
 import { centsToInput } from '../../utils/calculator';
+import { TYPE_HEADER_STYLES } from '../../constants/typeStyles';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const SHORT_MONTHS = MONTHS.map((m) =>
@@ -47,36 +48,8 @@ const SHORT_MONTHS = MONTHS.map((m) =>
 
 const DEFAULT_TYPE_ORDER = ['income', 'needs', 'wants', 'savings'];
 
-const TYPE_STYLES = {
-  income: {
-    label: 'Income',
-    headerBg: 'bg-emerald-50 dark:bg-emerald-900/30',
-    stickyBg: 'bg-emerald-50 dark:bg-emerald-950',
-    headerText: 'text-emerald-800 dark:text-emerald-300',
-    headerBorder: 'border-emerald-200/60 dark:border-emerald-700/60',
-  },
-  needs: {
-    label: 'Needs',
-    headerBg: 'bg-red-50 dark:bg-red-900/30',
-    stickyBg: 'bg-red-50 dark:bg-red-950',
-    headerText: 'text-red-800 dark:text-red-300',
-    headerBorder: 'border-red-200/60 dark:border-red-700/60',
-  },
-  wants: {
-    label: 'Wants',
-    headerBg: 'bg-pink-50 dark:bg-pink-900/30',
-    stickyBg: 'bg-pink-50 dark:bg-pink-950',
-    headerText: 'text-pink-800 dark:text-pink-300',
-    headerBorder: 'border-pink-200/60 dark:border-pink-700/60',
-  },
-  savings: {
-    label: 'Savings',
-    headerBg: 'bg-teal-50 dark:bg-teal-900/30',
-    stickyBg: 'bg-teal-50 dark:bg-teal-950',
-    headerText: 'text-teal-800 dark:text-teal-300',
-    headerBorder: 'border-teal-200/60 dark:border-teal-700/60',
-  },
-};
+// Type colors live in one place: constants/typeStyles.js.
+const TYPE_STYLES = TYPE_HEADER_STYLES;
 
 // -- Mobile layout: one card per category with a 4×3 month grid --
 function AnnualBudgetCards({ typeOrder, visibleGrouped, monthData, isSaving, onMobileEdit, onBulkFill, getMonthIncome, getMonthExpenses }) {
@@ -1280,6 +1253,7 @@ export default function AnnualBudgetTable() {
             onSubmit={handleUpdateCategory}
             onCancel={() => setEditingCategory(null)}
             isEditing
+            categories={categories}
           />
         </Modal>
       )}

@@ -22,12 +22,11 @@
  * (the query-key convention). One file makes it easy to grep for usage and
  * to keep keys aligned across pages.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import useAuth from "./useAuth";
 import {
   // transactions
   getTransactionsOffline,
-  getTransactionsYTDOffline,
   getTransactionsForYearOffline,
   getPendingReviewCountOffline,
   getTransactionYearsOffline,
@@ -47,12 +46,9 @@ import {
   getBudgetPlanOffline,
   getBudgetItemsOffline,
   getPlanVsActualOffline,
-  getPlanVsActualYTDOffline,
   // recurring
   getTemplatesForAccountOffline,
   // analytics
-  getMonthlySpendingTrendOffline,
-  getYearlySpendingTrendOffline,
 } from "../services/offlineAware";
 import { getPartnership, getPartnerEmail, getPartnerId } from "../services/partnerships";
 import { computeBalance, getSplitExpenses } from "../services/splitExpenses";
@@ -86,16 +82,18 @@ export function useTransactionsForYear(year, { enabled = true } = {}) {
   });
 }
 
-/** Year-to-date transactions through `throughMonth` (1–12). */
-export function useTransactionsYTD(
-  year,
-  throughMonth,
-  { enabled = true } = {},
-) {
-  return useQuery({
-    queryKey: ["transactions", "ytd", year, throughMonth],
-    queryFn: () => getTransactionsYTDOffline({ year, throughMonth }),
-    enabled: enabled && year != null && throughMonth != null,
+/**
+ * Transactions for several calendar years, one cached query per year (the
+ * same keys as `useTransactionsForYear`, so caches and invalidation are
+ * shared). Returns the per-year query results in `years` order.
+ */
+export function useTransactionsForYears(years, { enabled = true } = {}) {
+  return useQueries({
+    queries: years.map((year) => ({
+      queryKey: ["transactions", "year", year],
+      queryFn: () => getTransactionsForYearOffline({ year }),
+      enabled: enabled && year != null,
+    })),
   });
 }
 
@@ -322,21 +320,6 @@ export function usePlanVsActual(
   });
 }
 
-/**
- * Plan-vs-Actual YTD via the `get_plan_vs_actual_ytd` RPC (Phase 3).
- */
-export function usePlanVsActualYTD(
-  year,
-  throughMonth,
-  { enabled = true, asOf = null } = {},
-) {
-  return useQuery({
-    queryKey: ["budget_items", "planVsActualYTD", { year, throughMonth, asOf }],
-    queryFn: () => getPlanVsActualYTDOffline({ year, throughMonth, asOf }),
-    enabled: enabled && year != null && throughMonth != null,
-  });
-}
-
 // ── Recurring templates ───────────────────────────────────────────────────
 
 export function useTemplatesForAccount(accountId, { enabled = true } = {}) {
@@ -344,54 +327,6 @@ export function useTemplatesForAccount(accountId, { enabled = true } = {}) {
     queryKey: ["recurring_templates", "forAccount", accountId],
     queryFn: () => getTemplatesForAccountOffline(accountId),
     enabled: enabled && !!accountId,
-  });
-}
-
-// ── Analytics: server-side spending trends (Phase 3) ──────────────────────
-
-/**
- * Pre-aggregated monthly spending trend via the
- * `get_monthly_spending_trend` Postgres RPC.  Returns rows shaped like the
- * old client-side `aggregateByMonth` output so existing chart components
- * keep working unchanged.
- */
-export function useMonthlySpendingTrend(opts, { enabled = true } = {}) {
-  const { months, endMonth, endYear, asOf } = opts ?? {};
-  return useQuery({
-    queryKey: [
-      "transactions",
-      "monthlyTrend",
-      {
-        months: months ?? null,
-        endMonth: endMonth ?? null,
-        endYear: endYear ?? null,
-        asOf: asOf ?? null,
-      },
-    ],
-    queryFn: () => getMonthlySpendingTrendOffline(opts),
-    enabled,
-  });
-}
-
-/**
- * Pre-aggregated yearly spending trend via the `get_yearly_spending_trend`
- * Postgres RPC.  Returns rows shaped like the old `aggregateByYear` output.
- */
-export function useYearlySpendingTrend(opts, { enabled = true } = {}) {
-  const { years, endMonth, endYear, asOf } = opts ?? {};
-  return useQuery({
-    queryKey: [
-      "transactions",
-      "yearlyTrend",
-      {
-        years: years ?? null,
-        endMonth: endMonth ?? null,
-        endYear: endYear ?? null,
-        asOf: asOf ?? null,
-      },
-    ],
-    queryFn: () => getYearlySpendingTrendOffline(opts),
-    enabled,
   });
 }
 

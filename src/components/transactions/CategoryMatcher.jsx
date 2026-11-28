@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { formatCurrency, formatDate } from '../../utils/helpers';
+import { CATEGORY_FALLBACK_COLOR } from '../../constants/chartColors';
 import { autoMatchCategory, detectTransferPairs } from '../../services/import';
 import { normalizeDate, normalizeAmount } from '../../utils/csvParser';
 
@@ -182,7 +183,7 @@ export default function CategoryMatcher({ mappedRows, categories, onConfirm, onB
 
   function getCategoryColor(catId) {
     const cat = categories.find((c) => c.id === catId);
-    return cat?.color || '#94a3b8';
+    return cat?.color || CATEGORY_FALLBACK_COLOR;
   }
 
   return (

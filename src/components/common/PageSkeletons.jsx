@@ -95,13 +95,12 @@ export function ReportsSkeleton() {
   return (
     <Shell>
       <HeaderSkeleton />
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-6">
-        <div className="col-span-2 h-32 animate-pulse rounded-2xl bg-forest/85 sm:col-span-1" />
-        <div className={`h-32 ${panel}`} />
-        <div className={`h-32 ${panel}`} />
+      {/* Overview tab (the default): forest hero, then two columns of panels */}
+      <div className="mb-6 h-48 animate-pulse rounded-2xl bg-forest/85" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ListPanel rows={3} well={false} />
+        <ListPanel rows={3} well={false} />
       </div>
-      <div className={`mb-6 h-64 ${panel}`} />
-      <ListPanel rows={5} well={false} />
     </Shell>
   );
 }

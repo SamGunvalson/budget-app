@@ -57,7 +57,7 @@ test('pre-masked formatters never reveal the real amount in safe mode', () => {
   assert.notEqual(formatPreMaskedDollars(toDollars(cents)), real);
 });
 
-test('hideCents and absolute-value labels (PlanVsActualChart) match formatCurrency', () => {
+test('hideCents and absolute-value labels of pre-masked chart values match formatCurrency', () => {
   for (const enabled of [false, true]) {
     setSafeModeEnabled(enabled, 0.77);
     for (const cents of [250000, -250000, 12345]) {

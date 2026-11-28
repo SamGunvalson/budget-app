@@ -247,6 +247,30 @@ the browser origin. The [Vite configuration](../vite.config.js) enables the
 proxy only when `DEV_API_PROXY_TARGET` is set; if both are supplied,
 `VITE_API_ORIGIN` takes precedence as its proxy target.
 
+#### Sample data for development
+
+There is no mock login; `npm run dev` needs the stack above. To get a user with
+data to look at, run:
+
+```bash
+npm run seed:dev   # creates dev@example.test / devpassword
+```
+
+[`scripts/seed-dev.mjs`](../scripts/seed-dev.mjs) signs up the user (and a split
+partner, `dev+partner@example.test`) through the auth service, then inserts
+through PostgREST as that user, so RLS applies. It adds categories grouped by
+color family (a few in old preset colors, to exercise Categories → Colors),
+five accounts, 24 months of transactions (`--months N` to change) with transfers
+and a credit-card payment cycle, three weeks of projected items, monthly budgets
+including planned income, and split expenses. The history includes a raise a
+year ago, seasonal electric bills, December gift spikes, slowly rising dining,
+a few deliberately miscategorized transactions, and both ways of saving: a 401(k)
+budget line (a linked transfer with the Retirement category) and plain
+transfers into savings. Every Reports tab has something to show. It targets `.env`'s `DEV_API_PROXY_TARGET` / `VITE_API_ORIGIN`
+(default `http://localhost:8085`) and refuses non-local hosts without
+`--allow-remote`. A user that already has categories is left unchanged; use
+`--email <new>` or recreate the volume. `--help` lists all options.
+
 ## Release upgrade notes
 
 These notes apply to existing database volumes. Fresh volumes get every change

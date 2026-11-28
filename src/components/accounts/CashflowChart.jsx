@@ -14,7 +14,7 @@ import {
 import { toDollars, formatPreMaskedDollars, formatPreMaskedAxisDollar, maskAccountName } from '../../utils/helpers';
 import { isLiabilityAccount } from '../../services/accounts';
 import { CASHFLOW_RANGE_OPTIONS } from '../../hooks/useCashflowScenario';
-import { CHART_AXIS } from '../../constants/chartColors';
+import { CHART_AXIS, CHART_NEGATIVE, SERIES_COLORS } from '../../constants/chartColors';
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
 // Cash total is the headline line, so it uses the app's forest/sage income
@@ -24,16 +24,7 @@ const CASH_COLOR = 'var(--app-income)';
 const SOFT = 'var(--app-soft)';
 const PANEL = 'var(--app-panel)';
 const LINE = 'var(--app-line)';
-const ACCOUNT_COLORS = [
-  '#4f86c6', // blue
-  '#8b6fc0', // violet
-  '#2a9d9a', // teal
-  '#c0607a', // rose
-  '#7a8f3a', // olive
-  '#5c6bc0', // indigo
-  '#a0715a', // clay
-  '#9a6b9e', // plum
-];
+const ACCOUNT_COLORS = SERIES_COLORS;
 
 const SHORT_MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -314,7 +305,7 @@ export default function CashflowChart({
               />
 
               {belowCushionRegions.map((r) => (
-                <ReferenceArea key={r.x1} x1={r.x1} x2={r.x2} fill="#ef4444" fillOpacity={0.06} strokeOpacity={0} />
+                <ReferenceArea key={r.x1} x1={r.x1} x2={r.x2} fill={CHART_NEGATIVE} fillOpacity={0.06} strokeOpacity={0} />
               ))}
 
               <ReferenceLine
@@ -327,10 +318,10 @@ export default function CashflowChart({
               {showCash && cushion > 0 && (
                 <ReferenceLine
                   y={toDollars(cushion)}
-                  stroke="#ef4444"
+                  stroke={CHART_NEGATIVE}
                   strokeOpacity={0.45}
                   strokeDasharray="4 4"
-                  label={{ value: 'Cushion', position: 'insideBottomLeft', fontSize: 10, fill: '#ef4444' }}
+                  label={{ value: 'Cushion', position: 'insideBottomLeft', fontSize: 10, fill: CHART_NEGATIVE }}
                 />
               )}
 
