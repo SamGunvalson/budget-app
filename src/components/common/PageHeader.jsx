@@ -19,7 +19,7 @@ export default function PageHeader({ eyebrow, title, description, children, clas
         </h1>
         {description && <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">{description}</p>}
       </div>
-      {children && <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">{children}</div>}
+      {children && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 sm:gap-3">{children}</div>}
     </header>
   );
 }

@@ -315,22 +315,26 @@ export default function ReportsPage() {
           <SegmentedControl ariaLabel="Report view" options={VIEWS} value={activeView} onChange={setActiveView} />
         </PageHeader>
 
-        {/* Shared control row: only the controls that apply to this view */}
+        {/* Shared control row: only the controls that apply to this view.
+            Phones: period/range and Include upcoming share the first line,
+            the date picker wraps below. Wider: the toggle sits far right. */}
         <div className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
           {showPeriod && (
-            <SegmentedControl ariaLabel="Period" options={PERIOD_OPTIONS} value={viewMode} onChange={setViewMode} />
+            <SegmentedControl className="order-1" ariaLabel="Period" options={PERIOD_OPTIONS} value={viewMode} onChange={setViewMode} />
           )}
           {activeView === 'trends' && (
-            <SegmentedControl ariaLabel="Trend range" size="sm" options={TREND_RANGE_OPTIONS} value={trendRange} onChange={setTrendRange} />
+            <SegmentedControl className="order-1" ariaLabel="Trend range" size="sm" options={TREND_RANGE_OPTIONS} value={trendRange} onChange={setTrendRange} />
           )}
-          {activeView === 'annualActuals' ? (
-            <YearSelector year={year} onChange={(y) => setMonthYear(month, y)} />
-          ) : (
-            <MonthYearSelector month={month} year={year} onChange={handleMonthChange} />
-          )}
+          <div className="order-3 sm:order-2">
+            {activeView === 'annualActuals' ? (
+              <YearSelector year={year} onChange={(y) => setMonthYear(month, y)} />
+            ) : (
+              <MonthYearSelector month={month} year={year} onChange={handleMonthChange} />
+            )}
+          </div>
           {/* Pending/upcoming toggle — every view except Calendar */}
           {activeView !== 'calendar' && (
-            <div className="sm:ml-auto">
+            <div className="order-2 sm:order-3 sm:ml-auto">
               <IncludePendingToggle checked={includePending} onChange={setIncludePending} />
             </div>
           )}
