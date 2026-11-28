@@ -119,7 +119,26 @@ test("a row for a statement that is now zero is removed", () => {
 test("a hand-edited row is kept and not duplicated", () => {
   const rows = generated("g1", "2026-12-05", 50000, { status: "pending", amount_locked: true });
   const writes = plan([{ date: "2026-11-03", delta: 80000 }, { date: "2026-12-05", delta: -50000 }], rows);
-  assert.deepEqual(writes, { creates: [], updates: [], deletes: [] });
+  // Nothing more for its own statement; the $300 still owed is next month's.
+  assert.deepEqual(writes, {
+    creates: [{ date: "2027-01-05", amount: 30000, status: "projected" }],
+    updates: [],
+    deletes: [],
+  });
+});
+
+test("a hand-edited lower payment leaves the rest for next month's payment", () => {
+  const rows = generated("g1", "2026-12-05", 50000, { status: "pending", amount_locked: true });
+  const writes = plan([
+    { date: "2026-11-03", delta: 80000 },
+    { date: "2026-12-05", delta: -50000 },
+    { date: "2026-12-08", delta: 10000 },
+  ], rows);
+  assert.deepEqual(writes, {
+    creates: [{ date: "2027-01-05", amount: 40000, status: "projected" }],
+    updates: [],
+    deletes: [],
+  });
 });
 
 test("payments due after the projection window are not created yet", () => {
