@@ -278,7 +278,7 @@ export default function CategoryExplorer({ month, year, viewMode, asOf }) {
                   {money(group.actual)} {isIncome ? 'received' : 'spent'} · <span className="font-semibold text-stone-700 dark:text-stone-200">{money(group.compare)}</span> {noun}
                 </p>
               </div>
-              <div className="divide-y divide-stone-200/60 overflow-hidden rounded-2xl border border-stone-200/60 bg-white shadow-sm dark:divide-stone-700/60 dark:border-stone-700/60 dark:bg-stone-800">
+              <div className="divide-y divide-stone-200/60 overflow-clip rounded-2xl border border-stone-200/60 bg-white shadow-sm dark:divide-stone-700/60 dark:border-stone-700/60 dark:bg-stone-800">
                 {group.rows.map((row) => {
                   const expanded = drill.expandedId === row.categoryId;
                   const name = `${row.name}${row.archived ? ' (Archived)' : ''}`;

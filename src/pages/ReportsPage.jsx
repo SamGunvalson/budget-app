@@ -7,6 +7,7 @@ import YearSelector from '../components/common/YearSelector';
 import MonthYearSelector from '../components/common/MonthYearSelector';
 import CategoryExplorer from '../components/reports/CategoryExplorer';
 import Overview from '../components/reports/Overview';
+import PayeeExplorer from '../components/reports/PayeeExplorer';
 // Defer recharts-bound charts until the user opens those tabs. Each lazy
 // import becomes its own JS chunk that pulls in `recharts` only when first
 // rendered, keeping the Reports route's first-paint bundle small.
@@ -41,9 +42,18 @@ const DEFAULT_VIEW = 'overview';
 // `?view=` links working.
 const LEGACY_VIEWS = { summary: 'overview', planVsActual: 'categories' };
 // Deep-link params owned by the active view; cleared when the user picks a tab.
-const VIEW_PARAMS = ['view', 'category', 'compare'];
-// Views that use the Monthly / YTD period.
+const VIEW_PARAMS = ['view', 'category', 'compare', 'lens', 'payee'];
+// Views that use the Monthly / YTD period (Categories › Payees uses a fixed
+// 12-month window instead).
 const PERIOD_VIEWS = new Set(['overview', 'categories']);
+
+// Categories tab lenses. Deep-link `?lens=` and `?payee=` params (from
+// Overview) win until the user picks a lens or tab.
+const LENS_OPTIONS = [
+  { value: 'list', label: 'List' },
+  { value: 'payees', label: 'Payees' },
+];
+const LENS_IDS = new Set(LENS_OPTIONS.map((o) => o.value));
 
 /** A known view id for `value`, mapping retired tabs; null when unknown. */
 function resolveView(value) {
@@ -63,8 +73,11 @@ const TREND_RANGE_OPTIONS = [
 ];
 
 /** Eyebrow and title for the active view. */
-function viewHeading(view, viewMode, month, year) {
+function viewHeading(view, viewMode, month, year, lens) {
   const monthLabel = `${getMonthName(month)} ${year}`;
+  if (view === 'categories' && lens === 'payees') {
+    return { eyebrow: `12 months to ${monthLabel}`, title: 'Payees' };
+  }
   switch (view) {
     case 'calendar':
       return { eyebrow: `${monthLabel} daily view`, title: 'Transaction Calendar' };
@@ -104,6 +117,21 @@ export default function ReportsPage() {
     }
   }, [setSessionView, searchParams, setSearchParams]);
 
+  const [sessionLens, setSessionLens] = useSessionState('reportsCategoriesLens', 'list');
+  const lensParam = searchParams.get('lens');
+  const lens = LENS_IDS.has(lensParam) ? lensParam : LENS_IDS.has(sessionLens) ? sessionLens : 'list';
+  const setLens = useCallback((value) => {
+    setSessionLens(value);
+    if (['lens', 'payee', 'category'].some((key) => searchParams.has(key))) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        for (const key of ['lens', 'payee', 'category']) next.delete(key);
+        return next;
+      }, { replace: true });
+    }
+  }, [setSessionLens, searchParams, setSearchParams]);
+  const showPayees = activeView === 'categories' && lens === 'payees';
+
   const [trendRange, setTrendRange] = useSessionState('reportsTrendRange', '6m'); // '6m' | '12m' | 'yoy'
 
   // Reports count only settled activity (posted, dated today or earlier) unless
@@ -128,7 +156,7 @@ export default function ReportsPage() {
   const trendError = trendQuery.error?.message || '';
   const trendSummary = useMemo(() => computeTrendSummary(trendMonthlyData), [trendMonthlyData]);
 
-  const heading = viewHeading(activeView, viewMode, month, year);
+  const heading = viewHeading(activeView, viewMode, month, year, lens);
 
   return (
     <div className="min-h-screen app-bg">
@@ -160,7 +188,10 @@ export default function ReportsPage() {
             Phones: period/range and Include upcoming share the first line,
             the date picker wraps below. Wider: the toggle sits far right. */}
         <div className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
-          {PERIOD_VIEWS.has(activeView) && (
+          {activeView === 'categories' && (
+            <SegmentedControl className="order-1" ariaLabel="Categories view" options={LENS_OPTIONS} value={lens} onChange={setLens} />
+          )}
+          {PERIOD_VIEWS.has(activeView) && !showPayees && (
             <SegmentedControl className="order-1" ariaLabel="Period" options={PERIOD_OPTIONS} value={viewMode} onChange={setViewMode} />
           )}
           {activeView === 'trends' && (
@@ -196,6 +227,8 @@ export default function ReportsPage() {
               />
               {!trendError && <TrendSummary {...trendSummary} />}
             </Suspense>
+          ) : showPayees ? (
+            <PayeeExplorer month={month} year={year} asOf={asOf} />
           ) : activeView === 'categories' ? (
             <CategoryExplorer month={month} year={year} viewMode={viewMode} asOf={asOf} />
           ) : (

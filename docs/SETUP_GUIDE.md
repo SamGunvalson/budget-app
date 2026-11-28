@@ -260,9 +260,13 @@ npm run seed:dev   # creates dev@example.test / devpassword
 partner, `dev+partner@example.test`) through the auth service, then inserts
 through PostgREST as that user, so RLS applies. It adds categories grouped by
 color family (a few in old preset colors, to exercise Categories → Colors),
-five accounts, about four months of transactions with transfers and a credit-card
-payment cycle, three weeks of projected items, monthly budgets, and split
-expenses. It targets `.env`'s `DEV_API_PROXY_TARGET` / `VITE_API_ORIGIN`
+five accounts, 24 months of transactions (`--months N` to change) with transfers
+and a credit-card payment cycle, three weeks of projected items, monthly budgets
+including planned income, and split expenses. The history includes a raise a
+year ago, seasonal electric bills, December gift spikes, slowly rising dining,
+a few deliberately miscategorized transactions, and both ways of saving: a 401(k)
+budget line (a linked transfer with the Retirement category) and plain
+transfers into savings. Every Reports tab has something to show. It targets `.env`'s `DEV_API_PROXY_TARGET` / `VITE_API_ORIGIN`
 (default `http://localhost:8085`) and refuses non-local hosts without
 `--allow-remote`. A user that already has categories is left unchanged; use
 `--email <new>` or recreate the volume. `--help` lists all options.

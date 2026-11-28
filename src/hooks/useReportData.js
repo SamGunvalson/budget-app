@@ -38,12 +38,20 @@ export default function useReportData({ year, keyLists, asOf, withBudget = false
 
   const matrix = useMemo(() => categoryMonthMatrix(settled), [settled]);
 
-  // Optimistic edits from the drill-down land in the selected year's cache.
+  // Optimistic edits from a drill-down. Its rows can span both loaded years,
+  // so the updater runs on each year's cache. useTransactionManager's
+  // updaters map/filter by transaction id, so rows from the other year pass
+  // through unchanged. A plain array (no updater) only replaces `year`.
   const setYearTransactions = useCallback((updater) => {
-    queryClient.setQueryData(['transactions', 'year', year], (prev) =>
-      typeof updater === 'function' ? updater(prev ?? []) : updater,
-    );
-  }, [queryClient, year]);
+    if (typeof updater !== 'function') {
+      queryClient.setQueryData(['transactions', 'year', year], updater);
+      return;
+    }
+    const years = needPrevYear ? [year, year - 1] : [year];
+    for (const y of years) {
+      queryClient.setQueryData(['transactions', 'year', y], (prev) => (prev ? updater(prev) : prev));
+    }
+  }, [queryClient, year, needPrevYear]);
 
   const queries = [currentQuery, categoriesQuery];
   if (needPrevYear) queries.push(prevQuery);

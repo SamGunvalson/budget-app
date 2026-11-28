@@ -1,6 +1,6 @@
 # Reports Redesign Plan
 
-Status: PRs 1–2 done · PR 3 (Overview) done, uncommitted · PRs 4–6 pending · 2026-11-28
+Status: PRs 1–3 done · PR 4 (Payees) done, uncommitted · PRs 5–6 pending · 2026-11-28
 Follows: [UI_OVERHAUL_PLAN.md](UI_OVERHAUL_PLAN.md) (Phase 5 Overview moves here, inside Reports; `/app` keeps landing on Transactions)
 
 ## Goals
@@ -95,9 +95,10 @@ Every tab uses it.
 A look back at the selected month or YTD, built in `Overview.jsx`. It does
 **not** repeat the Budget hero or Accounts' Coming up.
 
-1. **Forest hero:** what you kept (income − needs − wants − other), the savings
-   rate, and money moved to savings vs left over, with income and spending as
-   smaller figures.
+1. **Forest hero:** what you saved and the savings rate, split into budgeted
+   savings and money moved to savings; then what you kept after spending and
+   how much of it is still in checking. Income and spending are the smaller
+   figures.
 2. **Compared with:** spending and income vs last month and the 3-month
    average (YTD: the same months last year), as signed change chips.
 3. **Top movers:** up to 5 spending categories that moved at least $10 from
@@ -105,14 +106,14 @@ A look back at the selected month or YTD, built in `Overview.jsx`. It does
    row expanded and the matching comparison selected.
 4. **Needs attention:** pending review (links to Transactions), categories
    over plan (links to Categories › Plan), and spending in unbudgeted
-   categories (links to Budgets). Mixed-category payees join in PR 4, with the
-   Payees view they link to. Category IDs are required, so there are no
+   categories (links to Budgets), and payees split across categories (links to
+   Categories › Payees). Category IDs are required, so there are no
    uncategorized rows to report.
 5. **Largest purchases:** the top 5 one-off purchases. Bills are excluded:
    rows from a recurring template, and the same payee charging the same amount
    in 3+ months. Each links to its category's drill-down, where it can be edited.
-6. **Mix strip:** one stacked bar showing the needs/wants/savings share. Links
-   to Trends.
+6. **Where it went:** one stacked bar splitting income into Needs, Wants,
+   Saved and Left in checking. Links to Trends.
 
 Deep links: `?view=`, `?category=<id>` (opens that drill-down) and
 `?compare=<mode>`. Picking a tab clears all three.
@@ -134,12 +135,17 @@ One explorer for the period, with three views (segmented):
   - Every row expands into the editable drill-down.
   - A one-line header: "Spent $X · Plan $Y · Income $Z". No banners, stat cards
     or diverging chart.
-- **Payees:** normalized payee rows showing total, count and category chips
-  ("Groceries ×14 · Household ×2"). The **Mixed only** filter is on by default.
-  Expanding a row opens the drill-down, filtered to that payee, where you can
-  bulk recategorize. **Ignore payee** adds it to the `user_preferences` key
-  `payee_consistency_ignored` (string array, existing key/value table, no schema
-  change) for payees that really are mixed (Amazon, Target).
+- **Payees** (`PayeeExplorer.jsx`): normalized payee rows over a fixed
+  12-month window ending at the selected month (one month is too few visits
+  to spot a pattern, so Monthly/YTD hides here). Each row shows total, count
+  and category chips ("Groceries ×14 · Household ×2"), with the non-dominant
+  categories highlighted as likely mistakes. Filters: Mixed (default), All,
+  Ignored, plus search. Expanding a row opens the drill-down for that payee,
+  where you can bulk recategorize; the row stays open even once it is no
+  longer mixed. **Ignore** (shown on mixed or ignored payees) saves to the
+  `user_preferences` key `payee_consistency_ignored` as `{ payees: [...] }`
+  (existing key/value table, no schema change). Deep links: `?lens=payees`,
+  `?payee=<normalized name>`.
 - **Flow:** a Sankey chart, income → Needs/Wants/Savings → categories (recharts
   `Sankey`, already installed). Mobile shows a stacked bar per type instead.
 
@@ -175,9 +181,17 @@ views still use. Keep `BudgetAlert` if other pages import it.
 
 ## Decisions (defaults; change if wanted)
 
-1. **Savings rate** = (true income − needs − wants) ÷ true income. Money left
-   over counts as saved. Savings-type category spending is shown separately in
-   the mix.
+1. **Savings** comes from two places, matching how savings is recorded:
+   - *Budgeted savings:* spending in Savings-type categories (401k, Roth IRA
+     lines), including the categorized leg of a linked transfer.
+   - *Moved to savings:* plain transfers (both legs in a transfer category)
+     into savings, brokerage or retirement accounts, minus plain transfers out
+     of them. Moves between two such accounts net to zero. Linked transfers are
+     skipped here so they count once. See `transferSavingsByMonth`.
+
+   **Savings rate** = (budgeted + moved) ÷ true income. **Kept** = income −
+   needs − wants − other; kept minus saved is what is still in checking.
+   Leftover moved in the following month counts in that month.
 2. **Fixed** = any non-transfer transaction generated from a recurring template.
 3. **Payee normalization:** trim, lowercase, collapse whitespace, drop trailing
    store numbers (`#1234`, `STORE 0042`). Fall back to `description` when
@@ -193,7 +207,7 @@ views still use. Keep `BudgetAlert` if other pages import it.
    user-facing reports yet.
 2. ✅ **Categories › List** with compare-to. Removes Summary and Plan vs Actual.
 3. ✅ **Overview** tab (default).
-4. **Categories › Payees** and the ignore list.
+4. ✅ **Categories › Payees** and the ignore list.
 5. **Trends** rebuild (mix, fixed/flexible, category trend).
 6. **Categories › Flow** (Sankey) and Annual cell drill-down.
 

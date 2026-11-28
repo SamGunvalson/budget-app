@@ -4,12 +4,17 @@ import CategoryWell from '../common/CategoryWell';
 import DataUnavailable from '../common/DataUnavailable';
 import EmptyState from '../common/EmptyState';
 import ChangeChip from './ChangeChip';
-import { usePendingReviewCount } from '../../hooks/queries';
+import { usePendingReviewCount, useUserPreference } from '../../hooks/queries';
 import useReportData from '../../hooks/useReportData';
 import { formatCurrency, getMonthName } from '../../utils/helpers';
 import {
+  IGNORED_PAYEES_PREF,
   categoryTotals,
   comparisonPeriod,
+  ignoredPayeesFrom,
+  payeeGroups,
+  payeeWindowKeys,
+  txMonthKey,
   largestTransactions,
   periodSummary,
   plannedByCategory,
@@ -25,10 +30,14 @@ const PANEL_TITLE = 'text-sm font-semibold text-stone-900 dark:text-stone-100';
 const PANEL_SUB = 'text-xs text-stone-500 dark:text-stone-400';
 const ROW_LINK = 'flex items-center gap-3 rounded-xl px-2 py-2 -mx-2 transition-colors hover:bg-stone-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:bg-stone-700/40';
 
+// "Where it went": how the period's income was used. `saved` covers budgeted
+// savings and money moved to savings accounts; `leftOver` is what is still in
+// checking (shown only when positive).
 const MIX = [
-  { type: 'needs', label: 'Needs', bar: 'bg-rose-500' },
-  { type: 'wants', label: 'Wants', bar: 'bg-pink-500' },
-  { type: 'savings', label: 'Savings', bar: 'bg-teal-500' },
+  { key: 'needs', label: 'Needs', bar: 'bg-rose-500' },
+  { key: 'wants', label: 'Wants', bar: 'bg-pink-500' },
+  { key: 'saved', label: 'Saved', bar: 'bg-teal-500' },
+  { key: 'leftOver', label: 'Left in checking', bar: 'bg-stone-400 dark:bg-stone-500' },
 ];
 
 /** Link into another Reports tab, keeping the selected month in context. */
@@ -50,7 +59,7 @@ function Chevron() {
 
 /**
  * Reports › Overview: a look back at the selected month (or year to date).
- * What you kept, how it compares with recent months, what moved, what needs
+ * What you saved, how it compares with recent months, what moved, what needs
  * attention, the biggest transactions, and the needs/wants/savings mix.
  * Plan status ("left in plan") stays on Budgets; balances and upcoming bills
  * stay on Accounts.
@@ -68,14 +77,17 @@ export default function Overview({ month, year, viewMode, asOf }) {
       { mode: 'avg3', label: '3-mo average', ...comparisonPeriod(year, month, viewMode, 'avg3') },
     ]), [isYtd, year, month, viewMode]);
   const moverBasis = comparisons[comparisons.length - 1];
+  // Mixed-payee check uses the same 12-month window as Categories › Payees.
+  const payeeKeys = useMemo(() => payeeWindowKeys(year, month), [year, month]);
 
   const { settled, matrix, categories, budget, isLoading, failed } = useReportData({
     year,
-    keyLists: [periodKeys, ...comparisons.map((c) => c.keys)],
+    keyLists: [periodKeys, payeeKeys, ...comparisons.map((c) => c.keys)],
     asOf,
     withBudget: true,
   });
   const pendingReviewCount = usePendingReviewCount().data ?? 0;
+  const ignoredPref = useUserPreference(IGNORED_PAYEES_PREF).data;
 
   const data = useMemo(() => {
     const summary = periodSummary(matrix, periodKeys);
@@ -86,6 +98,11 @@ export default function Overview({ month, year, viewMode, asOf }) {
     const actual = categoryTotals(matrix, periodKeys);
     const basisTotals = categoryTotals(matrix, moverBasis.keys, moverBasis.divisor);
     const hasHistory = Object.keys(basisTotals).length > 0;
+    const inPayeeWindow = new Set(payeeKeys);
+    const mixedPayees = payeeGroups(
+      settled.filter((t) => inPayeeWindow.has(txMonthKey(t))),
+      { ignore: ignoredPayeesFrom(ignoredPref) },
+    ).filter((g) => g.mixed);
     return {
       summary,
       compared,
@@ -93,8 +110,9 @@ export default function Overview({ month, year, viewMode, asOf }) {
       movers: topMovers({ actual, compare: basisTotals, categories, meta: matrix.meta }),
       largest: largestTransactions(settled, periodKeys, 5, { excludeBills: true }),
       plan: planStatus({ actual, planned: plannedByCategory(budget, periodKeys, year), categories, meta: matrix.meta }),
+      mixedPayees,
     };
-  }, [matrix, periodKeys, comparisons, moverBasis, categories, settled, budget, year]);
+  }, [matrix, periodKeys, payeeKeys, comparisons, moverBasis, categories, settled, budget, year, ignoredPref]);
 
   const periodLabel = isYtd ? `Jan – ${getMonthName(month)} ${year}` : `${getMonthName(month)} ${year}`;
 
@@ -121,10 +139,10 @@ export default function Overview({ month, year, viewMode, asOf }) {
     );
   }
 
-  const { summary, compared, hasHistory, movers, largest, plan } = data;
-  const kept = summary.saved >= 0;
+  const { summary, compared, hasHistory, movers, largest, plan, mixedPayees } = data;
   const ratePct = summary.savingsRate == null ? null : Math.round(summary.savingsRate * 100);
-  const mixTotal = MIX.reduce((s, m) => s + Math.max(summary[m.type], 0), 0);
+  const mixParts = MIX.filter((m) => summary[m.key] > 0);
+  const mixTotal = mixParts.reduce((s, m) => s + summary[m.key], 0);
   const categoryName = (id) => categories.find((c) => c.id === id)?.name ?? matrix.meta[id]?.name ?? 'Uncategorized';
 
   const attention = [
@@ -140,6 +158,13 @@ export default function Overview({ month, year, viewMode, asOf }) {
         ? `${categoryName(plan.overIds[0])} is over plan`
         : `${plan.overCount} categories over plan`,
     },
+    mixedPayees.length > 0 && {
+      key: 'payees',
+      to: reportsLink({ view: 'categories', lens: 'payees', ...(mixedPayees.length === 1 ? { payee: mixedPayees[0].key } : {}) }),
+      text: mixedPayees.length === 1
+        ? `${mixedPayees[0].label} is split across categories`
+        : `${mixedPayees.length} payees split across categories`,
+    },
     plan.unbudgetedSpend > 0 && {
       key: 'unbudgeted',
       to: '/app/budgets',
@@ -149,22 +174,27 @@ export default function Overview({ month, year, viewMode, asOf }) {
 
   return (
     <div className="animate-fade-in space-y-6">
-      {/* Hero: what you kept */}
+      {/* Hero: what you saved (budgeted savings + money moved to savings) */}
       <section
         aria-label="Period summary"
         className="flex flex-col gap-6 rounded-2xl bg-forest p-6 text-[#fbfcf2] shadow-lg shadow-stone-900/10 sm:flex-row sm:items-end sm:justify-between sm:p-7"
       >
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#d8e9d8]">
-            {kept ? 'Kept' : 'Overspent'} {isYtd ? `so far in ${year}` : `in ${getMonthName(month)}`}
+            {summary.saved >= 0 ? 'Saved' : 'Drawn from savings'} {isYtd ? `so far in ${year}` : `in ${getMonthName(month)}`}
           </p>
           <p className="mt-1.5 font-display text-5xl font-normal leading-none tracking-tight sm:text-6xl">
             {money(Math.abs(summary.saved))}
           </p>
           <p className="mt-2 text-sm text-[#daeadc]">
             {ratePct == null ? 'No income recorded' : `${ratePct}% of income`}
-            {summary.savings !== 0 && <> · {money(summary.savings)} to savings</>}
-            {summary.savings !== 0 && <> · {money(summary.leftOver)} left over</>}
+            {summary.savings !== 0 && <> · {money(summary.savings)} budgeted</>}
+            {summary.transferred !== 0 && <> · {money(summary.transferred)} moved to savings</>}
+          </p>
+          <p className="mt-1 text-xs text-[#d8e9d8]">
+            {summary.kept >= 0
+              ? `Kept ${money(summary.kept)} after spending${summary.leftOver > 0 ? ` · ${money(summary.leftOver)} still in checking` : ''}`
+              : `Spent ${money(-summary.kept)} more than came in`}
           </p>
         </div>
         <dl className="grid grid-cols-2 gap-6 text-sm">
@@ -295,32 +325,34 @@ export default function Overview({ month, year, viewMode, asOf }) {
         </section>
       </div>
 
-      {/* Needs / wants / savings mix */}
+      {/* Where the money went: needs / wants / saved / still in checking */}
       {mixTotal > 0 ? (
         <section className={PANEL} aria-labelledby="overview-mix">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="overview-mix" className={PANEL_TITLE}>Where it went</h2>
+            <div>
+              <h2 id="overview-mix" className={PANEL_TITLE}>Where it went</h2>
+              <p className={PANEL_SUB}>Saved includes budget lines and money moved to savings, brokerage and retirement accounts.</p>
+            </div>
             <Link to={reportsLink({ view: 'trends' })} className="text-xs font-semibold text-violet-700 hover:underline dark:text-violet-400">
               See trends
             </Link>
           </div>
           <div className="mt-4 flex h-3 gap-0.5 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700" aria-hidden="true">
-            {MIX.map((m) => {
-              const value = Math.max(summary[m.type], 0);
-              return value > 0 ? <div key={m.type} className={m.bar} style={{ width: `${(value / mixTotal) * 100}%` }} /> : null;
-            })}
+            {mixParts.map((m) => (
+              <div key={m.key} className={m.bar} style={{ width: `${(summary[m.key] / mixTotal) * 100}%` }} />
+            ))}
           </div>
-          <dl className="mt-3 grid grid-cols-3 gap-3">
-            {MIX.map((m) => (
-              <div key={m.type}>
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {MIX.filter((m) => m.key !== 'leftOver' || summary.leftOver > 0).map((m) => (
+              <div key={m.key}>
                 <dt className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
                   <span aria-hidden="true" className={`h-2 w-2 rounded-full ${m.bar}`} />
                   {m.label}
                 </dt>
                 <dd className="mt-0.5 text-sm font-semibold tabular-nums text-stone-900 dark:text-stone-100">
-                  {money(summary[m.type])}
+                  {money(summary[m.key])}
                   <span className="ml-1.5 text-xs font-normal text-stone-500 dark:text-stone-400">
-                    {Math.round((Math.max(summary[m.type], 0) / mixTotal) * 100)}%
+                    {Math.round((Math.max(summary[m.key], 0) / mixTotal) * 100)}%
                   </span>
                 </dd>
               </div>

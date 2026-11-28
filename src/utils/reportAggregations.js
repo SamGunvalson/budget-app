@@ -74,13 +74,49 @@ export function drillDownTransactions(transactions, categoryId) {
   );
 }
 
+/** Account types whose balance counts as savings when money moves in or out. */
+export const SAVINGS_ACCOUNT_TYPES = new Set(['savings', 'brokerage', 'retirement']);
+
 /**
- * Category × month totals.
+ * Net money moved into savings accounts by plain transfers, per month.
+ *
+ * Savings is recorded two ways: budgeted lines (a Savings-type category,
+ * often as a linked transfer whose other leg lands in the 401k), and plain
+ * transfers of whatever is left over (both legs use a transfer category).
+ * Budgeted lines are already in `byType.savings`; this covers the plain
+ * transfers. A leg arriving in a savings/brokerage/retirement account adds,
+ * a leg leaving one subtracts, so savings → brokerage nets to zero and a
+ * withdrawal to checking counts against the month. Transfer groups with any
+ * non-transfer leg (linked transfers) are skipped so they count only once.
+ * Single-account adjustments (no transfer group) are ignored.
+ *
+ * @returns {Record<string, number>} monthKey → cents
+ */
+export function transferSavingsByMonth(transactions) {
+  const linkedGroups = new Set();
+  for (const tx of transactions) {
+    if (tx.transfer_group_id && tx.categories?.type !== 'transfer') linkedGroups.add(tx.transfer_group_id);
+  }
+  const totals = {};
+  for (const tx of transactions) {
+    if (!tx.transfer_group_id || tx.categories?.type !== 'transfer') continue;
+    if (linkedGroups.has(tx.transfer_group_id)) continue;
+    if (!SAVINGS_ACCOUNT_TYPES.has(tx.accounts?.type)) continue;
+    const amount = Math.abs(tx.amount);
+    const key = txMonthKey(tx);
+    totals[key] = (totals[key] ?? 0) + (tx.is_income ? amount : -amount);
+  }
+  return totals;
+}
+
+/**
+ * Category × month totals, plus plain transfers into savings accounts.
  *
  * @returns {{
  *   byCategory: Record<string, Record<string, number>>,  // categoryId → monthKey → cents
  *   byType: Record<string, Record<string, number>>,      // type → monthKey → cents
  *   meta: Record<string, { name: string, color: string | null, type: string }>,
+ *   transferSavings: Record<string, number>,             // monthKey → cents (see transferSavingsByMonth)
  * }}
  */
 export function categoryMonthMatrix(transactions) {
@@ -108,7 +144,7 @@ export function categoryMonthMatrix(transactions) {
     byType[type][key] = (byType[type][key] ?? 0) + value;
   }
 
-  return { byCategory, byType, meta };
+  return { byCategory, byType, meta, transferSavings: transferSavingsByMonth(transactions) };
 }
 
 /** Sum a `monthKey → cents` row over `keys` (missing months count as 0). */
@@ -124,16 +160,18 @@ export function averageMonths(row, keys) {
 }
 
 /**
- * Savings rate = (income − needs − wants) ÷ income. Money left over counts as
- * saved. Null when there is no positive income.
+ * Savings rate = saved ÷ income, where saved is budgeted savings plus money
+ * moved into savings accounts. Money left in checking does not count until
+ * it is moved. Null when there is no positive income.
  */
-export function savingsRate({ income, needs = 0, wants = 0 }) {
+export function savingsRate({ income, saved }) {
   if (!(income > 0)) return null;
-  return (income - needs - wants) / income;
+  return saved / income;
 }
 
 /**
- * Income and spending-type totals per month, with the savings rate.
+ * Income and spending-type totals per month, with money moved to savings
+ * accounts (`transferred`), total `saved` and the savings rate.
  * @returns {Array<{ key: string, income: number, needs: number, wants: number,
  *   savings: number, savingsRate: number | null }>}
  */
@@ -145,8 +183,10 @@ export function typeMixByMonth(matrix, keys) {
       needs: matrix.byType.needs?.[key] ?? 0,
       wants: matrix.byType.wants?.[key] ?? 0,
       savings: matrix.byType.savings?.[key] ?? 0,
+      transferred: matrix.transferSavings?.[key] ?? 0,
     };
-    return { ...row, savingsRate: savingsRate(row) };
+    const saved = row.savings + row.transferred;
+    return { ...row, saved, savingsRate: savingsRate({ income: row.income, saved }) };
   });
 }
 
@@ -206,7 +246,7 @@ export function payeeGroups(transactions, { ignore = [], minCount = 3 } = {}) {
     const value = signedAmount(tx);
     if (value === null) continue;
     const raw = tx.payee?.trim() || tx.description?.trim() || '';
-    const key = normalizePayee(raw);
+    const key = payeeKey(tx);
     if (!key) continue;
 
     let group = groups.get(key);
@@ -459,10 +499,14 @@ export function categoryComparisonGroups({ actual, compare, categories = [], met
 // ── Overview tab ────────────────────────────────────────────────────────────
 
 /**
- * Totals for a set of months. `spending` is consumption (needs + wants +
- * other). `saved` = income − spending, which includes money moved into
- * savings categories plus anything left over; `leftOver` excludes savings.
- * `savingsRate` = saved ÷ income (null without positive income).
+ * Totals for a set of months.
+ * - `spending`: consumption (needs + wants + other).
+ * - `kept`: income − spending, what consumption didn't use.
+ * - `savings`: budgeted savings (Savings-type categories).
+ * - `transferred`: net plain transfers into savings accounts.
+ * - `saved`: savings + transferred. `savingsRate` = saved ÷ income.
+ * - `leftOver`: kept − saved, still sitting in checking (negative when more
+ *   was saved than kept, i.e. drawn from earlier cash).
  */
 export function periodSummary(matrix, keys) {
   const sum = (type) => sumMonths(matrix.byType[type], keys);
@@ -472,6 +516,9 @@ export function periodSummary(matrix, keys) {
   const savings = sum('savings');
   const other = sum('other');
   const spending = needs + wants + other;
+  const transferred = sumMonths(matrix.transferSavings, keys);
+  const kept = income - spending;
+  const saved = savings + transferred;
   return {
     income,
     needs,
@@ -479,9 +526,11 @@ export function periodSummary(matrix, keys) {
     savings,
     other,
     spending,
-    saved: income - spending,
-    leftOver: income - spending - savings,
-    savingsRate: savingsRate({ income, needs, wants: wants + other }),
+    kept,
+    transferred,
+    saved,
+    leftOver: kept - saved,
+    savingsRate: savingsRate({ income, saved }),
   };
 }
 
@@ -508,7 +557,7 @@ export function topMovers({ actual, compare, categories = [], meta = {}, limit =
 export function repeatingChargeKeys(transactions, minMonths = 3) {
   const months = new Map();
   for (const tx of transactions) {
-    const payee = normalizePayee(tx.payee?.trim() || tx.description?.trim() || '');
+    const payee = payeeKey(tx);
     if (!payee) continue;
     const key = `${payee}|${Math.abs(tx.amount)}`;
     if (!months.has(key)) months.set(key, new Set());
@@ -527,7 +576,7 @@ export function largestTransactions(transactions, keys, limit = 5, { excludeBill
   const inPeriod = new Set(keys);
   const repeating = excludeBills ? repeatingChargeKeys(transactions) : new Set();
   const isBill = (tx) => !!tx.recurring_template_id
-    || repeating.has(`${normalizePayee(tx.payee?.trim() || tx.description?.trim() || '')}|${Math.abs(tx.amount)}`);
+    || repeating.has(`${payeeKey(tx)}|${Math.abs(tx.amount)}`);
   return transactions
     .filter((tx) => inPeriod.has(txMonthKey(tx)) && txType(tx) !== 'income' && (signedAmount(tx) ?? 0) > 0)
     .filter((tx) => !excludeBills || !isBill(tx))
@@ -551,4 +600,40 @@ export function planStatus({ actual, planned, categories = [], meta = {} }) {
     unbudgetedSpend: unbudgeted.reduce((s, r) => s + r.actual, 0),
     unbudgetedCount: unbudgeted.length,
   };
+}
+
+// ── Categories › Payees ─────────────────────────────────────────────────────
+
+/** `user_preferences` key holding `{ payees: string[] }` of ignored normalized payees. */
+export const IGNORED_PAYEES_PREF = 'payee_consistency_ignored';
+
+/** Months the Payees view and the Overview mixed-payee count look at. */
+export const PAYEE_WINDOW_MONTHS = 12;
+
+/** The trailing payee window ending at (year, month), oldest first. */
+export function payeeWindowKeys(year, month) {
+  return monthRange(year, month, PAYEE_WINDOW_MONTHS);
+}
+
+/** Normalized payee key of a transaction (payee, else description). */
+export function payeeKey(tx) {
+  return normalizePayee(tx.payee?.trim() || tx.description?.trim() || '');
+}
+
+/** Non-transfer transactions whose normalized payee is `key`. */
+export function payeeTransactions(transactions, key) {
+  return transactions.filter((tx) => tx.categories?.type !== 'transfer' && payeeKey(tx) === key);
+}
+
+/** The ignored-payee list from its stored preference value (tolerates junk). */
+export function ignoredPayeesFrom(pref) {
+  return Array.isArray(pref?.payees) ? pref.payees.filter((p) => typeof p === 'string') : [];
+}
+
+/** Add `key` to the ignore list, or remove it when present; sorted, no duplicates. */
+export function toggleIgnoredPayee(list, key) {
+  const set = new Set(list);
+  if (set.has(key)) set.delete(key);
+  else set.add(key);
+  return [...set].sort();
 }

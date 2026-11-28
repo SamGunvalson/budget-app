@@ -98,7 +98,9 @@ See [archiving behavior](./SETUP_GUIDE.md#category-archiving).
 Unique `(user_id, preference_key)`; index on `user_id`; owner-scoped RLS.
 Preference values are application JSON, not separate database columns.
 Examples include `type_group_order`, `favorite_accounts`, theme preferences,
-`playground_scenarios`, and `quick_transaction_templates`.
+`playground_scenarios`, `quick_transaction_templates`, and
+`payee_consistency_ignored` (`{ payees: string[] }` of normalized payee names
+hidden from the Reports mixed-category payee check).
 
 Quick templates store label/description/payee, account/category IDs,
 `is_income`, and optional `is_split`, `split_method`, `split_payer`,

@@ -83,12 +83,12 @@ export default function CategoryDrillDown({
   const totalAmount = signedCategoryTotal(transactions);
 
   return (
-    <div className="animate-fade-in-up mt-3 overflow-hidden rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-inner dark:border-amber-800/60 dark:bg-amber-950/30">
+    <div className="animate-fade-in-up mt-3 overflow-clip rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-inner dark:border-amber-800/60 dark:bg-amber-950/30">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-amber-200/40 bg-white/60 px-5 py-3 dark:border-amber-800/40 dark:bg-stone-800/60">
         <div className="flex items-center gap-3">
           <span
-            className="h-3.5 w-3.5 flex-shrink-0 rounded-full shadow-sm"
+            className="h-3.5 w-3.5 shrink-0 rounded-full shadow-sm"
             style={{ backgroundColor: categoryColor }}
           />
           <div>
@@ -166,9 +166,11 @@ export default function CategoryDrillDown({
         </div>
       )}
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar. The wrapper is the sticky element: BulkActionBar's
+          own `sticky` has no room to move inside a wrapper of its own height,
+          so the bar used to sit below the fold while rows were selected. */}
       {mgr.selectedIds.size > 0 && (
-        <div className="px-3 pb-3">
+        <div className="sticky bottom-0 z-20 px-3 pb-3 mobile:bottom-[var(--bottom-chrome,0px)]">
           <BulkActionBar
             selectedCount={mgr.selectedIds.size}
             categories={categories}

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Dev seed: creates a test user (plus a split partner) on a LOCAL self-hosted
- * stack and fills it with ~4 months of realistic data, so `npm run dev` has
- * something to log in to and look at.
+ * stack and fills it with ~24 months of realistic data, so `npm run dev` has
+ * something to log in to and look at, and Reports has a year of history to
+ * compare against (last year, 3-month average, 12-month payee window, YoY).
  *
  * Goes through the real HTTP API (auth signup → PostgREST as that user), so
  * RLS, triggers, and constraints apply exactly as they do for the app.
@@ -10,6 +11,7 @@
  *   npm run seed:dev                       # dev@example.test / devpassword
  *   npm run seed:dev -- --email me2@example.test
  *   npm run seed:dev -- --target http://localhost:8085 --no-partner
+ *   npm run seed:dev -- --months 6        # shorter history (default 24)
  *
  * Target: --target, else SEED_API_TARGET, else DEV_API_PROXY_TARGET /
  * VITE_API_ORIGIN from .env, else http://localhost:8085. Non-local targets
@@ -60,6 +62,8 @@ const EMAIL = opt('email') || process.env.SEED_EMAIL || 'dev@example.test';
 const PASSWORD = opt('password') || process.env.SEED_PASSWORD || 'devpassword';
 const PARTNER_EMAIL = opt('partner-email') || EMAIL.replace('@', '+partner@');
 const WITH_PARTNER = !flag('no-partner');
+// Months of history, counting the current one.
+const MONTHS = Math.max(1, Number.parseInt(opt('months') ?? '24', 10) || 24);
 
 const host = new URL(TARGET).hostname;
 const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]', 'host.docker.internal'].includes(host);
@@ -129,12 +133,16 @@ const pad = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const today = new Date();
 today.setHours(0, 0, 0, 0);
-const start = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+const start = new Date(today.getFullYear(), today.getMonth() - (MONTHS - 1), 1);
 const horizon = new Date(today);
 horizon.setDate(horizon.getDate() + 21); // projected items for the cashflow forecast
 const days = [];
 for (const d = new Date(start); d <= horizon; d.setDate(d.getDate() + 1)) days.push(new Date(d));
 const statusFor = (d) => (d > today ? 'projected' : 'posted');
+// Whole months between `start` and `d` (0 for the first month), for gentle trends.
+const monthsIn = (d) => (d.getFullYear() - start.getFullYear()) * 12 + d.getMonth() - start.getMonth();
+// A raise 12 months ago, so income grows year over year.
+const raiseDate = new Date(today.getFullYear() - 1, today.getMonth(), 1);
 
 // ── Palette helpers ──────────────────────────────────────────────────────────
 const fam = Object.fromEntries(COLOR_FAMILIES.map((f) => [f.id, f.shades]));
@@ -182,6 +190,7 @@ const ACCOUNTS = [
 
 // Monthly plan amounts (cents) for budget_items.
 const PLAN = {
+  Salary: 572900, 'Side Gigs': 40000, Interest: 4000,
   Rent: 185000, Utilities: 16000, 'Internet & Phone': 12000, Groceries: 65000, Gas: 18000,
   Transit: 6000, Insurance: 14500, Health: 8000, 'Dining Out': 30000, Coffee: 6000,
   Entertainment: 12000, Streaming: 4500, Shopping: 20000, Gifts: 7500, Pets: 9000,
@@ -231,9 +240,17 @@ async function main() {
       transaction_date: ymd(d), is_income: income, status: statusFor(d), transfer_group_id: group,
     });
   };
+  // Plain transfer: both legs use the transfer category (leftover moved by hand).
   const transfer = (d, from, to, amount, description) => {
     const group = randomUUID();
     add(d, from, 'Account Transfer', amount, description, { group });
+    add(d, to, 'Account Transfer', amount, description, { income: true, group });
+  };
+  // Linked transfer: the outgoing leg carries a real category (a budgeted
+  // savings line such as the 401k); the incoming leg is the transfer companion.
+  const linkedTransfer = (d, from, to, category, amount, description) => {
+    const group = randomUUID();
+    add(d, from, category, amount, description, { group });
     add(d, to, 'Account Transfer', amount, description, { income: true, group });
   };
 
@@ -242,17 +259,22 @@ async function main() {
     const dom = d.getDate();
     const dow = d.getDay();
     if (i >= firstFriday && (i - firstFriday) % 14 === 0) {
-      add(d, 'checking', 'Salary', 286450, 'Payroll deposit', { income: true, payee: 'Acme Corp' });
+      add(d, 'checking', 'Salary', d < raiseDate ? 271500 : 286450, 'Payroll deposit', { income: true, payee: 'Acme Corp' });
       transfer(d, 'checking', 'savings', 40000, 'Emergency fund contribution');
     }
     if (dom === 1) add(d, 'checking', 'Rent', 185000, 'Rent', { payee: 'Maple Court Apartments' });
     if (dom === 3) add(d, 'card', 'Streaming', 1599, 'Streaming subscription', { payee: 'StreamFlix' });
     if (dom === 5) add(d, 'card', 'Streaming', 1099, 'Music subscription', { payee: 'Tunely' });
     if (dom === 8) add(d, 'checking', 'Insurance', 14250, 'Auto insurance', { payee: 'Safeguard Mutual' });
-    if (dom === 12) add(d, 'checking', 'Utilities', between(9500, 16500), 'Electric bill', { payee: 'City Power' });
+    if (dom === 12) {
+      // Electric bills peak in winter and again in high summer.
+      const month = d.getMonth();
+      const season = [0, 1, 11].includes(month) ? 1.5 : [6, 7].includes(month) ? 1.3 : 1;
+      add(d, 'checking', 'Utilities', Math.round(between(9500, 16500) * season), 'Electric bill', { payee: 'City Power' });
+    }
     if (dom === 14) add(d, 'card', 'Internet & Phone', 11999, 'Internet + phone', { payee: 'FiberNet' });
     if (dom === 15) {
-      transfer(d, 'checking', 'retirement', 50000, 'Retirement contribution');
+      linkedTransfer(d, 'checking', 'retirement', 'Retirement', 50000, '401(k) contribution');
       transfer(d, 'checking', 'savings', 25000, 'Vacation savings');
     }
     if (dom === 17) {
@@ -262,9 +284,12 @@ async function main() {
     if (dom === 20) add(d, 'checking', 'Utilities', between(3500, 6000), 'Water & trash', { payee: 'City Utilities' });
     if (dom === 28) add(d, 'savings', 'Interest', between(3800, 4600), 'Interest paid', { income: true, payee: 'High-Yield Savings' });
     if (dow === 6) add(d, 'card', 'Groceries', between(9500, 18500), 'Weekly groceries', { payee: pick(['Green Basket', 'FreshMart', 'Corner Co-op']) });
-    if (dow === 3 && rand() < 0.6) add(d, 'card', 'Groceries', between(1800, 4500), 'Grocery top-up', { payee: 'Corner Co-op' });
-    if ((dow === 5 || dow === 6) && rand() < 0.7) add(d, 'card', 'Dining Out', between(2800, 9500), 'Dinner out', { payee: pick(['Luna Bistro', 'Taqueria Sol', 'Noodle Bar', 'Pizza Forno']) });
-    if (dow >= 1 && dow <= 5 && rand() < 0.45) add(d, 'card', 'Coffee', between(450, 850), 'Coffee', { payee: pick(['Bean There', 'Daily Grind']) });
+    // Deliberate miscategorizations for Reports › Payees: a few Corner Co-op
+    // top-ups filed as Dining Out, and the odd coffee filed as Groceries.
+    if (dow === 3 && rand() < 0.6) add(d, 'card', rand() < 0.08 ? 'Dining Out' : 'Groceries', between(1800, 4500), 'Grocery top-up', { payee: 'Corner Co-op' });
+    // Dining out creeps up over time, so it shows as a riser in Trends.
+    if ((dow === 5 || dow === 6) && rand() < 0.7) add(d, 'card', 'Dining Out', Math.round(between(2800, 9500) * (1 + monthsIn(d) * 0.015)), 'Dinner out', { payee: pick(['Luna Bistro', 'Taqueria Sol', 'Noodle Bar', 'Pizza Forno']) });
+    if (dow >= 1 && dow <= 5 && rand() < 0.45) add(d, 'card', rand() < 0.03 ? 'Groceries' : 'Coffee', between(450, 850), 'Coffee', { payee: pick(['Bean There', 'Daily Grind']) });
     if (dow === 2 && rand() < 0.8) add(d, 'card', 'Gas', between(3800, 6200), 'Fuel', { payee: pick(['QuickFuel', 'Shell Station']) });
     if (dow === 1 && rand() < 0.5) add(d, 'checking', 'Transit', 2500, 'Transit pass reload', { payee: 'Metro' });
     if (rand() < 0.06) add(d, 'card', 'Shopping', between(2500, 14000), 'Online order', { payee: pick(['ShopHub', 'Home Goods Co']) });
@@ -272,7 +297,8 @@ async function main() {
     if (rand() < 0.04) add(d, 'card', 'Pets', between(2500, 8000), 'Pet supplies', { payee: 'Paws & Claws' });
     if (rand() < 0.03) add(d, 'card', 'Garden', between(1500, 6000), 'Garden center', { payee: 'Bloom Nursery' });
     if (rand() < 0.03) add(d, 'card', 'Health', between(2000, 9000), 'Pharmacy', { payee: 'WellCare Pharmacy' });
-    if (rand() < 0.025) add(d, 'card', 'Gifts', between(2500, 9000), 'Gift', { payee: 'ShopHub' });
+    // Gifts spike in December.
+    if (rand() < (d.getMonth() === 11 ? 0.15 : 0.025)) add(d, 'card', 'Gifts', between(2500, 9000), 'Gift', { payee: 'ShopHub' });
     if (dom === 18 && d <= today) add(d, 'checking', 'Side Gigs', between(25000, 60000), 'Freelance invoice', { income: true, payee: 'Client LLC' });
   });
   // A spending credit (refund in a spending category) to exercise classification.

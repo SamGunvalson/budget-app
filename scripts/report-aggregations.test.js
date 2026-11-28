@@ -85,9 +85,9 @@ test('sumMonths and averageMonths count missing months as zero', () => {
 });
 
 test('savings rate is income minus needs and wants over income', () => {
-  assert.equal(savingsRate({ income: 1000, needs: 500, wants: 300 }), 0.2);
-  assert.equal(savingsRate({ income: 1000, needs: 900, wants: 300 }), -0.2);
-  assert.equal(savingsRate({ income: 0, needs: 100 }), null);
+  assert.equal(savingsRate({ income: 1000, saved: 200 }), 0.2);
+  assert.equal(savingsRate({ income: 1000, saved: -200 }), -0.2);
+  assert.equal(savingsRate({ income: 0, saved: 100 }), null);
 });
 
 test('typeMixByMonth reports every requested month', () => {
@@ -98,8 +98,8 @@ test('typeMixByMonth reports every requested month', () => {
     tx('invest', 200, '2026-01-03'),
   ]);
   assert.deepEqual(typeMixByMonth(m, ['2026-01', '2026-02']), [
-    { key: '2026-01', income: 1000, needs: 500, wants: 100, savings: 200, savingsRate: 0.4 },
-    { key: '2026-02', income: 0, needs: 0, wants: 0, savings: 0, savingsRate: null },
+    { key: '2026-01', income: 1000, needs: 500, wants: 100, savings: 200, transferred: 0, saved: 200, savingsRate: 0.2 },
+    { key: '2026-02', income: 0, needs: 0, wants: 0, savings: 0, transferred: 0, saved: 0, savingsRate: null },
   ]);
 });
 
@@ -278,7 +278,7 @@ test('periodSummary separates consumption, savings and left over', () => {
   ]);
   assert.deepEqual(periodSummary(m, ['2026-03']), {
     income: 10000, needs: 4000, wants: 1000, savings: 2000, other: 0,
-    spending: 5000, saved: 5000, leftOver: 3000, savingsRate: 0.5,
+    spending: 5000, kept: 5000, transferred: 0, saved: 2000, leftOver: 3000, savingsRate: 0.2,
   });
   assert.equal(periodSummary(m, ['2026-01']).savingsRate, null);
 });
@@ -340,4 +340,95 @@ test('planStatus counts over-plan categories and unbudgeted spending', () => {
     planned: { sal: 0, rent: 1500, gro: 650 },
     categories,
   }), { overCount: 1, overIds: ['gro'], unbudgetedSpend: 120, unbudgetedCount: 1 });
+});
+
+// ── Categories › Payees ──
+import {
+  ignoredPayeesFrom,
+  payeeKey,
+  payeeTransactions,
+  payeeWindowKeys,
+  toggleIgnoredPayee,
+} from '../src/utils/reportAggregations.js';
+
+test('payee window covers the 12 months ending at the selected month', () => {
+  const keys = payeeWindowKeys(2026, 3);
+  assert.equal(keys.length, 12);
+  assert.equal(keys[0], '2025-04');
+  assert.equal(keys[11], '2026-03');
+});
+
+test('payeeTransactions matches the normalized payee and skips transfers', () => {
+  const rows = [
+    tx('groceries', 100, '2026-01-01', { payee: 'COSTCO #12' }),
+    tx('dining', 100, '2026-01-02', { payee: 'Costco' }),
+    tx('transfer', 100, '2026-01-03', { payee: 'Costco' }),
+    tx('dining', 100, '2026-01-04', { payee: null, description: 'costco 0042' }),
+    tx('dining', 100, '2026-01-05', { payee: 'Target' }),
+  ];
+  assert.equal(payeeKey(rows[3]), 'costco');
+  assert.equal(payeeTransactions(rows, 'costco').length, 3);
+});
+
+test('ignore list parsing and toggling', () => {
+  assert.deepEqual(ignoredPayeesFrom(null), []);
+  assert.deepEqual(ignoredPayeesFrom({ payees: ['amazon', 3, 'target'] }), ['amazon', 'target']);
+  assert.deepEqual(toggleIgnoredPayee(['target'], 'amazon'), ['amazon', 'target']);
+  assert.deepEqual(toggleIgnoredPayee(['amazon', 'target'], 'amazon'), ['target']);
+});
+
+// ── Savings from transfers ──
+import { transferSavingsByMonth } from '../src/utils/reportAggregations.js';
+
+const ACCOUNTS = {
+  checking: { id: 'a-chk', type: 'checking' },
+  savings: { id: 'a-sav', type: 'savings' },
+  brokerage: { id: 'a-brk', type: 'brokerage' },
+  k401: { id: 'a-401', type: 'retirement' },
+  card: { id: 'a-card', type: 'credit_card' },
+};
+/** A two-leg transfer; `fromCat` lets the outgoing leg carry a real category (linked transfer). */
+function transferPair(from, to, amount, date, { fromCat = 'transfer', group = `g${seq + 1}` } = {}) {
+  const out = tx(fromCat, -amount, date, { is_income: false, transfer_group_id: group, account_id: ACCOUNTS[from].id, accounts: ACCOUNTS[from] });
+  const inn = tx('transfer', amount, date, { is_income: true, transfer_group_id: group, account_id: ACCOUNTS[to].id, accounts: ACCOUNTS[to] });
+  return [out, inn];
+}
+
+test('plain transfers into savings accounts count as saved; withdrawals and moves between them net out', () => {
+  const rows = [
+    ...transferPair('checking', 'savings', 50000, '2026-03-05'),   // +500 saved
+    ...transferPair('savings', 'checking', 20000, '2026-03-20'),   // −200 withdrawn
+    ...transferPair('savings', 'brokerage', 30000, '2026-03-21'),  // 0: still saved
+    ...transferPair('checking', 'card', 90000, '2026-03-17'),      // card payment: not savings
+    ...transferPair('checking', 'k401', 10000, '2026-04-01'),      // next month
+    tx('transfer', 7000, '2026-03-30', { is_income: true, accounts: ACCOUNTS.savings }), // adjustment, no group
+  ];
+  assert.deepEqual(transferSavingsByMonth(rows), { '2026-03': 30000, '2026-04': 10000 });
+});
+
+test('linked transfers count once, through their Savings category', () => {
+  // 401k as a budget line: checking leg is Investing (savings type), the 401k leg is the transfer companion.
+  const rows = transferPair('checking', 'k401', 50000, '2026-03-15', { fromCat: 'invest' });
+  assert.deepEqual(transferSavingsByMonth(rows), {});
+  const summary = periodSummary(categoryMonthMatrix([tx('salary', 400000, '2026-03-01'), ...rows]), ['2026-03']);
+  assert.equal(summary.savings, 50000);
+  assert.equal(summary.transferred, 0);
+  assert.equal(summary.saved, 50000);
+});
+
+test('periodSummary adds budgeted and transferred savings and reports what is left in checking', () => {
+  const rows = [
+    tx('salary', 600000, '2026-03-01'),
+    tx('rent', -200000, '2026-03-01'),
+    tx('dining', -50000, '2026-03-02'),
+    ...transferPair('checking', 'k401', 60000, '2026-03-15', { fromCat: 'invest' }), // budgeted
+    ...transferPair('checking', 'savings', 150000, '2026-03-28'),                    // leftover moved
+  ];
+  const s = periodSummary(categoryMonthMatrix(rows), ['2026-03']);
+  assert.equal(s.kept, 350000);
+  assert.equal(s.savings, 60000);
+  assert.equal(s.transferred, 150000);
+  assert.equal(s.saved, 210000);
+  assert.equal(s.leftOver, 140000);
+  assert.equal(s.savingsRate, 0.35);
 });
