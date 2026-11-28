@@ -15,6 +15,7 @@ const noop = () => {};
  *   setTransactions: Function,  // optimistic setter for the backing query cache
  *   onDataChanged?: () => void,
  *   resetKey: string,           // collapse the drill-down whenever this changes
+ *   initialExpandedId?: string | null, // category open on first render (deep links)
  * }} options
  * @returns {{
  *   expandedId: string | null,
@@ -29,8 +30,9 @@ export default function useCategoryDrillDown({
   setTransactions,
   onDataChanged = noop,
   resetKey,
+  initialExpandedId = null,
 }) {
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState(initialExpandedId);
 
   // Collapse during render when the period changes (avoids an effect cascade).
   const [seenKey, setSeenKey] = useState(resetKey);

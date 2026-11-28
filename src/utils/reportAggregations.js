@@ -455,3 +455,100 @@ export function categoryComparisonGroups({ actual, compare, categories = [], met
   }
   return GROUP_ORDER.filter((type) => groups.has(type)).map((type) => groups.get(type));
 }
+
+// ── Overview tab ────────────────────────────────────────────────────────────
+
+/**
+ * Totals for a set of months. `spending` is consumption (needs + wants +
+ * other). `saved` = income − spending, which includes money moved into
+ * savings categories plus anything left over; `leftOver` excludes savings.
+ * `savingsRate` = saved ÷ income (null without positive income).
+ */
+export function periodSummary(matrix, keys) {
+  const sum = (type) => sumMonths(matrix.byType[type], keys);
+  const income = sum('income');
+  const needs = sum('needs');
+  const wants = sum('wants');
+  const savings = sum('savings');
+  const other = sum('other');
+  const spending = needs + wants + other;
+  return {
+    income,
+    needs,
+    wants,
+    savings,
+    other,
+    spending,
+    saved: income - spending,
+    leftOver: income - spending - savings,
+    savingsRate: savingsRate({ income, needs, wants: wants + other }),
+  };
+}
+
+/**
+ * Spending categories (not income or transfers) whose actual moved most from
+ * the comparison, largest absolute change first. Changes smaller than
+ * `minChange` cents are ignored.
+ */
+export function topMovers({ actual, compare, categories = [], meta = {}, limit = 5, minChange = 1000 }) {
+  const groups = categoryComparisonGroups({ actual, compare, categories, meta });
+  return groups
+    .filter((g) => g.type !== 'income')
+    .flatMap((g) => g.rows)
+    .filter((row) => Math.abs(row.change) >= minChange)
+    .sort((a, b) => Math.abs(b.change) - Math.abs(a.change) || a.name.localeCompare(b.name))
+    .slice(0, limit);
+}
+
+/**
+ * Keys (`payee|amount`) of charges that repeat: the same normalized payee and
+ * exact amount in at least `minMonths` different months. Catches bills that
+ * were entered by hand rather than generated from a recurring template.
+ */
+export function repeatingChargeKeys(transactions, minMonths = 3) {
+  const months = new Map();
+  for (const tx of transactions) {
+    const payee = normalizePayee(tx.payee?.trim() || tx.description?.trim() || '');
+    if (!payee) continue;
+    const key = `${payee}|${Math.abs(tx.amount)}`;
+    if (!months.has(key)) months.set(key, new Set());
+    months.get(key).add(txMonthKey(tx));
+  }
+  return new Set([...months].filter(([, set]) => set.size >= minMonths).map(([key]) => key));
+}
+
+/**
+ * The largest spending transactions (refunds, income and transfers excluded)
+ * in `keys`. With `excludeBills`, rows generated from a recurring template and
+ * repeating same-amount charges (see `repeatingChargeKeys`, judged across all
+ * of `transactions`) are left out so one-off purchases surface.
+ */
+export function largestTransactions(transactions, keys, limit = 5, { excludeBills = false } = {}) {
+  const inPeriod = new Set(keys);
+  const repeating = excludeBills ? repeatingChargeKeys(transactions) : new Set();
+  const isBill = (tx) => !!tx.recurring_template_id
+    || repeating.has(`${normalizePayee(tx.payee?.trim() || tx.description?.trim() || '')}|${Math.abs(tx.amount)}`);
+  return transactions
+    .filter((tx) => inPeriod.has(txMonthKey(tx)) && txType(tx) !== 'income' && (signedAmount(tx) ?? 0) > 0)
+    .filter((tx) => !excludeBills || !isBill(tx))
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || b.transaction_date.localeCompare(a.transaction_date))
+    .slice(0, limit);
+}
+
+/**
+ * Plan health for spending categories: how many are over plan, and how much
+ * was spent in categories with no plan.
+ * @returns {{ overCount: number, overIds: string[], unbudgetedSpend: number, unbudgetedCount: number }}
+ */
+export function planStatus({ actual, planned, categories = [], meta = {} }) {
+  const groups = categoryComparisonGroups({ actual, compare: planned, categories, meta });
+  const rows = groups.filter((g) => g.type !== 'income').flatMap((g) => g.rows);
+  const over = rows.filter((r) => r.compare > 0 && r.actual > r.compare);
+  const unbudgeted = rows.filter((r) => r.compare === 0 && r.actual > 0);
+  return {
+    overCount: over.length,
+    overIds: over.map((r) => r.categoryId),
+    unbudgetedSpend: unbudgeted.reduce((s, r) => s + r.actual, 0),
+    unbudgetedCount: unbudgeted.length,
+  };
+}

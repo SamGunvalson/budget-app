@@ -27,7 +27,6 @@ import useAuth from "./useAuth";
 import {
   // transactions
   getTransactionsOffline,
-  getTransactionsYTDOffline,
   getTransactionsForYearOffline,
   getPendingReviewCountOffline,
   getTransactionYearsOffline,
@@ -47,7 +46,6 @@ import {
   getBudgetPlanOffline,
   getBudgetItemsOffline,
   getPlanVsActualOffline,
-  getPlanVsActualYTDOffline,
   // recurring
   getTemplatesForAccountOffline,
   // analytics
@@ -83,19 +81,6 @@ export function useTransactionsForYear(year, { enabled = true } = {}) {
     queryKey: ["transactions", "year", year],
     queryFn: () => getTransactionsForYearOffline({ year }),
     enabled: enabled && year != null,
-  });
-}
-
-/** Year-to-date transactions through `throughMonth` (1–12). */
-export function useTransactionsYTD(
-  year,
-  throughMonth,
-  { enabled = true } = {},
-) {
-  return useQuery({
-    queryKey: ["transactions", "ytd", year, throughMonth],
-    queryFn: () => getTransactionsYTDOffline({ year, throughMonth }),
-    enabled: enabled && year != null && throughMonth != null,
   });
 }
 
@@ -319,21 +304,6 @@ export function usePlanVsActual(
     queryKey: ["budget_items", "planVsActual", { month, year, asOf }],
     queryFn: () => getPlanVsActualOffline({ month, year, asOf }),
     enabled: enabled && month != null && year != null,
-  });
-}
-
-/**
- * Plan-vs-Actual YTD via the `get_plan_vs_actual_ytd` RPC (Phase 3).
- */
-export function usePlanVsActualYTD(
-  year,
-  throughMonth,
-  { enabled = true, asOf = null } = {},
-) {
-  return useQuery({
-    queryKey: ["budget_items", "planVsActualYTD", { year, throughMonth, asOf }],
-    queryFn: () => getPlanVsActualYTDOffline({ year, throughMonth, asOf }),
-    enabled: enabled && year != null && throughMonth != null,
   });
 }
 

@@ -1,6 +1,6 @@
 # Reports Redesign Plan
 
-Status: PR 1 done · PR 2 (Categories list) done, uncommitted · PRs 3–6 pending · 2026-11-28
+Status: PRs 1–2 done · PR 3 (Overview) done, uncommitted · PRs 4–6 pending · 2026-11-28
 Follows: [UI_OVERHAUL_PLAN.md](UI_OVERHAUL_PLAN.md) (Phase 5 Overview moves here, inside Reports; `/app` keeps landing on Transactions)
 
 ## Goals
@@ -92,21 +92,30 @@ Every tab uses it.
 
 ### 1. Overview: month in review (new, default)
 
-A look back at the selected month or YTD. It does **not** repeat the Budget
-hero or Accounts' Coming up.
+A look back at the selected month or YTD, built in `Overview.jsx`. It does
+**not** repeat the Budget hero or Accounts' Coming up.
 
-1. **Forest hero:** net for the period ("+$1,240 kept in November") and savings
-   rate, with income and spending as smaller figures.
-2. **Compared with:** spending and income vs last month and vs your 3-month
-   average, shown as signed change chips.
-3. **Top movers:** 3–5 categories with the largest change vs their 3-month
-   average. Click one to open it in Categories, expanded.
-4. **Needs attention:** pending review (existing count, links to Transactions),
-   payees with mixed categories (links to Categories › Payees), and
-   uncategorized rows if any exist.
-5. **Largest transactions:** the top 5 in the period. Click one to edit it.
+1. **Forest hero:** what you kept (income − needs − wants − other), the savings
+   rate, and money moved to savings vs left over, with income and spending as
+   smaller figures.
+2. **Compared with:** spending and income vs last month and the 3-month
+   average (YTD: the same months last year), as signed change chips.
+3. **Top movers:** up to 5 spending categories that moved at least $10 from
+   the 3-month average (YTD: last year). Each links to Categories with that
+   row expanded and the matching comparison selected.
+4. **Needs attention:** pending review (links to Transactions), categories
+   over plan (links to Categories › Plan), and spending in unbudgeted
+   categories (links to Budgets). Mixed-category payees join in PR 4, with the
+   Payees view they link to. Category IDs are required, so there are no
+   uncategorized rows to report.
+5. **Largest purchases:** the top 5 one-off purchases. Bills are excluded:
+   rows from a recurring template, and the same payee charging the same amount
+   in 3+ months. Each links to its category's drill-down, where it can be edited.
 6. **Mix strip:** one stacked bar showing the needs/wants/savings share. Links
    to Trends.
+
+Deep links: `?view=`, `?category=<id>` (opens that drill-down) and
+`?compare=<mode>`. Picking a tab clears all three.
 
 ### 2. Categories (replaces Summary and Plan vs Actual)
 
@@ -183,7 +192,7 @@ views still use. Keep `BudgetAlert` if other pages import it.
    `reportAggregations.js` with tests, `useCategoryDrillDown`. No new
    user-facing reports yet.
 2. ✅ **Categories › List** with compare-to. Removes Summary and Plan vs Actual.
-3. **Overview** tab (default).
+3. ✅ **Overview** tab (default).
 4. **Categories › Payees** and the ignore list.
 5. **Trends** rebuild (mix, fixed/flexible, category trend).
 6. **Categories › Flow** (Sankey) and Annual cell drill-down.

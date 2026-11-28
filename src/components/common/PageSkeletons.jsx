@@ -95,9 +95,12 @@ export function ReportsSkeleton() {
   return (
     <Shell>
       <HeaderSkeleton />
-      {/* Categories tab: totals panel, then grouped category rows */}
-      <div className={`mb-6 h-28 ${panel}`} />
-      <ListPanel rows={5} />
+      {/* Overview tab (the default): forest hero, then two columns of panels */}
+      <div className="mb-6 h-48 animate-pulse rounded-2xl bg-forest/85" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ListPanel rows={3} well={false} />
+        <ListPanel rows={3} well={false} />
+      </div>
     </Shell>
   );
 }

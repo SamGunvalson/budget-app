@@ -264,3 +264,80 @@ test('categoryComparisonGroups orders types, totals groups and skips transfers a
   assert.deepEqual(groups[1].rows.map((r) => [r.categoryId, r.change, r.archived]), [['rent', 0, false], ['gro', 200, true]]);
   assert.equal(groups[2].rows[0].name, 'Old');
 });
+
+// ── Overview tab ──
+import { largestTransactions, periodSummary, planStatus, repeatingChargeKeys, topMovers } from '../src/utils/reportAggregations.js';
+
+test('periodSummary separates consumption, savings and left over', () => {
+  const m = categoryMonthMatrix([
+    tx('salary', 10000, '2026-03-01'),
+    tx('rent', 4000, '2026-03-01'),
+    tx('dining', 1000, '2026-03-02'),
+    tx('invest', 2000, '2026-03-03'),
+    tx('rent', 4000, '2026-02-01'), // outside
+  ]);
+  assert.deepEqual(periodSummary(m, ['2026-03']), {
+    income: 10000, needs: 4000, wants: 1000, savings: 2000, other: 0,
+    spending: 5000, saved: 5000, leftOver: 3000, savingsRate: 0.5,
+  });
+  assert.equal(periodSummary(m, ['2026-01']).savingsRate, null);
+});
+
+test('topMovers ranks spending categories by absolute change and skips income', () => {
+  const categories = [
+    { id: 'sal', name: 'Salary', type: 'income' },
+    { id: 'rent', name: 'Rent', type: 'needs' },
+    { id: 'gro', name: 'Groceries', type: 'needs' },
+    { id: 'din', name: 'Dining', type: 'wants' },
+  ];
+  const movers = topMovers({
+    actual: { sal: 900000, rent: 150000, gro: 30000, din: 9000 },
+    compare: { sal: 500000, rent: 150000, gro: 50000, din: 2000 },
+    categories,
+    minChange: 1000,
+  });
+  assert.deepEqual(movers.map((r) => [r.categoryId, r.change]), [['gro', -20000], ['din', 7000]]);
+  assert.equal(topMovers({ actual: { din: 9000 }, compare: { din: 2000 }, categories, limit: 0 }).length, 0);
+});
+
+test('largestTransactions lists the biggest spending rows in the period only', () => {
+  const rows = [
+    tx('rent', -150000, '2026-03-01'),
+    tx('groceries', -8000, '2026-03-05'),
+    tx('groceries', 20000, '2026-03-06', { is_income: true }), // refund
+    tx('salary', 500000, '2026-03-15'),
+    tx('transfer', 900000, '2026-03-20'),
+    tx('dining', -300000, '2026-02-10'), // other month
+  ];
+  assert.deepEqual(largestTransactions(rows, ['2026-03'], 5).map((t) => t.amount), [-150000, -8000]);
+  rows[0].recurring_template_id = 'r1';
+  assert.deepEqual(largestTransactions(rows, ['2026-03'], 5, { excludeBills: true }).map((t) => t.amount), [-8000]);
+});
+
+test('excludeBills also drops hand-entered charges repeating at the same amount', () => {
+  const rent = (date) => tx('rent', -185000, date, { payee: 'Maple Court #2' });
+  const rows = [
+    rent('2026-01-01'), rent('2026-02-01'), rent('2026-03-01'),
+    tx('groceries', -30000, '2026-03-04', { payee: 'Costco' }),
+    tx('groceries', -31000, '2026-02-04', { payee: 'Costco' }),
+    tx('groceries', -29000, '2026-01-04', { payee: 'Costco' }),
+  ];
+  assert.deepEqual([...repeatingChargeKeys(rows)], ['maple court|185000']);
+  assert.deepEqual(largestTransactions(rows, ['2026-03'], 5, { excludeBills: true }).map((t) => t.payee), ['Costco']);
+  // Only two months of rent: not yet a bill.
+  assert.equal(largestTransactions(rows.slice(1), ['2026-03'], 1, { excludeBills: true })[0].payee, 'Maple Court #2');
+});
+
+test('planStatus counts over-plan categories and unbudgeted spending', () => {
+  const categories = [
+    { id: 'sal', name: 'Salary', type: 'income' },
+    { id: 'rent', name: 'Rent', type: 'needs' },
+    { id: 'gro', name: 'Groceries', type: 'needs' },
+    { id: 'din', name: 'Dining', type: 'wants' },
+  ];
+  assert.deepEqual(planStatus({
+    actual: { sal: 10, rent: 1500, gro: 700, din: 120 },
+    planned: { sal: 0, rent: 1500, gro: 650 },
+    categories,
+  }), { overCount: 1, overIds: ['gro'], unbudgetedSpend: 120, unbudgetedCount: 1 });
+});

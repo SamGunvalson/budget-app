@@ -6,6 +6,7 @@ import SegmentedControl from '../components/common/SegmentedControl';
 import YearSelector from '../components/common/YearSelector';
 import MonthYearSelector from '../components/common/MonthYearSelector';
 import CategoryExplorer from '../components/reports/CategoryExplorer';
+import Overview from '../components/reports/Overview';
 // Defer recharts-bound charts until the user opens those tabs. Each lazy
 // import becomes its own JS chunk that pulls in `recharts` only when first
 // rendered, keeping the Reports route's first-paint bundle small.
@@ -28,16 +29,21 @@ function ChartFallback() {
 }
 
 const VIEWS = [
+  { value: 'overview', label: 'Overview' },
   { value: 'categories', label: 'Categories' },
   { value: 'trends', label: 'Trends' },
   { value: 'annualActuals', label: 'Annual Actuals', shortLabel: 'Annual' },
   { value: 'calendar', label: 'Calendar', shortLabel: 'Cal' },
 ];
 const VIEW_IDS = new Set(VIEWS.map((v) => v.value));
-const DEFAULT_VIEW = 'categories';
-// Tabs folded into Categories (REPORTS_REDESIGN_PLAN PR 2); keeps old
-// session state and `?view=` links working.
-const LEGACY_VIEWS = { summary: 'categories', planVsActual: 'categories' };
+const DEFAULT_VIEW = 'overview';
+// Retired tabs (REPORTS_REDESIGN_PLAN PRs 2–3); keeps old session state and
+// `?view=` links working.
+const LEGACY_VIEWS = { summary: 'overview', planVsActual: 'categories' };
+// Deep-link params owned by the active view; cleared when the user picks a tab.
+const VIEW_PARAMS = ['view', 'category', 'compare'];
+// Views that use the Monthly / YTD period.
+const PERIOD_VIEWS = new Set(['overview', 'categories']);
 
 /** A known view id for `value`, mapping retired tabs; null when unknown. */
 function resolveView(value) {
@@ -66,6 +72,11 @@ function viewHeading(view, viewMode, month, year) {
       return { eyebrow: `${year} actual spending by category`, title: 'Annual Actuals' };
     case 'trends':
       return { eyebrow: 'Track your spending patterns over time', title: 'Spending Trends' };
+    case 'overview':
+      return {
+        eyebrow: viewMode === 'ytd' ? `Jan \u2013 ${getMonthName(month)} ${year} in review` : `${monthLabel} in review`,
+        title: 'Overview',
+      };
     default:
       return {
         eyebrow: viewMode === 'ytd' ? `Jan – ${getMonthName(month)} ${year}` : monthLabel,
@@ -77,17 +88,17 @@ function viewHeading(view, viewMode, month, year) {
 export default function ReportsPage() {
   const { month, year, setMonthYear } = useMonthYear();
   const [viewMode, setViewMode] = useSessionState('reportsViewMode', 'monthly'); // 'monthly' | 'ytd'
-  // 'categories' | 'trends' | 'annualActuals' | 'calendar'.
+  // 'overview' | 'categories' | 'trends' | 'annualActuals' | 'calendar'.
   // A valid `?view=` deep link wins until the user picks a tab.
   const [sessionView, setSessionView] = useSessionState('reportsActiveView', DEFAULT_VIEW);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = resolveView(searchParams.get('view')) ?? resolveView(sessionView) ?? DEFAULT_VIEW;
   const setActiveView = useCallback((view) => {
     setSessionView(view);
-    if (searchParams.has('view')) {
+    if (VIEW_PARAMS.some((key) => searchParams.has(key))) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        next.delete('view');
+        for (const key of VIEW_PARAMS) next.delete(key);
         return next;
       }, { replace: true });
     }
@@ -149,7 +160,7 @@ export default function ReportsPage() {
             Phones: period/range and Include upcoming share the first line,
             the date picker wraps below. Wider: the toggle sits far right. */}
         <div className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
-          {activeView === 'categories' && (
+          {PERIOD_VIEWS.has(activeView) && (
             <SegmentedControl className="order-1" ariaLabel="Period" options={PERIOD_OPTIONS} value={viewMode} onChange={setViewMode} />
           )}
           {activeView === 'trends' && (
@@ -185,8 +196,10 @@ export default function ReportsPage() {
               />
               {!trendError && <TrendSummary {...trendSummary} />}
             </Suspense>
-          ) : (
+          ) : activeView === 'categories' ? (
             <CategoryExplorer month={month} year={year} viewMode={viewMode} asOf={asOf} />
+          ) : (
+            <Overview month={month} year={year} viewMode={viewMode} asOf={asOf} />
           )}
         </div>
       </div>

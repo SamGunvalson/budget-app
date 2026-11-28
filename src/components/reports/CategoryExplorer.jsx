@@ -1,31 +1,25 @@
-import { useCallback, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import CategoryWell from '../common/CategoryWell';
+import ChangeChip from './ChangeChip';
 import DataUnavailable from '../common/DataUnavailable';
 import EmptyState from '../common/EmptyState';
 import SegmentedControl from '../common/SegmentedControl';
-import {
-  useAnnualBudgetData,
-  useCategories,
-  useTransactionsForYear,
-} from '../../hooks/queries';
+import useReportData from '../../hooks/useReportData';
 import useCategoryDrillDown from '../../hooks/useCategoryDrillDown';
 import useSessionState from '../../hooks/useSessionState';
 import useThresholds from '../../hooks/useThresholds';
 import { alertLevel, percentUsed } from '../../utils/budgetCalculations';
-import { CATEGORY_TYPE_LABELS, formatCurrency, getMonthName, isSettledTransaction } from '../../utils/helpers';
-import { isQueryUnavailable } from '../../utils/queryState';
+import { CATEGORY_TYPE_LABELS, formatCurrency, getMonthName } from '../../utils/helpers';
 import {
   COMPARE_OPTIONS,
   categoryComparisonGroups,
-  categoryMonthMatrix,
   categoryTotals,
   comparisonPeriod,
   plannedByCategory,
   reportPeriodKeys,
   resolveCompareMode,
   txMonthKey,
-  yearsForKeys,
 } from '../../utils/reportAggregations';
 
 const money = (cents) => formatCurrency(cents, 'USD', { hideCents: true });
@@ -46,13 +40,6 @@ function compareNoun(mode) {
     case 'lastYear': return 'last year';
     default: return 'plan';
   }
-}
-
-/** Signed change text with percent, e.g. "+$120 (+18%)". */
-function changeText(change, compare) {
-  const sign = change > 0 ? '+' : '−';
-  const pct = compare > 0 ? ` (${sign}${Math.round((Math.abs(change) / compare) * 100)}%)` : '';
-  return `${sign}${money(Math.abs(change))}${pct}`;
 }
 
 /** Status chip for a row or total: plan progress, or change vs history. */
@@ -80,15 +67,7 @@ function StatusChip({ isIncome, actual, compare, planMode, thresholds }) {
     );
   }
 
-  const change = actual - compare;
-  if (change === 0) return <span className="text-xs font-medium text-stone-500 dark:text-stone-400">No change</span>;
-  // More income or less spending is good.
-  const good = isIncome ? change > 0 : change < 0;
-  return (
-    <span className={`text-xs font-semibold tabular-nums ${good ? 'text-emerald-700 dark:text-emerald-400' : 'text-warn'}`}>
-      {changeText(change, compare)}
-    </span>
-  );
+  return <ChangeChip actual={actual} compare={compare} isIncome={isIncome} />;
 }
 
 /**
@@ -147,66 +126,68 @@ function RowTrack({ name, isIncome, actual, compare, planMode, thresholds }) {
  * Computed on the client from the offline-capable year transactions and
  * annual budget data, like Annual Actuals.
  *
+ * Deep links: `?category=<id>` opens (and scrolls to) that category's
+ * drill-down; `?compare=<mode>` picks the comparison until the user changes it.
+ *
  * @param {{ month: number, year: number, viewMode: 'monthly' | 'ytd', asOf: string | null }} props
  */
 export default function CategoryExplorer({ month, year, viewMode, asOf }) {
-  const queryClient = useQueryClient();
   const { thresholds } = useThresholds();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusCategoryId = searchParams.get('category');
   const [compareSetting, setCompareSetting] = useSessionState('reportsCompareTo', 'plan');
-  const compareMode = resolveCompareMode(viewMode, compareSetting);
+  const compareMode = resolveCompareMode(viewMode, searchParams.get('compare') ?? compareSetting);
   const planMode = compareMode === 'plan';
+  const handleCompareChange = (mode) => {
+    setCompareSetting(mode);
+    if (searchParams.has('compare')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('compare');
+        return next;
+      }, { replace: true });
+    }
+  };
 
   const periodKeys = useMemo(() => reportPeriodKeys(year, month, viewMode), [year, month, viewMode]);
   const comparison = useMemo(
     () => comparisonPeriod(year, month, viewMode, compareMode),
     [year, month, viewMode, compareMode],
   );
-  const needPrevYear = yearsForKeys(periodKeys, comparison.keys).includes(year - 1);
 
-  const currentQuery = useTransactionsForYear(year);
-  const prevQuery = useTransactionsForYear(year - 1, { enabled: needPrevYear });
-  const budgetQuery = useAnnualBudgetData(year, { enabled: planMode });
-  const categoriesQuery = useCategories();
-  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const { settled, matrix, categories, budget, setYearTransactions, isLoading, failed } = useReportData({
+    year,
+    keyLists: [periodKeys, comparison.keys],
+    asOf,
+    withBudget: planMode,
+  });
 
-  const settled = useMemo(() => {
-    const rows = needPrevYear
-      ? [...(prevQuery.data ?? []), ...(currentQuery.data ?? [])]
-      : currentQuery.data ?? [];
-    return rows.filter((t) => isSettledTransaction(t, asOf));
-  }, [currentQuery.data, prevQuery.data, needPrevYear, asOf]);
-
-  const matrix = useMemo(() => categoryMonthMatrix(settled), [settled]);
   const groups = useMemo(() => {
     const actual = categoryTotals(matrix, periodKeys);
     const compare = planMode
-      ? plannedByCategory(budgetQuery.data, periodKeys, year)
+      ? plannedByCategory(budget, periodKeys, year)
       : categoryTotals(matrix, comparison.keys, comparison.divisor);
     return categoryComparisonGroups({ actual, compare, categories, meta: matrix.meta });
-  }, [matrix, periodKeys, planMode, budgetQuery.data, year, comparison, categories]);
+  }, [matrix, periodKeys, planMode, budget, year, comparison, categories]);
 
   // Drill-down: the period's transactions; edits update the year query cache.
   const periodTransactions = useMemo(() => {
     const keys = new Set(periodKeys);
     return settled.filter((t) => keys.has(txMonthKey(t)));
   }, [settled, periodKeys]);
-  const setYearTransactions = useCallback((updater) => {
-    queryClient.setQueryData(['transactions', 'year', year], (prev) =>
-      typeof updater === 'function' ? updater(prev ?? []) : updater,
-    );
-  }, [queryClient, year]);
   const drill = useCategoryDrillDown({
     transactions: periodTransactions,
     categories,
     setTransactions: setYearTransactions,
     resetKey: periodKeys.join(','),
+    initialExpandedId: focusCategoryId,
   });
 
-  const queries = [currentQuery, categoriesQuery];
-  if (needPrevYear) queries.push(prevQuery);
-  if (planMode) queries.push(budgetQuery);
-  const isLoading = queries.some((q) => q.isLoading);
-  const failed = queries.find((q) => isQueryUnavailable(q));
+  // Bring a deep-linked category into view once its row exists.
+  useEffect(() => {
+    if (isLoading || !focusCategoryId) return;
+    document.getElementById(`category-row-${focusCategoryId}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [isLoading, focusCategoryId]);
 
   const periodLabel = viewMode === 'ytd'
     ? `Jan – ${getMonthName(month)} ${year}`
@@ -273,7 +254,7 @@ export default function CategoryExplorer({ month, year, viewMode, asOf }) {
             size="sm"
             options={COMPARE_OPTIONS[viewMode] ?? COMPARE_OPTIONS.monthly}
             value={compareMode}
-            onChange={setCompareSetting}
+            onChange={handleCompareChange}
           />
         </div>
       </section>
@@ -302,7 +283,7 @@ export default function CategoryExplorer({ month, year, viewMode, asOf }) {
                   const expanded = drill.expandedId === row.categoryId;
                   const name = `${row.name}${row.archived ? ' (Archived)' : ''}`;
                   return (
-                    <div key={row.categoryId}>
+                    <div key={row.categoryId} id={`category-row-${row.categoryId}`} className="scroll-mt-24">
                       <button
                         type="button"
                         aria-expanded={expanded}
