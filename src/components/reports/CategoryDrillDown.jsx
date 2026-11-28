@@ -19,7 +19,11 @@ import { signedCategoryTotal } from '../../utils/reportRules';
  *   onClose: () => void,
  *   onDataChanged: () => void,
  *   setAllTransactions: Function,
+ *   embedded?: boolean,
  * }} props
+ *
+ * `embedded`: inside a Modal that already shows the title and a close button,
+ * drop the panel frame and the header's name/close, keeping the count/total.
  */
 export default function CategoryDrillDown({
   transactions,
@@ -29,6 +33,7 @@ export default function CategoryDrillDown({
   onClose,
   onDataChanged,
   setAllTransactions,
+  embedded = false,
 }) {
   // We manage a local copy that stays in sync with the parent's data.
   // The hook mutates via setAllTransactions (the parent's setter for the
@@ -83,8 +88,13 @@ export default function CategoryDrillDown({
   const totalAmount = signedCategoryTotal(transactions);
 
   return (
-    <div className="animate-fade-in-up mt-3 overflow-clip rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-inner dark:border-amber-800/60 dark:bg-amber-950/30">
+    <div className={embedded ? '' : 'animate-fade-in-up mt-3 overflow-clip rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-inner dark:border-amber-800/60 dark:bg-amber-950/30'}>
       {/* Header */}
+      {embedded ? (
+        <p className="px-3 text-xs text-stone-500 dark:text-stone-400">
+          {transactions.length} transaction{transactions.length !== 1 ? 's' : ''} · {formatCurrency(totalAmount)}
+        </p>
+      ) : (
       <div className="flex items-center justify-between border-b border-amber-200/40 bg-white/60 px-5 py-3 dark:border-amber-800/40 dark:bg-stone-800/60">
         <div className="flex items-center gap-3">
           <span
@@ -109,6 +119,7 @@ export default function CategoryDrillDown({
           </svg>
         </button>
       </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -120,6 +131,7 @@ export default function CategoryDrillDown({
       {/* Transaction list */}
       <div className="px-3 py-3">
         <TransactionList
+          pageScroll={!embedded}
           transactions={sorted}
           onEdit={mgr.setEditingTransaction}
           onDelete={mgr.setDeletingTransaction}

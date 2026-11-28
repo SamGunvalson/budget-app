@@ -294,13 +294,19 @@ export function payeeGroups(transactions, { ignore = [], minCount = 3 } = {}) {
 }
 
 /**
- * Sankey graph for one period: income categories → "Income" → spending types
- * → spending categories. Only positive totals become links. When spending
- * exceeds income a "From savings & other" source covers the gap; when income
- * exceeds spending the remainder flows to "Left over".
+ * Sankey graph for one period: income categories → "Income" → Needs / Wants /
+ * Saved / Other → categories. Saved holds the Savings-type categories plus a
+ * "Moved to savings accounts" leaf for net plain transfers into savings
+ * accounts (see `transferSavingsByMonth`), so it matches Overview's Saved.
+ * Only positive totals become links. When outflows exceed income a
+ * "From savings & other" source covers the gap (a net withdrawal from savings
+ * counts here); when income exceeds them the remainder flows to "Left in
+ * checking".
+ *
+ * Type nodes carry `id` 'needs' | 'wants' | 'saved' | 'other' (MIX_COLORS keys).
  *
  * @returns {{
- *   nodes: Array<{ name: string, kind: 'income' | 'hub' | 'type' | 'category' | 'leftover' | 'shortfall', id?: string, color?: string | null }>,
+ *   nodes: Array<{ name: string, kind: 'income' | 'hub' | 'type' | 'category' | 'moved' | 'leftover' | 'shortfall', id?: string, color?: string | null }>,
  *   links: Array<{ source: number, target: number, value: number }>,
  * }}
  */
@@ -324,6 +330,7 @@ export function flowGraph(transactions) {
     entry.total += value;
     target.set(id, entry);
   }
+  const moved = Object.values(transferSavingsByMonth(transactions)).reduce((sum, v) => sum + v, 0);
 
   const nodes = [];
   const links = [];
@@ -337,27 +344,41 @@ export function flowGraph(transactions) {
     links.push({ source: addNode({ name: entry.name, kind: 'income', id: entry.id, color: entry.color }), target: hub, value: entry.total });
   }
 
-  let spendTotal = 0;
-  const spendingTypes = [...SPENDING_TYPES, 'other'];
-  for (const type of spendingTypes) {
+  const TYPE_NODES = [
+    { type: 'needs', id: 'needs', name: 'Needs' },
+    { type: 'wants', id: 'wants', name: 'Wants' },
+    { type: 'savings', id: 'saved', name: 'Saved' },
+    { type: 'other', id: 'other', name: 'Other' },
+  ];
+  let outTotal = 0;
+  for (const { type, id, name } of TYPE_NODES) {
     const cats = [...spendByCategory.values()]
       .filter((entry) => entry.type === type && entry.total > 0)
       .sort((a, b) => b.total - a.total);
-    const typeTotal = cats.reduce((sum, entry) => sum + entry.total, 0);
+    const extra = type === 'savings' && moved > 0 ? moved : 0;
+    const typeTotal = cats.reduce((sum, entry) => sum + entry.total, 0) + extra;
     if (typeTotal <= 0) continue;
-    spendTotal += typeTotal;
-    const name = type === 'other' ? 'Other' : type[0].toUpperCase() + type.slice(1);
-    const typeNode = addNode({ name, kind: 'type', id: type });
+    outTotal += typeTotal;
+    const typeNode = addNode({ name, kind: 'type', id });
     links.push({ source: hub, target: typeNode, value: typeTotal });
     for (const entry of cats) {
       links.push({ source: typeNode, target: addNode({ name: entry.name, kind: 'category', id: entry.id, color: entry.color }), value: entry.total });
     }
+    if (extra > 0) {
+      links.push({ source: typeNode, target: addNode({ name: 'Moved to savings accounts', kind: 'moved' }), value: extra });
+    }
   }
 
-  if (incomeTotal > spendTotal) {
-    links.push({ source: hub, target: addNode({ name: 'Left over', kind: 'leftover' }), value: incomeTotal - spendTotal });
-  } else if (spendTotal > incomeTotal) {
-    links.unshift({ source: addNode({ name: 'From savings & other', kind: 'shortfall' }), target: hub, value: spendTotal - incomeTotal });
+  // Sources must equal outflows at the hub. A net withdrawal from savings is
+  // money in alongside income; any remaining gap comes from other cash.
+  const withdrawn = moved < 0 ? -moved : 0;
+  const funding = incomeTotal + withdrawn;
+  const fromOther = withdrawn + Math.max(outTotal - funding, 0);
+  if (fromOther > 0) {
+    links.unshift({ source: addNode({ name: 'From savings & other', kind: 'shortfall' }), target: hub, value: fromOther });
+  }
+  if (funding > outTotal) {
+    links.push({ source: hub, target: addNode({ name: 'Left in checking', kind: 'leftover' }), value: funding - outTotal });
   }
 
   return links.length > 0 ? { nodes, links } : { nodes: [], links: [] };

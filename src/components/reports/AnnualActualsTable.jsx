@@ -1,6 +1,11 @@
-import { useMemo, Fragment } from 'react';
+import { useCallback, useMemo, useState, Fragment } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import Modal from '../common/Modal';
+import CategoryDrillDown from './CategoryDrillDown';
+import { drillDownTransactions, monthKey, txMonthKey } from '../../utils/reportAggregations';
 import {
   formatCurrency,
+  getMonthName,
   isTrueIncome,
   isSpendingCredit,
   isIncomeDebit,
@@ -113,6 +118,21 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
     () => (transactionsQuery.data ?? []).filter((tx) => isSettledTransaction(tx, asOf)),
     [transactionsQuery.data, asOf],
   );
+
+  // Cell drill-down: { categoryId, month } of the open cell, or null. Edits
+  // update the year query cache optimistically, as the other drill-downs do.
+  const queryClient = useQueryClient();
+  const [openCell, setOpenCell] = useState(null);
+  const setYearTransactions = useCallback((updater) => {
+    queryClient.setQueryData(['transactions', 'year', year], (prev) =>
+      typeof updater === 'function' ? updater(prev ?? []) : updater,
+    );
+  }, [queryClient, year]);
+  const cellTransactions = useMemo(() => {
+    if (!openCell) return [];
+    const key = monthKey(year, openCell.month);
+    return drillDownTransactions(transactions, openCell.categoryId).filter((tx) => txMonthKey(tx) === key);
+  }, [openCell, transactions, year]);
   const categoriesQuery = useCategories();
   const typeOrderQuery = useUserPreference('type_group_order');
   const budgetQuery = useAnnualBudgetData(year);
@@ -425,9 +445,20 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
                                 key={m}
                                 className={`px-0.5 py-1 text-center text-[11px] ${highlight} ${futureClass(m)}`}
                               >
-                                <span className={`${actualCents === 0 ? 'text-stone-300 dark:text-stone-600' : !highlight ? 'text-stone-800 dark:text-stone-200' : ''}`}>
-                                  {formatCurrency(actualCents, 'USD', { hideCents: true })}
-                                </span>
+                                {actualCents === 0 ? (
+                                  <span className="text-stone-300 dark:text-stone-600">
+                                    {formatCurrency(actualCents, 'USD', { hideCents: true })}
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenCell({ categoryId: cat.id, month: m })}
+                                    aria-label={`${cat.name}, ${getMonthName(m)}: view transactions`}
+                                    className={`w-full rounded px-0.5 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${!highlight ? 'text-stone-800 dark:text-stone-200' : ''}`}
+                                  >
+                                    {formatCurrency(actualCents, 'USD', { hideCents: true })}
+                                  </button>
+                                )}
                               </td>
                             );
                           })}
@@ -532,6 +563,24 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
           </table>
         </div>
       )}
+
+      {openCell && (() => {
+        const cat = categories.find((c) => c.id === openCell.categoryId);
+        return (
+          <Modal title={`${cat?.name ?? 'Category'} · ${getMonthName(openCell.month)} ${year}`} onClose={() => setOpenCell(null)} wide>
+            <CategoryDrillDown
+              transactions={cellTransactions}
+              categories={categories}
+              categoryName={cat?.name ?? 'Category'}
+              categoryColor={cat?.color}
+              onClose={() => setOpenCell(null)}
+              onDataChanged={() => {}}
+              setAllTransactions={setYearTransactions}
+              embedded
+            />
+          </Modal>
+        );
+      })()}
     </div>
   );
 }

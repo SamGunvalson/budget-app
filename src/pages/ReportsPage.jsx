@@ -12,6 +12,7 @@ import PayeeExplorer from '../components/reports/PayeeExplorer';
 // import becomes its own JS chunk that pulls in `recharts` only when first
 // rendered, keeping the Reports route's first-paint bundle small.
 const TrendsView = lazy(() => import('../components/reports/TrendsView'));
+const FlowView = lazy(() => import('../components/reports/FlowView'));
 import { usePendingReviewCount } from '../hooks/queries';
 import { getMonthName, getTodayString } from '../utils/helpers';
 import useMonthYear from '../hooks/useMonthYear';
@@ -50,6 +51,7 @@ const PERIOD_VIEWS = new Set(['overview', 'categories']);
 const LENS_OPTIONS = [
   { value: 'list', label: 'List' },
   { value: 'payees', label: 'Payees' },
+  { value: 'flow', label: 'Flow' },
 ];
 const LENS_IDS = new Set(LENS_OPTIONS.map((o) => o.value));
 
@@ -75,6 +77,9 @@ function viewHeading(view, viewMode, month, year, lens) {
   const monthLabel = `${getMonthName(month)} ${year}`;
   if (view === 'categories' && lens === 'payees') {
     return { eyebrow: `12 months to ${monthLabel}`, title: 'Payees' };
+  }
+  if (view === 'categories' && lens === 'flow') {
+    return { eyebrow: viewMode === 'ytd' ? `Jan – ${getMonthName(month)} ${year}` : monthLabel, title: 'Cash flow' };
   }
   switch (view) {
     case 'calendar':
@@ -209,6 +214,10 @@ export default function ReportsPage() {
             </Suspense>
           ) : showPayees ? (
             <PayeeExplorer month={month} year={year} asOf={asOf} />
+          ) : activeView === 'categories' && lens === 'flow' ? (
+            <Suspense fallback={<ChartFallback />}>
+              <FlowView month={month} year={year} viewMode={viewMode} asOf={asOf} />
+            </Suspense>
           ) : activeView === 'categories' ? (
             <CategoryExplorer month={month} year={year} viewMode={viewMode} asOf={asOf} />
           ) : (

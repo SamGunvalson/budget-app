@@ -186,7 +186,7 @@ test('flowGraph routes income through types to categories with a left-over node'
     'Income>Needs:600',
     'Needs>Rent:500',
     'Needs>Groceries:100',
-    'Income>Left over:400',
+    'Income>Left in checking:400',
   ]);
 });
 
@@ -479,4 +479,48 @@ test('biggestChanges compares the latest 3 months with the 3 before', () => {
   const { risers, fallers } = biggestChanges(categoryMonthMatrix(rows), 2026, 6, { minChange: 1000 });
   assert.deepEqual(risers.map((r) => [r.categoryId, r.actual, r.compare, r.change]), [['din', 9000, 3000, 6000]]);
   assert.deepEqual(fallers.map((r) => [r.categoryId, r.change]), [['gro', -15000]]);
+});
+
+/** Sum of link values into and out of the hub node (index 0). */
+function hubBalance({ links }) {
+  const into = links.filter((l) => l.target === 0).reduce((s, l) => s + l.value, 0);
+  const out = links.filter((l) => l.source === 0).reduce((s, l) => s + l.value, 0);
+  return [into, out];
+}
+
+test('flowGraph puts budgeted and moved savings under Saved and balances the hub', () => {
+  const graph = flowGraph([
+    tx('salary', 6000, '2026-03-01'),
+    tx('rent', -2000, '2026-03-01'),
+    ...transferPair('checking', 'k401', 500, '2026-03-15', { fromCat: 'invest' }), // budgeted
+    ...transferPair('checking', 'savings', 1500, '2026-03-28'),                    // moved
+  ]);
+  assert.deepEqual(flowSummary(graph), [
+    'Salary>Income:6000',
+    'Income>Needs:2000',
+    'Needs>Rent:2000',
+    'Income>Saved:2000',
+    'Saved>Investing:500',
+    'Saved>Moved to savings accounts:1500',
+    'Income>Left in checking:2000',
+  ]);
+  assert.deepEqual(graph.nodes.find((n) => n.name === 'Saved'), { name: 'Saved', kind: 'type', id: 'saved' });
+  const [into, out] = hubBalance(graph);
+  assert.equal(into, out);
+});
+
+test('flowGraph treats a net withdrawal from savings as a source', () => {
+  const graph = flowGraph([
+    tx('salary', 1000, '2026-03-01'),
+    tx('rent', -1800, '2026-03-01'),
+    ...transferPair('savings', 'checking', 500, '2026-03-10'),
+  ]);
+  assert.deepEqual(flowSummary(graph), [
+    'From savings & other>Income:800',
+    'Salary>Income:1000',
+    'Income>Needs:1800',
+    'Needs>Rent:1800',
+  ]);
+  const [into, out] = hubBalance(graph);
+  assert.equal(into, out);
 });

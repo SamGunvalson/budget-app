@@ -1,6 +1,6 @@
 # Reports Redesign Plan
 
-Status: PRs 1–4 done · PR 5 (Trends) done, uncommitted · PR 6 pending · 2026-11-28
+Status: all six PRs done (PR 6 uncommitted) · 2026-11-28
 Follows: [UI_OVERHAUL_PLAN.md](UI_OVERHAUL_PLAN.md) (Phase 5 Overview moves here, inside Reports; `/app` keeps landing on Transactions)
 
 ## Goals
@@ -146,8 +146,14 @@ One explorer for the period, with three views (segmented):
   `user_preferences` key `payee_consistency_ignored` as `{ payees: [...] }`
   (existing key/value table, no schema change). Deep links: `?lens=payees`,
   `?payee=<normalized name>`.
-- **Flow:** a Sankey chart, income → Needs/Wants/Savings → categories (recharts
-  `Sankey`, already installed). Mobile shows a stacked bar per type instead.
+- **Flow** (`FlowView.jsx`, page title "Cash flow"): a Sankey for the period,
+  income categories → Income → Needs / Wants / Saved / Left in checking →
+  categories. Saved uses Overview's rule: Savings-category lines plus a "Moved
+  to savings accounts" leaf; a net withdrawal from savings appears as a "From
+  savings & other" source, so the hub always balances (`flowGraph`). Type nodes
+  use `MIX_COLORS`; links take their target's color. Clicking a category opens
+  it in List, expanded. The mobile layout shows the same flow as grouped rows
+  with a share-of-income bar per branch.
 
 ### 3. Trends (rebuilt)
 
@@ -175,8 +181,11 @@ wants rose, ΔE 4). Overview's "Where it went" bar uses the same set.
 
 ### 4. Annual (small changes)
 
-- Clicking a cell opens the drill-down for that category and month in a sheet
-  or modal, because the grid is too wide for inline expansion.
+- Clicking a non-zero cell opens the drill-down for that category and month
+  in a Modal (a bottom sheet in the mobile layout). `CategoryDrillDown`'s
+  `embedded` mode drops its own frame and close button there, and passes
+  `pageScroll={false}` so `TransactionList` scrolls inside the sheet instead
+  of virtualizing against the window.
 - Its year picker moves into the shared control row.
 
 ### 5. Calendar (unchanged)
@@ -221,7 +230,7 @@ views still use. Keep `BudgetAlert` if other pages import it.
 3. ✅ **Overview** tab (default).
 4. ✅ **Categories › Payees** and the ignore list.
 5. ✅ **Trends** rebuild (mix, fixed/flexible, category trend).
-6. **Categories › Flow** (Sankey) and Annual cell drill-down.
+6. ✅ **Categories › Flow** (Sankey) and Annual cell drill-down.
 
 Each PR: screenshots in light and dark at mobile and desktop widths,
 `npm run verify`, and a `code-reviewer` pass. Safe mode: every new figure,
