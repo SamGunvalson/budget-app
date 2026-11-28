@@ -65,6 +65,7 @@ import {
 } from '../services/quickTransactions';
 import { hapticSuccess, hapticTap } from '../utils/haptics';
 import { isQueryUnavailable } from '../utils/queryState';
+import { transferEditProps } from '../utils/transactionFormRules';
 import DataUnavailable from '../components/common/DataUnavailable';
 
 // ================================================
@@ -1171,42 +1172,7 @@ export default function TransactionsPage() {
             isEditing
             partnership={partnership}
             hasSplit={splitTransactionIds.has(mgr.editingTransaction.id)}
-            transferCompanionAccountId={
-              mgr.editingTransaction.transfer_group_id &&
-              mgr.editingTransaction.categories?.type === 'transfer'
-                ? transactions.find(
-                    (t) =>
-                      t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
-                      t.id !== mgr.editingTransaction.id
-                  )?.account_id
-                : undefined
-            }
-            transferCompanionAmount={
-              mgr.editingTransaction.transfer_group_id
-                ? (() => {
-                    const companion = transactions.find(
-                      (t) =>
-                        t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
-                        t.id !== mgr.editingTransaction.id
-                    );
-                    if (!companion) return undefined;
-                    // Pure transfer: editing transaction has transfer category — return companion amount
-                    // Linked transfer: editing transaction is the main leg (non-transfer category) — return companion amount
-                    return companion.amount;
-                  })()
-                : undefined
-            }
-            linkedAccountId={
-              mgr.editingTransaction.transfer_group_id &&
-              mgr.editingTransaction.categories?.type !== 'transfer'
-                ? transactions.find(
-                    (t) =>
-                      t.transfer_group_id === mgr.editingTransaction.transfer_group_id &&
-                      t.id !== mgr.editingTransaction.id &&
-                      t.categories?.type === 'transfer'
-                  )?.account_id
-                : undefined
-            }
+            {...transferEditProps(mgr.editingTransaction, transactions)}
             favoriteAccountIds={favoriteAccountIds}
           />
         </Modal>

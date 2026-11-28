@@ -6,6 +6,9 @@ import Modal, { ConfirmDeleteModal } from '../common/Modal';
 import useTransactionManager from '../../hooks/useTransactionManager';
 import { formatCurrency } from '../../utils/helpers';
 import { signedCategoryTotal } from '../../utils/reportRules';
+import { visibleSelection } from '../../utils/selectionRules';
+import { transferEditProps } from '../../utils/transactionFormRules';
+import { useAccounts } from '../../hooks/queries';
 
 /**
  * Expandable drill-down panel that shows the full-featured TransactionList
@@ -19,8 +22,13 @@ import { signedCategoryTotal } from '../../utils/reportRules';
  *   onClose: () => void,
  *   onDataChanged: () => void,
  *   setAllTransactions: Function,
+ *   companionSource?: Array,
  *   embedded?: boolean,
  * }} props
+ *
+ * `companionSource`: rows to search for the other leg of a transfer being
+ * edited (the leg is usually outside `transactions`, which is one category).
+ * Defaults to `transactions`.
  *
  * `embedded`: inside a Modal that already shows the title and a close button,
  * drop the panel frame and the header's name/close, keeping the count/total.
@@ -33,6 +41,7 @@ export default function CategoryDrillDown({
   onClose,
   onDataChanged,
   setAllTransactions,
+  companionSource,
   embedded = false,
 }) {
   // We manage a local copy that stays in sync with the parent's data.
@@ -46,6 +55,22 @@ export default function CategoryDrillDown({
   });
 
   const [error, setError] = useState('');
+  const accountsQuery = useAccounts();
+  const accounts = accountsQuery.data ?? [];
+
+  // The selection can outlive its rows (e.g. turning off Include upcoming
+  // hides pending ones), so bulk actions only ever touch the visible part.
+  const visibleSelectedIds = useMemo(
+    () => visibleSelection(mgr.selectedIds, transactions),
+    [mgr.selectedIds, transactions],
+  );
+
+  // The drill-down has no partner-split flow; drop the form's flag.
+  const withoutSplit = (handler) => (values) => {
+    const next = { ...values };
+    delete next.isSplit;
+    return handler(next);
+  };
 
   // Sort the transactions locally
   const sorted = useMemo(() => {
@@ -138,7 +163,7 @@ export default function CategoryDrillDown({
           sortColumn={mgr.sortColumn}
           sortDirection={mgr.sortDirection}
           onSort={mgr.handleSort}
-          selectedIds={mgr.selectedIds}
+          selectedIds={visibleSelectedIds}
           onToggleSelect={mgr.handleToggleSelect}
           onSelectAll={() => mgr.handleSelectAll(sorted)}
           onClearSelection={() => mgr.handleSelectAll([])}
@@ -181,13 +206,13 @@ export default function CategoryDrillDown({
       {/* Bulk action bar. The wrapper is the sticky element: BulkActionBar's
           own `sticky` has no room to move inside a wrapper of its own height,
           so the bar used to sit below the fold while rows were selected. */}
-      {mgr.selectedIds.size > 0 && (
+      {visibleSelectedIds.size > 0 && (
         <div className="sticky bottom-0 z-20 px-3 pb-3 mobile:bottom-[var(--bottom-chrome,0px)]">
           <BulkActionBar
-            selectedCount={mgr.selectedIds.size}
+            selectedCount={visibleSelectedIds.size}
             categories={categories}
-            onRecategorize={mgr.handleBulkRecategorize}
-            onDelete={mgr.handleBulkDelete}
+            onRecategorize={(categoryId) => mgr.handleBulkRecategorize(categoryId, visibleSelectedIds)}
+            onDelete={() => mgr.handleBulkDelete(visibleSelectedIds)}
             onDeselectAll={() => mgr.handleSelectAll([])}
             isBusy={mgr.isBulkBusy}
           />
@@ -200,10 +225,16 @@ export default function CategoryDrillDown({
           <TransactionForm
             key={mgr.editingTransaction.id}
             categories={categories}
+            accounts={accounts}
             initialValues={mgr.editingTransaction}
-            onSubmit={mgr.handleUpdate}
+            onSubmit={withoutSplit(mgr.handleUpdate)}
+            onSubmitTransfer={mgr.handleUpdateTransfer}
+            onSubmitAsymmetricTransfer={mgr.handleUpdateAsymmetricTransfer}
+            onSubmitLinkedTransfer={withoutSplit(mgr.handleUpdateLinkedTransfer)}
+            onSubmitAdjustment={mgr.handleUpdateAdjustment}
             onCancel={() => mgr.setEditingTransaction(null)}
             isEditing
+            {...transferEditProps(mgr.editingTransaction, companionSource ?? transactions)}
           />
         </Modal>
       )}

@@ -110,6 +110,32 @@ export function transferSavingsByMonth(transactions) {
 }
 
 /**
+ * Rows with their embedded category's name and color replaced by the current
+ * category record. Transaction rows carry a snapshot of their category from
+ * when they were fetched, so after a recolor or rename the views built from
+ * them would disagree with the ones that read `categories` directly. Type is
+ * left alone: it drives the totals, which follow the transaction rows.
+ *
+ * @param {Array} transactions
+ * @param {Array<{ id: string, name?: string, color?: string | null }>} categories
+ * @returns {Array} the same array when nothing changes
+ */
+export function withCurrentCategories(transactions, categories) {
+  if (!categories?.length) return transactions;
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  let changed = false;
+  const result = transactions.map((tx) => {
+    const current = byId.get(tx.category_id);
+    const embedded = tx.categories;
+    if (!current || !embedded) return tx;
+    if (embedded.name === current.name && embedded.color === current.color) return tx;
+    changed = true;
+    return { ...tx, categories: { ...embedded, name: current.name, color: current.color } };
+  });
+  return changed ? result : transactions;
+}
+
+/**
  * Category × month totals, plus plain transfers into savings accounts.
  *
  * @returns {{
@@ -298,7 +324,11 @@ export function payeeGroups(transactions, { ignore = [], minCount = 3 } = {}) {
  * Saved / Other → categories. Saved holds the Savings-type categories plus a
  * "Moved to savings accounts" leaf for net plain transfers into savings
  * accounts (see `transferSavingsByMonth`), so it matches Overview's Saved.
- * Only positive totals become links. When outflows exceed income a
+ * A category whose net total is negative (refunds exceeding purchases, or
+ * income debits exceeding income) moves to the opposite side, so the hub's
+ * balance matches Overview: a net-refunded spending category is a source
+ * (kind 'credit') and a net-negative income category an outflow (kind
+ * 'debit'). When outflows exceed income a
  * "From savings & other" source covers the gap (a net withdrawal from savings
  * counts here); when income exceeds them the remainder flows to "Left in
  * checking".
@@ -306,7 +336,7 @@ export function payeeGroups(transactions, { ignore = [], minCount = 3 } = {}) {
  * Type nodes carry `id` 'needs' | 'wants' | 'saved' | 'other' (MIX_COLORS keys).
  *
  * @returns {{
- *   nodes: Array<{ name: string, kind: 'income' | 'hub' | 'type' | 'category' | 'moved' | 'leftover' | 'shortfall', id?: string, color?: string | null }>,
+ *   nodes: Array<{ name: string, kind: 'income' | 'credit' | 'hub' | 'type' | 'category' | 'debit' | 'moved' | 'leftover' | 'shortfall', id?: string, color?: string | null }>,
  *   links: Array<{ source: number, target: number, value: number }>,
  * }}
  */
@@ -343,6 +373,13 @@ export function flowGraph(transactions) {
     incomeTotal += entry.total;
     links.push({ source: addNode({ name: entry.name, kind: 'income', id: entry.id, color: entry.color }), target: hub, value: entry.total });
   }
+  // Net refunds in a spending category are money in, as Overview counts them.
+  let credits = 0;
+  for (const entry of [...spendByCategory.values()].sort((a, b) => a.total - b.total)) {
+    if (entry.total >= 0) continue;
+    credits -= entry.total;
+    links.push({ source: addNode({ name: `${entry.name} refunds`, kind: 'credit', id: entry.id, color: entry.color }), target: hub, value: -entry.total });
+  }
 
   const TYPE_NODES = [
     { type: 'needs', id: 'needs', name: 'Needs' },
@@ -369,10 +406,17 @@ export function flowGraph(transactions) {
     }
   }
 
+  // A net-negative income category (income debits) is money out.
+  for (const entry of [...incomeByCategory.values()].sort((a, b) => a.total - b.total)) {
+    if (entry.total >= 0) continue;
+    outTotal -= entry.total;
+    links.push({ source: hub, target: addNode({ name: `${entry.name} reversals`, kind: 'debit', id: entry.id, color: entry.color }), value: -entry.total });
+  }
+
   // Sources must equal outflows at the hub. A net withdrawal from savings is
   // money in alongside income; any remaining gap comes from other cash.
   const withdrawn = moved < 0 ? -moved : 0;
-  const funding = incomeTotal + withdrawn;
+  const funding = incomeTotal + credits + withdrawn;
   const fromOther = withdrawn + Math.max(outTotal - funding, 0);
   if (fromOther > 0) {
     links.unshift({ source: addNode({ name: 'From savings & other', kind: 'shortfall' }), target: hub, value: fromOther });
@@ -601,8 +645,9 @@ export function billMatcher(transactions) {
 }
 
 /**
- * The largest spending transactions (refunds, income and transfers excluded)
- * in `keys`. With `excludeBills`, rows generated from a recurring template and
+ * The largest purchases in `keys`: needs/wants/other spending rows. Refunds,
+ * income, transfers and Savings (contributions, which Overview keeps out of
+ * spending) are excluded. With `excludeBills`, rows generated from a recurring template and
  * repeating same-amount charges (see `repeatingChargeKeys`, judged across all
  * of `transactions`) are left out so one-off purchases surface.
  */
@@ -610,7 +655,10 @@ export function largestTransactions(transactions, keys, limit = 5, { excludeBill
   const inPeriod = new Set(keys);
   const isBill = excludeBills ? billMatcher(transactions) : () => false;
   return transactions
-    .filter((tx) => inPeriod.has(txMonthKey(tx)) && txType(tx) !== 'income' && (signedAmount(tx) ?? 0) > 0)
+    .filter((tx) => {
+      const type = txType(tx);
+      return inPeriod.has(txMonthKey(tx)) && type !== 'income' && type !== 'savings' && (signedAmount(tx) ?? 0) > 0;
+    })
     .filter((tx) => !excludeBills || !isBill(tx))
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || b.transaction_date.localeCompare(a.transaction_date))
     .slice(0, limit);

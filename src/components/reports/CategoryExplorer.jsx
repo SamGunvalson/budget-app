@@ -151,7 +151,7 @@ export default function CategoryExplorer({ month, year, viewMode, asOf }) {
     [year, month, viewMode, compareMode],
   );
 
-  const { settled, matrix, categories, budget, setYearTransactions, isLoading, failed } = useReportData({
+  const { allTransactions, settled, matrix, categories, budget, setYearTransactions, isLoading, failed } = useReportData({
     year,
     keyLists: [periodKeys, comparison.keys],
     asOf,
@@ -175,6 +175,7 @@ export default function CategoryExplorer({ month, year, viewMode, asOf }) {
     transactions: periodTransactions,
     categories,
     setTransactions: setYearTransactions,
+    companionSource: allTransactions,
     resetKey: periodKeys.join(','),
     initialExpandedId: focusCategoryId,
   });

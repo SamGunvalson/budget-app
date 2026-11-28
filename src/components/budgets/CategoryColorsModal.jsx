@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
 import ColorPalettePicker from '../common/ColorPalettePicker';
@@ -41,6 +41,9 @@ function groupByColor(categories) {
 export default function CategoryColorsModal({ categories, onRecolor, onClose }) {
   const [editingHex, setEditingHex] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Synchronous guard: a second swatch click can land before `busy` renders,
+  // and two overlapping group saves would finish in arbitrary order.
+  const inFlight = useRef(false);
   const [error, setError] = useState('');
 
   const groups = useMemo(() => groupByColor(categories), [categories]);
@@ -51,7 +54,8 @@ export default function CategoryColorsModal({ categories, onRecolor, onClose }) 
   );
 
   const run = async (updates) => {
-    if (updates.length === 0) return;
+    if (updates.length === 0 || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError('');
     try {
@@ -60,6 +64,7 @@ export default function CategoryColorsModal({ categories, onRecolor, onClose }) 
     } catch (err) {
       setError(err?.message || 'Some colors could not be updated.');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -136,7 +141,7 @@ export default function CategoryColorsModal({ categories, onRecolor, onClose }) 
             </div>
             {editingHex === g.hex && (
               <div className="mt-3">
-                <ColorPalettePicker value={g.hex} usage={usage} onChange={(hex) => recolorGroup(g, hex)} />
+                <ColorPalettePicker value={g.hex} usage={usage} disabled={busy} onChange={(hex) => recolorGroup(g, hex)} />
               </div>
             )}
           </li>

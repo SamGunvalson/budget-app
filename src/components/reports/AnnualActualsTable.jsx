@@ -549,6 +549,7 @@ export default function AnnualActualsTable({ year: yearProp, asOf = null }) {
               onClose={() => setOpenCell(null)}
               onDataChanged={() => {}}
               setAllTransactions={setYearTransactions}
+              companionSource={transactionsQuery.data}
               embedded
             />
           </Modal>
